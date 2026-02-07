@@ -190,3 +190,35 @@ After the initial backlog is bootstrapped, run it through expert persona reviews
 | Tasks per F1/F2/CI epics | 16 (5+6+5) | 5 (2+2+1) | -11 (consolidation) |
 
 **Estimated quality increase:** Passes 1 and 2 fixed scope and product story. Pass 3 fixes structural integrity — the backlog is now internally consistent (no duplicate paths), security-aware, and right-sized at the task level. The most impactful change was eliminating the three duplicate epic pairs, which would have confused any agent or contributor trying to navigate the dependency graph. The second most impactful was unblocking T1, which means test infrastructure can be built in parallel with the scaffold rather than sequentially after it. The consolidated F1/F2/CI tasks reduce ceremony by ~70% for the foundation phase — instead of 16 PRs for boilerplate, it's 5 PRs that each deliver a meaningful, reviewable unit of work. The new security epic ensures that path traversal, token leakage, and output injection are addressed before v0.1.0, not discovered after. Estimated reduction in "first implementation session" friction: **30-40%**.
+
+### Pass 4: CLI Agent (Claude Code Usability Assessment)
+
+**Reviewer prompt:** "You are a Claude Code agent. Assess how easy to use you would find the tool being proposed in the beads backlog. We will update the backlog with changes you propose including decision records."
+
+**What was caught:**
+
+| Finding | Severity | Action Taken |
+|---------|----------|--------------|
+| No exit codes defined — agents and scripts have no way to distinguish partial failure from total failure from bad arguments | High | Created CLI1.5: Define exit codes (0=success, 1=bad args, 2=partial, 3=total failure) [stringer-dov.5] |
+| No progress reporting on stderr — long scans on large repos look like hangs to both agents and users | High | Created CLI1.6: Implement stderr progress reporting [stringer-dov.6] |
+| `--dry-run` output format undefined — agents need machine-readable scan metadata (signal counts per collector, duration) to make programmatic decisions | Medium | Created CLI1.7: Add `--json` mode to `--dry-run` output [stringer-dov.7] |
+| No output volume safety cap — an agent piping stringer output directly to `bd import` on a large repo could flood the backlog with hundreds of beads | Medium | Created CLI1.8: Add `--max-issues` safety cap [stringer-dov.8] |
+| Error messages not specified — vague errors like "collector failed" force agents to guess recovery actions instead of taking the suggested fix | High | Created CLI1.9: Define actionable error message format (what/why/fix) [stringer-dov.9] |
+| MVP lifecycle story missing — no documentation of what happens when TODOs are fixed and stringer is re-run. Agents may re-scan and assume old beads auto-resolve (they don't). | Medium | Created UX1.7: Document MVP lifecycle (no delta scanning) [stringer-4qs.7] |
+| `--min-confidence` semantics undefined — agents asked to "show important stuff" have no way to map intent to a threshold value | Medium | Drafted DR-004: Confidence scoring semantics. Recommends named presets (`--min-confidence=high`) alongside float values. Accepted. [stringer-vkt.5] |
+| No CI check for stale documentation — interface changes in Go code could silently drift from AGENTS.md | Low | Created F1-CI.2: Add CI check for stale documentation [stringer-7kb.21] |
+
+**Overall assessment: B+.** Strongest areas: one-liner UX (`stringer scan . | bd import -i -`), read-only safety guarantee, idempotent output, composable collector selection, and `--dry-run` for safe preview. Weakest areas: undefined error contract, no exit codes, opaque confidence scoring, and missing lifecycle documentation. All gaps addressed with 8 new backlog items.
+
+**Backlog impact:**
+
+| Metric | Before Pass 4 | After Pass 4 | Delta |
+|--------|---------------|--------------|-------|
+| Open issues | 246 | 254 | +8 |
+| CLI1 children | 4 | 9 | +5 |
+| UX1 children | 6 | 7 | +1 |
+| F1-CI children | 16 | 17 | +1 |
+| C1 children | 4 | 5 | +1 (DR-004) |
+| Decision records | 0 drafted | 1 (004-confidence-scoring, accepted) | +1 |
+
+**Estimated quality increase:** Passes 1-3 fixed what to build, why to build it, and structural integrity. Pass 4 fixes the agent-facing contract — the interface between stringer and the tools that will invoke it most often. Exit codes, structured errors, and progress reporting are table-stakes for any CLI tool used in automation, but are frequently omitted from initial plans focused on human users. The `--max-issues` cap and lifecycle documentation address the most likely agent-driven failure mode: flooding a beads backlog on first scan and leaving orphaned beads on re-scan. DR-004 (confidence scoring presets) bridges the gap between human intent ("show me the important stuff") and machine precision (`--min-confidence=0.7`). Estimated reduction in agent-integration friction: **40-50%**.
