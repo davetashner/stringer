@@ -1,0 +1,351 @@
+package collectors
+
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/davetashner/stringer/internal/collector"
+	"github.com/davetashner/stringer/internal/signal"
+)
+
+// Large-file threshold in lines. Files exceeding this are flagged.
+const largeFileThreshold = 500
+
+// minSourceLinesForTestCheck is the minimum number of lines a source file must
+// have before we report a missing-test signal. Very small files (stubs, config)
+// are typically not worth flagging.
+const minSourceLinesForTestCheck = 20
+
+// minSourceFilesForRatio is the minimum number of source files a directory must
+// contain before we report a low-test-ratio signal.
+const minSourceFilesForRatio = 3
+
+// lowTestRatioThreshold is the minimum test-to-source file ratio. Directories
+// below this threshold are flagged.
+const lowTestRatioThreshold = 0.1
+
+// missingTestConfidence is the confidence score for missing-test signals.
+const missingTestConfidence = 0.3
+
+// lowTestRatioConfidence is the confidence score for low-test-ratio signals.
+const lowTestRatioConfidence = 0.4
+
+// sourceExtensions defines the file extensions we consider as "source code"
+// for test-detection heuristics.
+var sourceExtensions = map[string]bool{
+	".go":    true,
+	".js":    true,
+	".ts":    true,
+	".jsx":   true,
+	".tsx":   true,
+	".py":    true,
+	".rb":    true,
+	".java":  true,
+	".cs":    true,
+	".rs":    true,
+	".cpp":   true,
+	".c":     true,
+	".h":     true,
+	".hpp":   true,
+	".swift": true,
+	".kt":    true,
+	".scala": true,
+	".php":   true,
+}
+
+func init() {
+	collector.Register(&PatternsCollector{})
+}
+
+// PatternsCollector detects structural code-quality patterns such as
+// oversized files, missing tests, and low test-to-source ratios.
+type PatternsCollector struct{}
+
+// Name returns the collector name used for registration and filtering.
+func (c *PatternsCollector) Name() string { return "patterns" }
+
+// Collect walks source files in repoPath, detects pattern-based signals, and
+// returns them as raw signals.
+func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error) {
+	excludes := mergeExcludes(opts.ExcludePatterns)
+
+	var signals []signal.RawSignal
+
+	// Track per-directory file counts for test-ratio analysis.
+	type dirStats struct {
+		sourceFiles int
+		testFiles   int
+	}
+	dirMap := make(map[string]*dirStats)
+
+	err := filepath.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil // skip unreadable entries
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		relPath, relErr := filepath.Rel(repoPath, path)
+		if relErr != nil {
+			return nil
+		}
+
+		// Skip directories that match exclude patterns early.
+		if d.IsDir() {
+			if shouldExclude(relPath, excludes) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		// Skip excluded files.
+		if shouldExclude(relPath, excludes) {
+			return nil
+		}
+
+		// Skip symlinks that resolve outside the repo tree.
+		if d.Type()&os.ModeSymlink != 0 {
+			resolved, resolveErr := filepath.EvalSymlinks(path)
+			if resolveErr != nil {
+				return nil
+			}
+			if !strings.HasPrefix(resolved, repoPath+string(filepath.Separator)) && resolved != repoPath {
+				return nil
+			}
+		}
+
+		// Apply include-pattern filtering if patterns are set.
+		if len(opts.IncludePatterns) > 0 && !matchesAny(relPath, opts.IncludePatterns) {
+			return nil
+		}
+
+		// Skip binary files.
+		if isBinaryFile(path) {
+			return nil
+		}
+
+		ext := filepath.Ext(path)
+		if !sourceExtensions[ext] {
+			return nil
+		}
+
+		// Count lines.
+		lineCount, countErr := countLines(path)
+		if countErr != nil {
+			return nil // skip files we can't read
+		}
+
+		// C3.1: Large file detection.
+		if lineCount > largeFileThreshold {
+			confidence := largeFileConfidence(lineCount)
+			signals = append(signals, signal.RawSignal{
+				Source:      "patterns",
+				Kind:        "large-file",
+				FilePath:    relPath,
+				Line:        0,
+				Title:       fmt.Sprintf("Large file: %s (%d lines)", relPath, lineCount),
+				Description: fmt.Sprintf("File exceeds %d-line threshold. Consider breaking it into smaller, focused modules.", largeFileThreshold),
+				Confidence:  confidence,
+				Tags:        []string{"large-file", "stringer-generated"},
+			})
+		}
+
+		// Track directory stats for test-ratio and missing-test analysis.
+		dir := filepath.Dir(relPath)
+		if dirMap[dir] == nil {
+			dirMap[dir] = &dirStats{}
+		}
+
+		if isTestFile(relPath) {
+			dirMap[dir].testFiles++
+		} else {
+			dirMap[dir].sourceFiles++
+
+			// C3.2: Missing test detection — only for non-test source files
+			// with meaningful size.
+			if lineCount >= minSourceLinesForTestCheck {
+				if !hasTestCounterpart(path, relPath) {
+					signals = append(signals, signal.RawSignal{
+						Source:      "patterns",
+						Kind:        "missing-tests",
+						FilePath:    relPath,
+						Line:        0,
+						Title:       fmt.Sprintf("No test file found for %s", relPath),
+						Description: "No corresponding test file was found using naming heuristics. Consider adding tests.",
+						Confidence:  missingTestConfidence,
+						Tags:        []string{"missing-tests", "stringer-generated"},
+					})
+				}
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("walking repo: %w", err)
+	}
+
+	// C3.3: Test-to-source ratio per directory.
+	for dir, stats := range dirMap {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
+		if stats.sourceFiles < minSourceFilesForRatio {
+			continue
+		}
+
+		ratio := float64(stats.testFiles) / float64(stats.sourceFiles)
+		if ratio < lowTestRatioThreshold {
+			signals = append(signals, signal.RawSignal{
+				Source:      "patterns",
+				Kind:        "low-test-ratio",
+				FilePath:    dir,
+				Line:        0,
+				Title:       fmt.Sprintf("Low test ratio in %s: %d test files / %d source files", dir, stats.testFiles, stats.sourceFiles),
+				Description: fmt.Sprintf("Test-to-source ratio is %.1f%%, below the %.0f%% threshold. Consider adding more tests.", ratio*100, lowTestRatioThreshold*100),
+				Confidence:  lowTestRatioConfidence,
+				Tags:        []string{"low-test-ratio", "stringer-generated"},
+			})
+		}
+	}
+
+	return signals, nil
+}
+
+// countLines counts the number of lines in a file using bufio.Scanner.
+func countLines(path string) (int, error) {
+	f, err := os.Open(path) //nolint:gosec // path is from filepath.WalkDir
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close() //nolint:errcheck // read-only file
+
+	count := 0
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		count++
+	}
+	if err := scanner.Err(); err != nil {
+		return count, err
+	}
+	return count, nil
+}
+
+// largeFileConfidence scales confidence from 0.4 (just over threshold) to 0.8
+// (at 2x threshold or more).
+func largeFileConfidence(lineCount int) float64 {
+	// Linear interpolation from threshold..2*threshold → 0.4..0.8
+	ratio := float64(lineCount) / float64(largeFileThreshold)
+	// ratio > 1.0 (since lineCount > threshold)
+	// At ratio=1.0 → 0.4, at ratio>=2.0 → 0.8
+	confidence := 0.4 + 0.4*(ratio-1.0)
+	return math.Min(confidence, 0.8)
+}
+
+// isTestFile returns true if the filename matches common test-file naming
+// conventions across languages.
+func isTestFile(relPath string) bool {
+	base := filepath.Base(relPath)
+
+	// Go: *_test.go
+	if strings.HasSuffix(base, "_test.go") {
+		return true
+	}
+	// JS/TS: *.test.js, *.test.ts, *.test.jsx, *.test.tsx, *.spec.js, etc.
+	for _, suffix := range []string{".test.js", ".test.ts", ".test.jsx", ".test.tsx", ".spec.js", ".spec.ts", ".spec.jsx", ".spec.tsx"} {
+		if strings.HasSuffix(base, suffix) {
+			return true
+		}
+	}
+	// Python: test_*.py, *_test.py
+	if strings.HasSuffix(base, ".py") {
+		name := strings.TrimSuffix(base, ".py")
+		if strings.HasPrefix(name, "test_") || strings.HasSuffix(name, "_test") {
+			return true
+		}
+	}
+	// Ruby: *_spec.rb, *_test.rb
+	if strings.HasSuffix(base, "_spec.rb") || strings.HasSuffix(base, "_test.rb") {
+		return true
+	}
+	// Java/Kotlin: *Test.java, *Test.kt, *Spec.java, *Spec.kt
+	for _, suffix := range []string{"Test.java", "Spec.java", "Test.kt", "Spec.kt"} {
+		if strings.HasSuffix(base, suffix) && len(base) > len(suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasTestCounterpart checks if a corresponding test file exists in the same
+// directory using naming heuristics.
+func hasTestCounterpart(absPath, relPath string) bool {
+	dir := filepath.Dir(absPath)
+	base := filepath.Base(relPath)
+	ext := filepath.Ext(base)
+	nameWithoutExt := strings.TrimSuffix(base, ext)
+
+	var candidates []string
+
+	switch ext {
+	case ".go":
+		// foo.go → foo_test.go
+		candidates = append(candidates, nameWithoutExt+"_test.go")
+	case ".js", ".jsx":
+		// foo.js → foo.test.js, foo.spec.js
+		candidates = append(candidates,
+			nameWithoutExt+".test"+ext,
+			nameWithoutExt+".spec"+ext,
+		)
+	case ".ts", ".tsx":
+		// foo.ts → foo.test.ts, foo.spec.ts
+		candidates = append(candidates,
+			nameWithoutExt+".test"+ext,
+			nameWithoutExt+".spec"+ext,
+		)
+	case ".py":
+		// foo.py → test_foo.py, foo_test.py
+		candidates = append(candidates,
+			"test_"+base,
+			nameWithoutExt+"_test.py",
+		)
+	case ".rb":
+		// foo.rb → foo_spec.rb, foo_test.rb
+		candidates = append(candidates,
+			nameWithoutExt+"_spec.rb",
+			nameWithoutExt+"_test.rb",
+		)
+	case ".java":
+		// Foo.java → FooTest.java, FooSpec.java
+		candidates = append(candidates,
+			nameWithoutExt+"Test.java",
+			nameWithoutExt+"Spec.java",
+		)
+	case ".kt":
+		// Foo.kt → FooTest.kt, FooSpec.kt
+		candidates = append(candidates,
+			nameWithoutExt+"Test.kt",
+			nameWithoutExt+"Spec.kt",
+		)
+	default:
+		return false
+	}
+
+	for _, candidate := range candidates {
+		if _, err := os.Stat(filepath.Join(dir, candidate)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// Compile-time interface check.
+var _ collector.Collector = (*PatternsCollector)(nil)
