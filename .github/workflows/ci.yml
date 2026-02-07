@@ -76,6 +76,26 @@ jobs:
       - name: Check for changes
         run: git diff --exit-code go.mod
 
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Run tests with coverage
+        run: go test -race -count=1 -coverprofile=coverage.out ./...
+      - name: Check coverage threshold
+        run: |
+          total=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
+          echo "Total coverage: ${total}%"
+          threshold=80
+          if [ "$(echo "$total < $threshold" | bc)" -eq 1 ]; then
+            echo "::error::Coverage ${total}% is below threshold ${threshold}%"
+            exit 1
+          fi
+
   vulncheck:
     name: Vulncheck
     runs-on: ubuntu-latest
