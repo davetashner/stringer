@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"errors"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -145,6 +147,10 @@ func (c *GitlogCollector) walkCommits(ctx context.Context, repo *git.Repository)
 		return nil
 	})
 	if err != nil && err != errStopIter {
+		// Shallow clones may lack parent objects — degrade gracefully.
+		if errors.Is(err, plumbing.ErrObjectNotFound) {
+			return reverts, buildChurnSignals(fileChanges, fileAuthors), nil
+		}
 		return nil, nil, err
 	}
 

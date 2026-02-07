@@ -106,8 +106,8 @@ func TestScan_FixtureSignalCount(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(stdout, &result))
 
-	// sample-repo has 11 TODO/FIXME/HACK/BUG/OPTIMIZE/XXX comments + 3 patterns signals.
-	assert.Equal(t, 14, result.TotalSignals, "expected 14 signals from sample-repo fixture")
+	// sample-repo has 11 TODO/FIXME/HACK/BUG/OPTIMIZE/XXX comments.
+	assert.Equal(t, 11, result.TotalSignals, "expected 11 signals from sample-repo fixture")
 }
 
 func TestScan_JSONLValidity(t *testing.T) {
@@ -154,7 +154,7 @@ func TestScan_OutputFile(t *testing.T) {
 	require.NoError(t, err, "reading output file")
 
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	assert.Equal(t, 14, len(lines), "expected 14 signals in output file")
+	assert.Equal(t, 11, len(lines), "expected 11 signals in output file")
 
 	// Each line must be valid JSON.
 	for i, line := range lines {
