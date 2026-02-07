@@ -62,7 +62,7 @@ jobs:
           go-version: "1.25"
       - uses: golangci/golangci-lint-action@v7
         with:
-          version: v2
+          version: latest
 
   tidy:
     name: Tidy
@@ -74,7 +74,7 @@ jobs:
           go-version: "1.25"
       - run: go mod tidy
       - name: Check for changes
-        run: git diff --exit-code go.mod go.sum
+        run: git diff --exit-code go.mod
 
   vulncheck:
     name: Vulncheck

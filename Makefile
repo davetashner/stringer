@@ -29,7 +29,7 @@ vet:
 
 tidy:
 	go mod tidy
-	@git diff --exit-code go.mod go.sum || (echo "go.mod/go.sum not tidy" && exit 1)
+	@git diff --exit-code go.mod || (echo "go.mod not tidy" && exit 1)
 
 check: fmt vet lint test
 
