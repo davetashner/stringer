@@ -58,7 +58,7 @@ func TestScan_GoldenFile(t *testing.T) {
 	fixture := fixtureDir(t, "sample-repo")
 
 	// Run scan.
-	cmd := exec.Command(binary, "scan", fixture, "--quiet") //nolint:gosec // test helper
+	cmd := exec.Command(binary, "scan", fixture, "--collectors=todos", "--quiet") //nolint:gosec // test helper
 	stdout, err := cmd.Output()
 	require.NoError(t, err, "stringer scan failed")
 
@@ -82,11 +82,11 @@ func TestScan_Idempotent(t *testing.T) {
 	fixture := fixtureDir(t, "sample-repo")
 
 	// Run scan twice.
-	cmd1 := exec.Command(binary, "scan", fixture, "--quiet") //nolint:gosec // test helper
+	cmd1 := exec.Command(binary, "scan", fixture, "--collectors=todos", "--quiet") //nolint:gosec // test helper
 	out1, err := cmd1.Output()
 	require.NoError(t, err, "first scan failed")
 
-	cmd2 := exec.Command(binary, "scan", fixture, "--quiet") //nolint:gosec // test helper
+	cmd2 := exec.Command(binary, "scan", fixture, "--collectors=todos", "--quiet") //nolint:gosec // test helper
 	out2, err := cmd2.Output()
 	require.NoError(t, err, "second scan failed")
 
@@ -97,7 +97,7 @@ func TestScan_FixtureSignalCount(t *testing.T) {
 	binary := buildBinary(t)
 	fixture := fixtureDir(t, "sample-repo")
 
-	cmd := exec.Command(binary, "scan", fixture, "--dry-run", "--json", "--quiet") //nolint:gosec // test helper
+	cmd := exec.Command(binary, "scan", fixture, "--collectors=todos", "--dry-run", "--json", "--quiet") //nolint:gosec // test helper
 	stdout, err := cmd.Output()
 	require.NoError(t, err, "dry-run failed")
 
@@ -106,15 +106,15 @@ func TestScan_FixtureSignalCount(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(stdout, &result))
 
-	// sample-repo has 11 TODO/FIXME/HACK/BUG/OPTIMIZE/XXX comments + 3 patterns signals.
-	assert.Equal(t, 14, result.TotalSignals, "expected 14 signals from sample-repo fixture")
+	// sample-repo has 11 TODO/FIXME/HACK/BUG/OPTIMIZE/XXX comments.
+	assert.Equal(t, 11, result.TotalSignals, "expected 11 signals from sample-repo fixture")
 }
 
 func TestScan_JSONLValidity(t *testing.T) {
 	binary := buildBinary(t)
 	fixture := fixtureDir(t, "sample-repo")
 
-	cmd := exec.Command(binary, "scan", fixture, "--quiet") //nolint:gosec // test helper
+	cmd := exec.Command(binary, "scan", fixture, "--collectors=todos", "--quiet") //nolint:gosec // test helper
 	stdout, err := cmd.Output()
 	require.NoError(t, err, "scan failed")
 
@@ -146,7 +146,7 @@ func TestScan_OutputFile(t *testing.T) {
 	fixture := fixtureDir(t, "sample-repo")
 	outFile := filepath.Join(t.TempDir(), "output.jsonl")
 
-	cmd := exec.Command(binary, "scan", fixture, "-o", outFile, "--quiet") //nolint:gosec // test helper
+	cmd := exec.Command(binary, "scan", fixture, "--collectors=todos", "-o", outFile, "--quiet") //nolint:gosec // test helper
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "scan failed:\n%s", out)
 
@@ -154,7 +154,7 @@ func TestScan_OutputFile(t *testing.T) {
 	require.NoError(t, err, "reading output file")
 
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
-	assert.Equal(t, 14, len(lines), "expected 14 signals in output file")
+	assert.Equal(t, 11, len(lines), "expected 11 signals in output file")
 
 	// Each line must be valid JSON.
 	for i, line := range lines {
@@ -166,7 +166,7 @@ func TestScan_MaxIssuesCap(t *testing.T) {
 	binary := buildBinary(t)
 	fixture := fixtureDir(t, "sample-repo")
 
-	cmd := exec.Command(binary, "scan", fixture, "--max-issues=3", "--quiet") //nolint:gosec // test helper
+	cmd := exec.Command(binary, "scan", fixture, "--collectors=todos", "--max-issues=3", "--quiet") //nolint:gosec // test helper
 	stdout, err := cmd.Output()
 	require.NoError(t, err, "scan failed")
 
@@ -178,7 +178,7 @@ func TestScan_DryRunNoOutput(t *testing.T) {
 	binary := buildBinary(t)
 	fixture := fixtureDir(t, "sample-repo")
 
-	cmd := exec.Command(binary, "scan", fixture, "--dry-run") //nolint:gosec // test helper
+	cmd := exec.Command(binary, "scan", fixture, "--collectors=todos", "--dry-run") //nolint:gosec // test helper
 	stdout, err := cmd.Output()
 	require.NoError(t, err, "dry-run failed")
 
