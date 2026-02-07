@@ -154,3 +154,39 @@ After the initial backlog is bootstrapped, run it through expert persona reviews
 | Decision records missing from agent workflow — agents make architectural choices (libraries, patterns, formats) without documenting trade-offs for developer review | Medium | Added Decision Records section to AGENTS.md and CLAUDE.md. Created `docs/decisions/` directory. |
 
 **Estimated quality increase:** Pass 1 fixed the build plan — what to build and in what order. Pass 2 fixes the product story — why someone would adopt stringer and whether they'd trust it on a real codebase. The backlog previously had zero user-facing work items; all 269 issues were implementation tasks. The two new epics (UX1: 5 tasks, UX2: 4 tasks) are entirely unblocked and can run in parallel with scaffolding, meaning product clarity improves without delaying code. The decision records process adds a lightweight governance layer that prevents agents from baking in architectural choices that should be reviewed by developers. Most critically, the noise management and "What to Expect" documentation addresses the #1 adoption risk — that a user's first scan floods their backlog and they never try stringer again. Estimated reduction in first-user-abandonment risk: **30-50%**.
+
+### Pass 3: Software Engineer (Architecture, Security, Testability, Adoption)
+
+**Reviewer prompt:** "You are an expert software engineer. Examine the beads backlog and provide an assessment of how thorough the plan is and how clear the implementation would be. Include an assessment of architecture, security, testability, tool choice, likelihood to be used by other engineers, and other relevant assessment areas."
+
+**What was caught:**
+
+| Finding | Severity | Action Taken |
+|---------|----------|--------------|
+| Three pairs of duplicate epics — C1, O1, and CLI1 each existed in both "MVP" and "full" versions with disconnected dependency chains. Agents would encounter two competing paths for the same work. | Critical | Closed original epics (stringer-bsf, stringer-koj, stringer-bnp) and all 25 children. Kept MVP versions (stringer-vkt, stringer-r1v, stringer-dov). Rewired 11 downstream dependents (A3 docs, LLM1, CONTEXT.md, pre-closed beads, validate, GitHub output, CI integration, monorepo, delta scanning, documentation, integration tests) to the MVP epics. |
+| F3 (Config, deferred P3) still blocked all non-MVP collectors — C2 git log, C3 patterns, C4 GitHub, C5 bus factor couldn't start until the deferred config system shipped | High | Removed stringer-a80 as blocker from stringer-cnk, stringer-rw2, stringer-lmo, stringer-20r. Collectors work with hardcoded defaults; config layers in later. |
+| No MVP milestone issue — the goal "stringer scan . \| bd import -i -" existed in docs but had no trackable issue with acceptance criteria | High | Created stringer-gac: "MVP v0.1.0: End-to-end scan-to-import works" with 5 acceptance criteria (real repo scan, bd import pipe, bead verification, idempotency, dry-run). Blocked by CLI1 (stringer-dov). |
+| F1 scaffold over-decomposed — 5 tasks for ~30 minutes of work (init module, Makefile, golangci-lint, LICENSE/.gitignore, pre-commit hooks) | Medium | Closed 5 tasks (.1-.5), created 2 consolidated tasks: F1.A "Initialize Go project structure" (stringer-aks.6) and F1.B "Set up build tooling and hooks" (stringer-aks.7). |
+| F2 core types over-decomposed — 6 tasks for ~50 lines of Go (one task per struct/interface definition) | Medium | Closed 6 tasks (.1-.6), created 2 consolidated tasks: F2.A "Define core domain types" (stringer-0lx.7) and F2.B "Define interfaces and collector registry" (stringer-0lx.8). |
+| F1-CI over-decomposed — 5 separate tasks for what is naturally a single workflow YAML file | Medium | Closed 5 tasks (.1-.5), created 1 consolidated task: F1-CI.A "Create GitHub Actions CI workflow" (stringer-7kb.20). |
+| No security tasks — no input path validation, no token leak prevention, no JSONL output sanitization against injection from crafted TODO comments | High | Created S1: Security Hardening epic (stringer-6iv) with 3 tasks: path validation (.1), API token leak prevention (.2), output sanitization (.3). Blocked by F2, blocks MVP milestone. |
+| No decision records exist despite AGENTS.md mandating them — foundational choices (Go version, go-git vs git CLI, module path) would be made without documented trade-offs | Medium | Created F1.C "Write decision records for foundational choices" (stringer-aks.8) under F1 scaffold. Covers 001-go-version, 002-git-interaction, 003-module-path. |
+| T1 (Test Framework) blocked by F2 (Core Types) — but testify setup and fixtures directory don't depend on domain types at all | Medium | Removed F2 dependency from T1. T1 is now unblocked, runs in parallel with F1 as a third concurrent track. |
+| bd import round-trip test was P2 and buried under a non-MVP epic — despite being the #1 acceptance criterion for the entire MVP | High | Created T1.6 "bd import round-trip integration test" (stringer-j5s.6) at P1 under the unblocked T1 epic. Tests scan → JSONL → bd import → verify → re-scan idempotency. |
+| No competitive analysis — existing tools (leasot, fixme, SonarQube TODO rules, CodeClimate) not evaluated for differentiation or gaps | Low | Created UX1.6 "Competitive analysis of TODO scanner tools" (stringer-4qs.6) under the unblocked UX1 epic. |
+| `RawSignal.Confidence` semantics vary across collectors (keyword severity vs file size heuristic) — will confuse users filtering on `--min-confidence` | Low | Noted as architectural concern. UX1.5 (noise management docs) already covers user-facing aspect; implementation should normalize scoring or document per-collector semantics. No new issue needed. |
+| Package layout ambiguity — AGENTS.md says `internal/collectors/` but task descriptions mention `internal/types/` or `internal/signal/` | Low | Covered by new F1.C decision records task — module structure will be documented before implementation. |
+
+**Backlog impact:**
+
+| Metric | Before Pass 3 | After Pass 3 | Delta |
+|--------|---------------|--------------|-------|
+| Open issues | 273 | 246 | -27 |
+| Closed issues | 21 | 48 | +27 |
+| Duplicate epics | 3 pairs (6 epics) | 0 | -6 epics |
+| MVP tasks (actionable) | ~27 (across 9 epics) | ~28 (across 11 epics) | +1 task, +2 epics (S1, milestone) |
+| Unblocked parallel tracks | 2 (F1, UX1) | 3 (F1, T1, UX1) | +1 track |
+| Security tasks | 0 | 3 | +3 |
+| Tasks per F1/F2/CI epics | 16 (5+6+5) | 5 (2+2+1) | -11 (consolidation) |
+
+**Estimated quality increase:** Passes 1 and 2 fixed scope and product story. Pass 3 fixes structural integrity — the backlog is now internally consistent (no duplicate paths), security-aware, and right-sized at the task level. The most impactful change was eliminating the three duplicate epic pairs, which would have confused any agent or contributor trying to navigate the dependency graph. The second most impactful was unblocking T1, which means test infrastructure can be built in parallel with the scaffold rather than sequentially after it. The consolidated F1/F2/CI tasks reduce ceremony by ~70% for the foundation phase — instead of 16 PRs for boilerplate, it's 5 PRs that each deliver a meaningful, reviewable unit of work. The new security epic ensures that path traversal, token leakage, and output injection are addressed before v0.1.0, not discovered after. Estimated reduction in "first implementation session" friction: **30-40%**.
