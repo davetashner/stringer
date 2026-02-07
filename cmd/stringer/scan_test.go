@@ -165,8 +165,9 @@ func TestScan_InvalidPath(t *testing.T) {
 		t.Fatal("expected non-zero exit for invalid path")
 	}
 
-	if !strings.Contains(stderr.String(), "does not exist") {
-		t.Errorf("error should mention path does not exist, got:\n%s", stderr.String())
+	errOut := stderr.String()
+	if !strings.Contains(errOut, "does not exist") && !strings.Contains(errOut, "cannot resolve path") {
+		t.Errorf("error should mention path problem, got:\n%s", errOut)
 	}
 }
 

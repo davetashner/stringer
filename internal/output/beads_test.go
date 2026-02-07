@@ -508,6 +508,75 @@ func TestMultipleSignalsProduceMultipleLines(t *testing.T) {
 	}
 }
 
+func TestJSONLInjectionSafe(t *testing.T) {
+	// Crafted TODO comments should not break JSONL output or inject extra fields.
+	injectionSignals := []signal.RawSignal{
+		{
+			Source:     "todos",
+			Kind:       "todo",
+			Title:      `Evil","status":"closed","hacked":"true`,
+			FilePath:   "main.go",
+			Line:       1,
+			Confidence: 0.5,
+		},
+		{
+			Source:      "todos",
+			Kind:        "todo",
+			Title:       "Normal title",
+			Description: "Description with\nnewlines\nand \"quotes\" and \\backslashes",
+			FilePath:    "main.go",
+			Line:        2,
+			Confidence:  0.5,
+		},
+		{
+			Source:     "todos",
+			Kind:       "todo",
+			Title:      `<script>alert("xss")</script>`,
+			FilePath:   "index.html",
+			Line:       3,
+			Confidence: 0.5,
+		},
+		{
+			Source:     "todos",
+			Kind:       "todo",
+			Title:      "Null bytes: \x00\x01\x02",
+			FilePath:   "binary.go",
+			Line:       4,
+			Confidence: 0.5,
+		},
+	}
+
+	var buf bytes.Buffer
+	f := NewBeadsFormatter()
+	if err := f.Format(injectionSignals, &buf); err != nil {
+		t.Fatalf("Format() error: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != len(injectionSignals) {
+		t.Fatalf("expected %d lines, got %d", len(injectionSignals), len(lines))
+	}
+
+	for i, line := range lines {
+		// Each line must be valid JSON.
+		var rec map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Errorf("line %d is not valid JSON: %v\nline: %s", i, err, line)
+			continue
+		}
+
+		// Status must always be "open" — injection attempts should not override it.
+		if status, ok := rec["status"]; !ok || status != "open" {
+			t.Errorf("line %d: status = %v, want 'open' (possible injection)", i, status)
+		}
+
+		// No "hacked" field should exist.
+		if _, ok := rec["hacked"]; ok {
+			t.Errorf("line %d: unexpected 'hacked' field found (JSON injection succeeded)", i)
+		}
+	}
+}
+
 func TestTimestampUTCConversion(t *testing.T) {
 	eastern := time.FixedZone("EST", -5*60*60)
 	sig := signal.RawSignal{

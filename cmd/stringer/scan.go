@@ -61,6 +61,12 @@ func runScan(cmd *cobra.Command, args []string) error {
 		return exitError(ExitInvalidArgs, "stringer: cannot resolve path %q (%v)", repoPath, err)
 	}
 
+	// Resolve symlinks to prevent path traversal outside the intended tree.
+	absPath, err = filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return exitError(ExitInvalidArgs, "stringer: cannot resolve path %q (%v)", repoPath, err)
+	}
+
 	info, err := os.Stat(absPath)
 	if err != nil {
 		return exitError(ExitInvalidArgs, "stringer: path %q does not exist (check the path and try again)", repoPath)
