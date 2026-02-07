@@ -10,15 +10,13 @@ linters:
     - gosec
     - gocritic
     - misspell
-
-linters-settings:
-  gosec:
-    excludes:
-      - G204  # subprocess launch - needed for git interaction
-
-issues:
-  exclude-dirs:
-    - vendor
+  settings:
+    gosec:
+      excludes:
+        - G204  # subprocess launch - needed for git interaction
+  exclusions:
+    paths:
+      - vendor
 
 formatters:
   enable:
