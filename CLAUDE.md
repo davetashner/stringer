@@ -21,6 +21,13 @@
 - Reference issue ID in commits: `feat: add scanner [stringer-bsf]`
 - After PR merge: `bd close <id> --reason "Completed in PR #N"`
 
+## Decision Records
+
+- When a task involves choosing between approaches (libraries, patterns, formats, trade-offs), **write a decision record before implementing**.
+- Create `docs/decisions/NNN-short-title.md` using the template in AGENTS.md.
+- Set status to `Proposed` — do not implement until a developer accepts the decision.
+- Reference the beads issue ID in the record's Context field.
+
 ## Build & Test
 
 ```bash

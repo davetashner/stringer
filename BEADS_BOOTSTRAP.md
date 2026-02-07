@@ -107,3 +107,50 @@ Phase 2+: Later phases depend on Phase 1
 ```
 
 This structure supports 6-8 agents working in parallel once Phase 0 completes.
+
+## Persona Review Passes
+
+After the initial backlog is bootstrapped, run it through expert persona reviews to stress-test scope, ordering, and completeness. Each pass examines the backlog from a specialized perspective and proposes concrete modifications.
+
+### Pass 1: Expert CLI Designer
+
+**Reviewer prompt:** "You are an expert CLI designer. Examine the beads backlog and assess how well planned this CLI project is."
+
+**What was caught:**
+
+| Finding | Severity | Action Taken |
+|---------|----------|--------------|
+| No defined MVP or release milestones — 249 issues with no clear "you can stop here" boundary | High | Defined v0.1.0 MVP scope (~27 tasks) with a single goal: `stringer scan . \| bd import -i -` |
+| Foundation over-engineered before any feature code — F5 Pipeline Runner had parallel execution, 3 error modes, dedup before a single collector existed | High | Simplified F5 to 2 tasks (sequential execution + basic validation). Moved parallelism/dedup/error modes to new F5-2 epic |
+| F1-CI had 12 tasks including GoReleaser, Homebrew tap, SAST, and badges — release infrastructure for a tool with zero functionality | Medium | Trimmed to 5 tasks (build/test/fmt/lint/vet). Reparented 14 tasks to new F1-CI-2: CI Hardening epic |
+| F3 (Config) blocking F4 (CLI) — forced config system before any CLI could be built, but hardcoded defaults work fine for MVP | Medium | Deferred F3 to P3, removed as blocker of F4 |
+| No TODO collector, beads formatter, or scan command in the backlog — the three things needed for the tool to actually work | High | Created C1 (4 tasks), O1 (3 tasks), CLI1 (4 tasks) epics with proper dependency wiring |
+| T1 Test Framework had mock GitHub server and golden file infra before any collector existed | Low | Trimmed to 2 tasks (testify + fixtures). Closed premature test infra tasks |
+| Missing `stringer version` command | Low | Added as F4.5 |
+| 3 orphaned CLI1 tasks (--min-confidence, --git-depth, --churn-threshold) with no parent epic and dependent on non-existent collectors | Low | Closed with "deferred to post-MVP" |
+| All priorities were 0 — no signal about build order within a phase | Low | New MVP epics set to P1, deferred epics set to P3 |
+
+**Estimated quality increase:** The initial backlog was comprehensive in vision but lacked execution focus. The main risk was spending 50+ tasks on scaffolding, CI, and abstractions before writing a single collector or formatter — the pieces that make the tool actually useful. The review compressed the critical path from ~50 open tasks to ~27 MVP-scoped tasks, introduced a clear milestone definition, and ensured the dependency graph reflects what's truly needed to ship a working tool. Estimated reduction in time-to-first-working-version: **40-60%**.
+
+### Pass 2: End User (Beads Adopter on a Legacy Codebase)
+
+**Reviewer prompt:** "You are an end user who is familiar with beads and wants to start using beads on a complicated legacy codebase. Evaluate the repository README and other project assets and provide an analysis of how clear it is what the problem is and how stringer aims to solve it. Propose additional questions we might ask a potential user to influence the product design."
+
+**What was caught:**
+
+| Finding | Severity | Action Taken |
+|---------|----------|--------------|
+| No maturity signal anywhere — README reads as if the tool is finished and ready to use, but zero code exists. Users who discover vaporware after investing time evaluating feel burned. | High | Created UX1.1: Add pre-alpha status banner to README |
+| No guidance on expected output volume — a user scanning a 50k-line legacy codebase has no idea if they'll get 20 beads or 500. Fear of backlog flooding is the #1 barrier to trying the tool. | High | Created UX1.2: Add "What to Expect" section with realistic output guidance |
+| No "start small" recipe for nervous adopters — the README shows the full-power happy path but doesn't guide users who want to dip a toe in with a narrow, safe first scan | Medium | Created UX1.3: Add "Start Small" quickstart for legacy codebase adopters |
+| Stringer-generated bead lifecycle is hand-waved — README says "idempotent" but doesn't explain what happens on re-scan after fixing TODOs, whether manual edits to stringer beads survive, or the interim story before `--delta` ships | Medium | Created UX1.4: Document stringer-generated bead lifecycle |
+| Confidence scoring is a black box — users will filter on `--min-confidence` without understanding what the number means. No documentation of heuristics per collector. | Medium | Created UX1.5: Document noise management strategy. Updated stringer-vkt (C1: TODO Collector) description to flag this as a requirement. |
+| No target user personas defined — the tool is being built for "someone" but product decisions (default filters, output volume, LLM requirement) depend on who that someone is | Medium | Created UX2.1: Define target user personas |
+| No user interview guide or research plan — 14 product-shaping questions identified (noise tolerance, LLM willingness, codebase profiles, competitive positioning) with no mechanism to collect answers | Low | Created UX2.2: Draft user interview guide |
+| Open question: how many beads is too many? No research on noise tolerance thresholds to inform default `--min-confidence` and whether a `--max-issues` cap is needed | Medium | Created UX2.3: Validate noise tolerance thresholds |
+| Open question: is `--no-llm` the real MVP? The LLM clustering demo is the most compelling feature in the README but requires an API key and per-scan cost. Unclear if the value prop collapses without it. | Medium | Created UX2.4: Validate LLM-optional positioning |
+| Language-agnostic pattern detection will produce false positives on real codebases (generated protobuf files flagged as "large", vendor/ meaning different things per ecosystem) | Low | Updated stringer-8s5 (FUT2: Language Plugins) description with user research note |
+| Delta scanning (`--delta`) listed as "coming soon" but is critical for ongoing use — without it, users must choose between wiping/rescanning or never running stringer again after bootstrap | Low | Updated stringer-7ws (A1: Delta Scanning) description with lifecycle urgency note |
+| Decision records missing from agent workflow — agents make architectural choices (libraries, patterns, formats) without documenting trade-offs for developer review | Medium | Added Decision Records section to AGENTS.md and CLAUDE.md. Created `docs/decisions/` directory. |
+
+**Estimated quality increase:** Pass 1 fixed the build plan — what to build and in what order. Pass 2 fixes the product story — why someone would adopt stringer and whether they'd trust it on a real codebase. The backlog previously had zero user-facing work items; all 269 issues were implementation tasks. The two new epics (UX1: 5 tasks, UX2: 4 tasks) are entirely unblocked and can run in parallel with scaffolding, meaning product clarity improves without delaying code. The decision records process adds a lightweight governance layer that prevents agents from baking in architectural choices that should be reviewed by developers. Most critically, the noise management and "What to Expect" documentation addresses the #1 adoption risk — that a user's first scan floods their backlog and they never try stringer again. Estimated reduction in first-user-abandonment risk: **30-50%**.

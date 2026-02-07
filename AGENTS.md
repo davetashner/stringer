@@ -25,6 +25,8 @@ stringer/
 │   │   └── json.go         # Raw signal dump for debugging
 │   └── config/         # Configuration and defaults
 ├── tests/
+├── docs/
+│   └── decisions/     # Decision records (see "Decision Records" section)
 ├── go.mod
 ├── go.sum
 ├── AGENTS.md           # You are here
@@ -74,6 +76,71 @@ golangci-lint run ./...
 4. **Stringer never modifies the target repo.** It is read-only. It writes output to stdout or a specified file. The user decides when and how to `bd import`.
 
 5. **Idempotency matters.** Running stringer twice on the same repo should produce the same output (modulo LLM non-determinism in clustering mode). Use deterministic hashing for signal deduplication.
+
+## Decision Records
+
+When you encounter a design decision with multiple valid approaches, **create a decision record before implementing**. Decision records ensure developers can review trade-offs and make informed choices rather than discovering baked-in assumptions after the fact.
+
+### When to create a decision record
+
+- Choosing between libraries or dependencies (e.g., `go-git` vs. shelling out to `git`)
+- Architectural patterns (e.g., streaming vs. batch signal processing)
+- API/CLI surface design (e.g., flag naming, output format defaults)
+- Data format choices (e.g., how to hash signals for dedup)
+- Trade-offs between simplicity and flexibility (e.g., hardcoded defaults vs. config)
+- Anything where a reasonable person could argue for a different approach
+
+### Decision record format
+
+Create a markdown file in `docs/decisions/` named `NNN-short-title.md`:
+
+```markdown
+# NNN: Short Decision Title
+
+**Status:** Proposed | Accepted | Superseded by NNN
+**Date:** YYYY-MM-DD
+**Context:** What beads issue or work prompted this decision?
+
+## Problem
+
+What question needs answering? What constraint or trade-off exists?
+
+## Options
+
+### Option A: [Name]
+**Pros:**
+- ...
+
+**Cons:**
+- ...
+
+### Option B: [Name]
+**Pros:**
+- ...
+
+**Cons:**
+- ...
+
+### Option C: [Name] (if applicable)
+...
+
+## Recommendation
+
+Which option do you recommend and why? What's the key differentiator?
+
+## Decision
+
+[Filled in by developer after review. State the chosen option and any
+conditions or caveats.]
+```
+
+### Rules
+
+- **Do NOT implement a decision before it's recorded.** Write the record, set status to `Proposed`, and let a developer accept it.
+- Number sequentially: `001`, `002`, etc.
+- Reference the relevant beads issue ID in the Context field.
+- Keep options concrete — include code snippets, interface sketches, or config examples where they clarify trade-offs.
+- If a decision is later reversed, set status to `Superseded by NNN` and create a new record explaining why.
 
 ## Working on Stringer
 
