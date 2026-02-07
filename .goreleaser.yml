@@ -43,6 +43,25 @@ changelog:
       - "^chore:"
       - "^ci:"
 
+# Homebrew tap auto-publish
+# Requires a HOMEBREW_TAP_TOKEN secret in the repository settings:
+#   - Create a GitHub PAT (classic) with 'repo' scope
+#   - The PAT must have write access to davetashner/homebrew-tap
+#   - Add it as a repository secret named HOMEBREW_TAP_TOKEN
+brews:
+  - repository:
+      owner: davetashner
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/davetashner/stringer"
+    description: "Codebase archaeology tool that mines git repos for actionable Beads issues"
+    license: "MIT"
+    folder: Formula
+    test: |
+      system "#{bin}/stringer", "version"
+    install: |
+      bin.install "stringer"
+
 release:
   github:
     owner: davetashner
