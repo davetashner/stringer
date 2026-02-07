@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   test:
@@ -203,3 +204,106 @@ jobs:
             exit 1
           }
           echo "All dependency licenses are compliant."
+
+  archived-deps:
+    name: Archived Deps Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Check for archived dependencies
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Checking dependencies for archived/EOL repositories..."
+
+          # Get all module dependencies, filter to GitHub-hosted ones
+          deps=$(go list -m -json all 2>/dev/null | \
+            jq -r 'select(.Path != null) | .Path' | \
+            grep '^github\.com/' | \
+            sort -u)
+
+          found_archived=0
+          for mod_path in $deps; do
+            # Extract owner/repo from module path (first two path segments after github.com)
+            owner_repo=$(echo "$mod_path" | cut -d'/' -f2,3)
+
+            # Skip if we can't parse owner/repo
+            if [ -z "$owner_repo" ] || ! echo "$owner_repo" | grep -q '/'; then
+              continue
+            fi
+
+            # Query GitHub API for archived status
+            archived=$(gh api "repos/${owner_repo}" --jq '.archived' 2>/dev/null || echo "unknown")
+
+            if [ "$archived" = "true" ]; then
+              echo "::warning::Archived dependency: ${mod_path} (https://github.com/${owner_repo})"
+              found_archived=1
+            fi
+          done
+
+          if [ "$found_archived" -eq 1 ]; then
+            echo ""
+            echo "Some dependencies use archived repositories."
+            echo "Consider finding maintained alternatives."
+          else
+            echo "No archived dependencies found."
+          fi
+          # Always succeed — this is a warning-only check
+          exit 0
+
+  pr-size-guard:
+    name: PR Size Guard
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    env:
+      PR_SIZE_WARN: ${{ vars.PR_SIZE_WARN || '500' }}
+      PR_SIZE_FAIL: ${{ vars.PR_SIZE_FAIL || '1000' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PR size
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pr_number="${{ github.event.pull_request.number }}"
+          repo="${{ github.repository }}"
+
+          # Get additions and deletions from the PR
+          pr_data=$(gh api "repos/${repo}/pulls/${pr_number}" --jq '{additions: .additions, deletions: .deletions}')
+          additions=$(echo "$pr_data" | jq '.additions')
+          deletions=$(echo "$pr_data" | jq '.deletions')
+          total=$((additions + deletions))
+
+          echo "PR #${pr_number}: +${additions} -${deletions} = ${total} lines changed"
+          echo "Warn threshold: ${PR_SIZE_WARN} lines"
+          echo "Fail threshold: ${PR_SIZE_FAIL} lines"
+
+          if [ "$total" -gt "$PR_SIZE_FAIL" ]; then
+            # Post a comment and fail
+            gh pr comment "$pr_number" --repo "$repo" --body "$(cat <<EOF
+          :x: **PR Size Guard — Too Large**
+
+          This PR has **${total} lines changed** (+${additions} / -${deletions}), which exceeds the maximum of **${PR_SIZE_FAIL} lines**.
+
+          Please break this into smaller PRs. Large PRs are harder to review and more likely to introduce bugs.
+          EOF
+            )"
+            echo "::error::PR has ${total} lines changed, exceeding the limit of ${PR_SIZE_FAIL}"
+            exit 1
+
+          elif [ "$total" -gt "$PR_SIZE_WARN" ]; then
+            # Post a warning comment but pass
+            gh pr comment "$pr_number" --repo "$repo" --body "$(cat <<EOF
+          :warning: **PR Size Guard — Large PR**
+
+          This PR has **${total} lines changed** (+${additions} / -${deletions}), which exceeds the warning threshold of **${PR_SIZE_WARN} lines**.
+
+          Consider breaking future changes into smaller PRs when possible.
+          EOF
+            )"
+            echo "::warning::PR has ${total} lines changed, exceeding the warning threshold of ${PR_SIZE_WARN}"
+          else
+            echo "PR size is within limits."
+          fi
