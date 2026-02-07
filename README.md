@@ -1,10 +1,12 @@
-# Stringer 🧵
+# Stringer
 
-**Codebase archaeology for [Beads](https://github.com/steveyegge/beads). Mine your repo's history and code for actionable work items, output them as Beads-formatted issues, and give your AI agents instant situational awareness on any codebase.**
+> **Status: v0.1.0 — MVP.** Works today with TODO/FIXME scanning and Beads JSONL output. One collector, one output format. See [Current Limitations](#current-limitations) for what's not here yet.
+
+**Codebase archaeology for [Beads](https://github.com/steveyegge/beads).** Mine your repo for actionable work items, output them as Beads-formatted issues, and give your AI agents instant situational awareness.
 
 ```bash
 # Install
-go install github.com/yourusername/stringer/cmd/stringer@latest
+go install github.com/davetashner/stringer/cmd/stringer@latest
 
 # Scan a repo and seed beads
 cd your-project
@@ -16,216 +18,246 @@ bd ready --json
 
 ## The Problem
 
-You adopt [Beads](https://github.com/steveyegge/beads) to give your coding agents persistent memory. On a new project, this works great — agents file issues as they go, and the dependency graph grows organically.
+You adopt [Beads](https://github.com/steveyegge/beads) to give your coding agents persistent memory. On a new project, agents file issues as they go and the dependency graph grows organically.
 
-But most real work happens on **existing codebases**. When an agent boots up on a 50k-line repo with an empty `.beads/` directory, it has zero context. It doesn't know about the 47 TODOs scattered across the codebase, the module that gets reverted every other week, or the authentication refactor that's been half-finished for six months.
+But most real work happens on **existing codebases**. When an agent boots up on a 50k-line repo with an empty `.beads/` directory, it has zero context. It doesn't know about the 47 TODOs scattered across the codebase or the half-finished refactor that's been sitting there for six months.
 
-Stringer solves the cold-start problem. It mines signals that already exist in your repo — TODO comments, git history patterns, open GitHub issues — and produces a structured set of Beads issues that agents can immediately orient around.
+Stringer solves the cold-start problem. It mines signals already present in your repo and produces structured Beads issues that agents can immediately orient around.
 
-## How It Works
+## What It Does Today
 
-Stringer runs a pipeline of **collectors** that extract raw signals, then optionally uses an LLM pass to cluster, deduplicate, and prioritize them into well-structured Beads issues.
+Stringer v0.1.0 has one collector and one output format:
+
+- **TODO collector** (`todos`) — Scans source files for `TODO`, `FIXME`, `HACK`, `XXX`, `BUG`, and `OPTIMIZE` comments across common comment styles (`//`, `#`, `/* */`, `*`, `--`)
+- **Git blame enrichment** — Each signal is enriched with author name and timestamp from `git blame`
+- **Confidence scoring** — Keyword-specific base scores with age-based boosts (see [How Output Works](#how-output-works))
+- **Beads JSONL output** — Produces JSONL ready for `bd import`, with deterministic content-based IDs
+- **Dry-run mode** — Preview signal counts without producing output
 
 ```
-┌─────────────────────────────────────────────┐
-│              Target Repository              │
-└──────────┬──────────┬─────────┬─────────────┘
-           │          │         │
-     ┌─────▼──┐ ┌─────▼──┐ ┌────▼─────┐
-     │ TODO/  │ │  Git   │ │  GitHub  │  ... extensible
-     │ FIXME  │ │  Log   │ │  Issues  │
-     │ Scan   │ │Analysis│ │  Import  │
-     └─────┬──┘ └─────┬──┘ └─────┬────┘
-           │          │          │
-           ▼          ▼          ▼
-     ┌─────────────────────────────────┐
-     │       Raw Signal Stream         │
-     │  (deduplicated, normalized)     │
-     └──────────────┬──────────────────┘
-                    │
-              ┌─────▼────────┐
-              │ LLM Pass     │  (optional)
-              │ - Cluster    │
-              │ - Prioritize │
-              │ - Infer deps │
-              └─────┬────────┘
-                    │
-              ┌─────▼───────┐
-              │ Beads JSONL │
-              │   Output    │
-              └─────────────┘
-                    │
-                    ▼
-              bd import -i -
+┌─────────────────────────────────┐
+│       Target Repository         │
+└────────────────┬────────────────┘
+                 │
+          ┌──────▼──────┐
+          │ TODO/FIXME  │  ... extensible
+          │   Scanner   │
+          └──────┬──────┘
+                 │
+          ┌──────▼──────┐
+          │ Git Blame   │
+          │ Enrichment  │
+          └──────┬──────┘
+                 │
+          ┌──────▼──────┐
+          │ Beads JSONL │
+          │   Output    │
+          └──────┬──────┘
+                 │
+                 ▼
+           bd import -i -
 ```
 
-## Collectors
+## What to Expect
 
-| Collector | What it finds | Flag |
-|-----------|--------------|------|
-| **todos** | `TODO`, `FIXME`, `HACK`, `XXX`, `BUG`, `OPTIMIZE` comments with file location and git blame authorship | `--collectors=todos` |
-| **gitlog** | Reverted commits, high-churn files (edited frequently, likely unstable), WIP/stale branches, repeated changes to the same code | `--collectors=gitlog` |
-| **github** | Open issues and PRs from the GitHub API, mapped to beads issue types | `--collectors=github` |
-| **patterns** | Large files, dead code indicators, deeply nested directories, files with no test coverage (heuristic) | `--collectors=patterns` |
+Output volume depends on codebase size and coding style:
 
-All collectors are enabled by default. Disable any with `--collectors=todos,gitlog` (only listed collectors run).
+| Codebase | Approximate signals |
+|----------|-------------------|
+| Small (<5k LOC) | 5-30 |
+| Medium (10k-50k LOC) | 20-200 |
+| Large (100k+ LOC) | 100-1,000+ |
 
-## Usage
-
-### Basic: scan and import
+**Recommendation:** Use `--dry-run` first to see signal counts, then use `--max-issues` to cap output on your first scan.
 
 ```bash
-# Scan current directory, pipe directly to beads
-stringer scan . | bd import -i -
-
-# Preview what would be generated (no output file)
+# Preview how many signals exist
 stringer scan . --dry-run
 
-# Save to file, review, then import
+# Start with a manageable batch
+stringer scan . --max-issues 50 | bd import -i -
+```
+
+## Getting Started
+
+Start small. You can always scan again.
+
+```bash
+# 1. Preview signal count
+stringer scan . --dry-run
+
+# 2. Import a capped first batch (highest-confidence signals first)
+stringer scan . --max-issues 20 | bd import -i -
+
+# 3. See what your agents can now work on
+bd ready --json
+
+# 4. When ready, import everything
+stringer scan . | bd import -i -
+```
+
+### Save to file for review
+
+```bash
 stringer scan . -o signals.jsonl
-cat signals.jsonl     # review
+cat signals.jsonl          # review
 bd import -i signals.jsonl
 ```
 
-### Selective scanning
+### Machine-readable dry run
 
 ```bash
-# Only TODO/FIXME comments
-stringer scan . --collectors=todos
-
-# Only git history analysis
-stringer scan . --collectors=gitlog
-
-# Git history + GitHub issues (requires GITHUB_TOKEN)
-stringer scan . --collectors=gitlog,github
+stringer scan . --dry-run --json
 ```
 
-### Without LLM (deterministic mode)
-
-```bash
-# Skip clustering/prioritization, one bead per signal
-stringer scan . --no-llm
-
-# Useful for CI, air-gapped environments, or quick scans
+```json
+{
+  "total_signals": 70,
+  "collectors": [
+    {
+      "name": "todos",
+      "signals": 70,
+      "duration": "303.6685ms"
+    }
+  ],
+  "duration": "303.724958ms",
+  "exit_code": 0
+}
 ```
 
-### Tuning
-
-```bash
-# Only high-confidence signals
-stringer scan . --min-confidence=0.7
-
-# Limit git log depth
-stringer scan . --git-depth=500
-
-# Include closed/merged GitHub issues as pre-closed beads (for agent context)
-stringer scan . --include-closed
-
-# Custom priority threshold for churn detection
-stringer scan . --churn-threshold=10
-```
-
-### Output formats
-
-```bash
-# Beads JSONL (default, ready for bd import)
-stringer scan . -f beads
-
-# Human-readable markdown summary
-stringer scan . -f markdown
-
-# Raw signals as JSON (for debugging or custom processing)
-stringer scan . -f json
-```
-
-## What Stringer Produces
-
-A typical scan of a mature repo might generate beads like:
+## Usage Reference
 
 ```
-bd-a3f2  P1  bug    Fix authentication bypass in session handler
-               └─ Source: TODO comment in auth/session.go:142 (authored by alice, 8 months old)
-
-bd-e8c1  P2  task   Stabilize payment processing module
-               └─ Source: gitlog churn detection (payments/ modified 34 times in 60 days, 3 reverts)
-
-bd-7b19  P2  chore  Remove deprecated v1 API endpoints
-               └─ Source: TODO scan (12 related TODOs across api/v1/), clustered by LLM
-
-bd-d4a0  P3  task   Add test coverage for user registration flow
-               └─ Source: pattern detection (user/registration.go: 450 lines, 0 test files)
-
-bd-91fe  P1  bug    Fix race condition in worker pool
-               └─ Source: GitHub issue #234 (open, 3 months, 7 comments)
+stringer scan [path] [flags]
 ```
 
-When the LLM pass is enabled, related signals get clustered — those 12 scattered TODO comments about removing the v1 API become a single actionable bead with the individual locations listed in the description. Parent-child relationships are inferred where possible (e.g., the v1 API removal becomes an epic with child tasks per endpoint group).
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--collectors` | `-c` | (all) | Comma-separated list of collectors to run |
+| `--format` | `-f` | `beads` | Output format |
+| `--output` | `-o` | stdout | Output file path |
+| `--dry-run` | | | Show signal count without producing output |
+| `--json` | | | Machine-readable output for `--dry-run` |
+| `--max-issues` | | `0` | Cap output count (0 = unlimited) |
+| `--no-llm` | | | Skip LLM clustering pass (noop — reserved for future use) |
 
-## Integration with Beads
+**Global flags:** `--quiet` (`-q`), `--verbose` (`-v`), `--no-color`, `--help` (`-h`)
 
-Stringer is designed as a companion tool, not a replacement for any part of Beads. The workflow:
+**Available collectors:** `todos`
 
-1. **Bootstrap:** Run `stringer scan` once to seed `.beads/` with discovered work
-2. **Agent takeover:** Agents use `bd ready --json` to find work, file new issues with `bd create` as they go
-3. **Periodic refresh:** Optionally re-run `stringer scan --delta` to find new signals since last scan (coming soon)
+**Available formats:** `beads`
 
-Stringer-generated beads are tagged with `stringer-generated` so agents and humans can distinguish them from manually filed issues.
+## How Output Works
 
-## Configuration
+### Confidence Scoring
 
-Stringer looks for `.stringer.yaml` in the repo root or `~/.config/stringer/config.yaml` globally:
+Each signal gets a confidence score (0.0-1.0) based on keyword severity and age from git blame:
 
-```yaml
-# .stringer.yaml
-collectors:
-  todos:
-    patterns: ["TODO", "FIXME", "HACK", "XXX", "BUG", "OPTIMIZE"]
-    ignore_paths: ["vendor/", "node_modules/", ".git/"]
-  gitlog:
-    depth: 1000
-    churn_threshold: 10      # file changes in 90-day window
-    revert_lookback: 180     # days to scan for reverts
-  github:
-    token_env: "GITHUB_TOKEN"
-    include_prs: true
-    include_closed: false
-  patterns:
-    max_file_lines: 500      # flag files longer than this
-    min_test_ratio: 0.1      # flag modules below this test-to-source ratio
+**Base scores by keyword:**
 
-analyzer:
-  model: "claude-sonnet-4-5-20250929"
-  min_confidence: 0.5
-  cluster_similarity: 0.7    # threshold for grouping related signals
+| Keyword | Base Score |
+|---------|-----------|
+| `BUG` | 0.7 |
+| `FIXME` | 0.6 |
+| `HACK` | 0.55 |
+| `TODO` | 0.5 |
+| `XXX` | 0.5 |
+| `OPTIMIZE` | 0.4 |
 
-output:
-  format: "beads"
-  add_label: "stringer-generated"
+**Age boost from git blame:**
+- Older than 1 year: +0.2
+- Older than 6 months: +0.1
+- No blame data or recent: +0.0
+
+Score is capped at 1.0. See [DR-004](docs/decisions/004-confidence-scoring-semantics.md) for the full design rationale.
+
+### Priority Mapping
+
+Confidence maps to bead priority:
+
+| Confidence | Priority |
+|-----------|----------|
+| >= 0.8 | P1 |
+| >= 0.6 | P2 |
+| >= 0.4 | P3 |
+| < 0.4 | P4 |
+
+### Content-Based Hashing
+
+Each signal gets a deterministic ID: `SHA-256(source + kind + filepath + line + title)`, truncated to 8 hex characters with a `str-` prefix (e.g., `str-0e4098f9`). Re-scanning the same repo produces the same IDs, preventing duplicate beads on reimport.
+
+### Labels
+
+Every signal is tagged with:
+- The keyword kind (e.g., `todo`, `fixme`, `hack`)
+- `stringer-generated` — distinguishes stringer output from manually filed issues
+- The collector name (`todos`)
+
+### Sample Output
+
+Given this source file:
+
+```go
+// TODO: Add proper CLI argument parsing
+// FIXME: This will panic on nil input
+// HACK: Temporary workaround until upstream fixes the API
 ```
+
+Stringer produces:
+
+```jsonl
+{"id":"str-0e4098f9","title":"TODO: Add proper CLI argument parsing","description":"Location: main.go:6","type":"task","priority":3,"status":"open","created_at":"","created_by":"stringer","labels":["todo","stringer-generated","stringer-generated","todos"]}
+{"id":"str-11e6af70","title":"FIXME: This will panic on nil input","description":"Location: main.go:9","type":"bug","priority":2,"status":"open","created_at":"","created_by":"stringer","labels":["fixme","stringer-generated","stringer-generated","todos"]}
+{"id":"str-3afa7732","title":"HACK: Temporary workaround until upstream fixes the API","description":"Location: main.go:15","type":"chore","priority":3,"status":"open","created_at":"","created_by":"stringer","labels":["hack","stringer-generated","stringer-generated","todos"]}
+```
+
+The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `task`, `hack`/`xxx`/`optimize` -> `chore`.
+
+## Current Limitations
+
+- **Single collector.** Only TODO/FIXME scanning. No git log analysis, GitHub issue import, or pattern detection yet.
+- **No delta scanning.** Every run scans the full repo. No way to find only new signals since the last scan.
+- **No LLM clustering.** The `--no-llm` flag exists but is a noop. There is no LLM pass to cluster related signals or infer dependencies.
+- **No config file.** No `.stringer.yaml` or global config. All options are CLI flags.
+- **Line-sensitive hashing.** Moving a TODO to a different line changes its ID, which means `bd import` sees it as a new issue.
+- **No `--min-confidence` flag.** Use `--max-issues` to cap output volume. Confidence-based filtering is planned.
+- **Manual cleanup needed.** If you delete a TODO from source and re-scan, the old bead remains in `.beads/`. You need to close it manually with `bd close`.
+
+## Roadmap
+
+Planned for future releases:
+
+- **Git log collector** — Detect reverts, high-churn files, WIP/stale branches
+- **GitHub issues collector** — Import open issues and PRs as beads
+- **Pattern collector** — Flag large files, missing tests, deep nesting
+- **Markdown output format** — Human-readable summary
+- **JSON output format** — Raw signals for custom processing
+- **LLM clustering pass** — Group related signals, infer dependencies, prioritize
+- **Config file support** — `.stringer.yaml` for persistent scan configuration
+- **Delta scanning** — Only find signals added since last scan
+- **`--min-confidence` flag** — Filter by confidence threshold with named presets
 
 ## Design Principles
 
-**Read-only.** Stringer never modifies the target repository. It reads git history, scans files, and writes output to stdout or a specified file. You decide when to `bd import`.
+**Read-only.** Stringer never modifies the target repository. It reads files and git history, writes output to stdout or a file. You decide when to `bd import`.
 
-**Composable collectors.** Each collector is independent, testable, and can run in isolation. Adding new signal sources (Jira, GitLab, Sentry, etc.) means implementing one Go interface.
+**Composable collectors.** Each collector is independent, testable, and implements one Go interface. Adding a new signal source means implementing `Collector` with `Name()` and `Collect()` methods.
 
-**LLM-optional.** The core scanning works without any API keys. The LLM pass adds intelligence (clustering, priority inference, dependency detection) but isn't required. `--no-llm` mode is fully supported and deterministic.
+**LLM-optional.** Core scanning works without API keys. The LLM pass (when implemented) will add clustering and dependency inference but won't be required.
 
-**Idempotent.** Running stringer twice on the same repo produces the same output. Signal deduplication uses content-based hashing. This means you can safely re-run scans without creating duplicate beads.
+**Idempotent.** Running stringer twice on the same repo produces the same output. Content-based hashing ensures deterministic IDs.
 
-**Beads-native output.** The JSONL output is validated against `bd import` expectations. If `bd import` can't consume it, that's a stringer bug.
+**Beads-native output.** JSONL output is validated against `bd import` expectations. If `bd import` can't consume it, that's a stringer bug.
 
 ## Requirements
 
-- Go 1.22+
-- Git (for git log analysis)
+- Go 1.24+
+- Git (for blame enrichment)
 - `bd` CLI (for importing output into beads)
-- `GITHUB_TOKEN` (optional, for GitHub issues collector)
-- Anthropic API key (optional, for LLM clustering pass)
 
 ## Contributing
 
-See [AGENTS.md](./AGENTS.md) for architecture details and development workflow. This project uses Beads for task tracking — run `bd ready --json` to find open work.
+See [AGENTS.md](./AGENTS.md) for architecture details, the collector interface, and development workflow. This project uses Beads for task tracking — run `bd ready --json` to find open work.
 
 ## License
 

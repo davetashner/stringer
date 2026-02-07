@@ -8,39 +8,51 @@ Stringer is a codebase archaeology tool that mines existing repositories to prod
 
 ```
 stringer/
-├── cmd/stringer/       # CLI entrypoint
+├── cmd/stringer/           # CLI entrypoint
+│   ├── main.go                 # cobra root setup
+│   ├── root.go                 # root command, global flags
+│   ├── scan.go                 # scan subcommand and flags
+│   ├── version.go              # version subcommand
+│   └── exitcodes.go            # exit code constants
 ├── internal/
-│   ├── collectors/     # Signal extraction modules
-│   │   ├── todos.go        # TODO/FIXME/HACK/XXX comment scanner
-│   │   ├── gitlog.go       # Git log analyzer (reverts, churn, WIP)
-│   │   ├── githubissues.go # GitHub Issues API importer (optional)
-│   │   └── patterns.go     # Antipattern detector (dead code, large files, etc.)
-│   ├── analyzer/       # LLM-powered clustering and prioritization
-│   │   ├── cluster.go      # Group related signals into issues
-│   │   ├── prioritize.go   # Assign priority 0-4 based on signal strength
-│   │   └── dependencies.go # Infer parent-child and blocking relationships
-│   ├── output/         # Output formatters
-│   │   ├── beads.go        # Beads JSONL writer (primary)
-│   │   ├── markdown.go     # Human-readable summary
-│   │   └── json.go         # Raw signal dump for debugging
-│   └── config/         # Configuration and defaults
-├── tests/
+│   ├── collector/          # Collector registry and interface
+│   │   └── collector.go        # Register(), List(), Get(), Collector interface
+│   ├── collectors/         # Signal extraction modules
+│   │   └── todos.go            # TODO/FIXME/HACK/XXX/BUG/OPTIMIZE scanner
+│   ├── output/             # Output formatters
+│   │   ├── formatter.go        # Formatter interface and registry
+│   │   └── beads.go            # Beads JSONL writer (primary)
+│   ├── pipeline/           # Scan orchestration
+│   │   ├── pipeline.go         # New(), Run() — runs collectors, caps output
+│   │   └── validate.go         # ScanConfig validation
+│   ├── redact/             # Secret redaction
+│   │   └── redact.go           # Scrub sensitive patterns from signal content
+│   └── signal/             # Domain types
+│       └── signal.go           # RawSignal, ScanConfig, ScanResult, CollectorOpts
+├── test/
+│   └── integration/        # Integration tests
+├── testdata/
+│   └── fixtures/           # Test fixture repos
 ├── docs/
-│   └── decisions/     # Decision records (see "Decision Records" section)
+│   ├── decisions/          # Decision records (see "Decision Records" section)
+│   └── competitive-analysis.md
 ├── go.mod
 ├── go.sum
-├── AGENTS.md           # You are here
+├── AGENTS.md               # You are here
 ├── README.md
 ├── LICENSE
 └── CLAUDE.md
 ```
 
+**Note:** The collector architecture is extensible (see [Adding a new collector](#adding-a-new-collector)) but v0.1.0 ships with one implementation: the TODO collector. Planned collectors (gitlog, github, patterns) and additional formatters (markdown, json) are on the roadmap.
+
 ## Tech Stack
 
-- **Language:** Go (matches Beads ecosystem)
-- **LLM integration:** Anthropic API via `anthropic-sdk-go` for clustering/prioritization pass
-- **Git interaction:** `go-git` for log parsing, blame, diff analysis
-- **GitHub API:** `google/go-github` for optional issue import
+- **Language:** Go 1.24+ (matches Beads ecosystem)
+- **CLI framework:** `spf13/cobra` for command/flag parsing
+- **Git interaction:** `go-git` for blame lookups
+- **Testing:** `stretchr/testify` for assertions
+- **Linting:** `golangci-lint` v2 with gosec
 - **Output:** Beads-compatible JSONL adhering to `bd import` expectations
 
 ## Build & Test
@@ -50,7 +62,7 @@ stringer/
 go build -o stringer ./cmd/stringer
 
 # Run tests
-go test ./...
+go test -race ./...
 
 # Run linter
 golangci-lint run ./...
@@ -58,11 +70,14 @@ golangci-lint run ./...
 # Run on a target repo
 ./stringer scan /path/to/repo
 
-# Run with specific collectors only
-./stringer scan /path/to/repo --collectors=todos,gitlog
+# Only the TODO collector (currently the only one)
+./stringer scan /path/to/repo --collectors=todos
 
-# Dry run (preview without writing JSONL)
+# Dry run (preview signal count without writing JSONL)
 ./stringer scan /path/to/repo --dry-run
+
+# Dry run with machine-readable JSON output
+./stringer scan /path/to/repo --dry-run --json
 ```
 
 ## Key Design Decisions
@@ -147,16 +162,18 @@ conditions or caveats.]
 ### Adding a new collector
 
 1. Create `internal/collectors/yourname.go`
-2. Implement the `Collector` interface:
+2. Implement the `collector.Collector` interface:
    ```go
    type Collector interface {
        Name() string
-       Collect(ctx context.Context, repoPath string, opts CollectorOpts) ([]RawSignal, error)
+       Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error)
    }
    ```
-3. Register it in `internal/collectors/registry.go`
-4. Add tests in `internal/collectors/yourname_test.go`
-5. Update `README.md` collector table
+3. Self-register in an `init()` function: `collector.Register(&YourCollector{})`
+4. Add a blank import in `cmd/stringer/scan.go`: `_ "github.com/davetashner/stringer/internal/collectors"`
+   (already present — this ensures all collector `init()` functions run)
+5. Add tests in `internal/collectors/yourname_test.go`
+6. Update `README.md` collector list
 
 ### Signal schema
 
@@ -178,26 +195,24 @@ type RawSignal struct {
 ### Beads JSONL output contract
 
 Each line must be a valid JSON object that `bd import` accepts. Required fields:
-- `id`: hash-based (e.g., `bd-a1b2`) — use stringer's own deterministic hash
+- `id`: deterministic hash with `str-` prefix (e.g., `str-0e4098f9`) — SHA-256 of source+kind+filepath+line+title, truncated to 8 hex chars
 - `title`: string
-- `type`: one of `bug`, `feature`, `task`, `chore`
-- `priority`: 0-4
+- `type`: one of `bug`, `task`, `chore` (mapped from signal kind)
+- `priority`: 1-4 (mapped from confidence: >=0.8→P1, >=0.6→P2, >=0.4→P3, <0.4→P4)
 - `status`: `open` (always, since these are discovered work)
-- `created_at`: ISO 8601 timestamp
-- `created_by`: `stringer` or the original author
+- `created_at`: ISO 8601 timestamp (from git blame, empty if unavailable)
+- `created_by`: git blame author or `stringer` as fallback
 
 Optional but valuable:
-- `description`: detailed context
-- `labels`: tags from collector + `stringer-generated`
-- `dependencies`: inferred blocking/parent-child relationships
+- `description`: file location context (e.g., `Location: main.go:42`)
+- `labels`: kind tag + `stringer-generated` + collector name
 
 ### Before submitting changes
 
-- `go test ./...` — all tests pass
+- `go test -race ./...` — all tests pass
 - `golangci-lint run ./...` — no new warnings
 - Test output against `bd import` on a real repo
 - Update AGENTS.md if you changed the architecture or interfaces
-- Run `make check` (fmt + vet + lint + test) to mirror CI locally
 
 ### Main branch integrity
 
