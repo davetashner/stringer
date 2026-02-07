@@ -3,12 +3,18 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"sort"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/davetashner/stringer/internal/collector"
 	"github.com/davetashner/stringer/internal/signal"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	// Import collectors to trigger init() registration for resolveCollectors tests.
+	_ "github.com/davetashner/stringer/internal/collectors"
 )
 
 // stubCollector implements collector.Collector for testing.
@@ -735,4 +741,118 @@ func TestPipeline_DeduplicatesSameSource(t *testing.T) {
 	if result.Signals[0].Confidence != 0.9 {
 		t.Errorf("expected confidence 0.9 after dedup, got %v", result.Signals[0].Confidence)
 	}
+}
+
+// --- resolveCollectors tests ---
+
+func TestResolveCollectors_EmptyList_ReturnsAll(t *testing.T) {
+	// When names is empty, resolveCollectors should return all registered collectors.
+	// The collectors package init() registers "todos", "gitlog", "patterns".
+	collectors, err := resolveCollectors(nil)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, len(collectors), 1, "should return at least one registered collector")
+
+	// Verify the returned collectors are sorted by name.
+	names := make([]string, len(collectors))
+	for i, c := range collectors {
+		names[i] = c.Name()
+	}
+	assert.True(t, sort.StringsAreSorted(names), "collectors should be sorted by name, got: %v", names)
+}
+
+func TestResolveCollectors_EmptySlice_ReturnsAll(t *testing.T) {
+	// An empty (non-nil) slice should behave like nil -- return all collectors.
+	collectors, err := resolveCollectors([]string{})
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, len(collectors), 1, "should return at least one registered collector")
+}
+
+func TestResolveCollectors_ValidNames(t *testing.T) {
+	// Request specific known collectors.
+	registered := collector.List()
+	require.NotEmpty(t, registered, "expected at least one registered collector")
+
+	// Use the first registered collector name.
+	name := registered[0]
+	collectors, err := resolveCollectors([]string{name})
+	require.NoError(t, err)
+	require.Len(t, collectors, 1)
+	assert.Equal(t, name, collectors[0].Name())
+}
+
+func TestResolveCollectors_UnknownName(t *testing.T) {
+	collectors, err := resolveCollectors([]string{"does-not-exist"})
+	assert.Nil(t, collectors)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown collector: "does-not-exist"`)
+}
+
+func TestResolveCollectors_MixedValidAndInvalid(t *testing.T) {
+	// Get a real collector name.
+	registered := collector.List()
+	require.NotEmpty(t, registered)
+
+	validName := registered[0]
+	collectors, err := resolveCollectors([]string{validName, "bogus-collector"})
+	assert.Nil(t, collectors)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown collector: "bogus-collector"`)
+}
+
+func TestResolveCollectors_AllRegistered(t *testing.T) {
+	// Verify resolveCollectors(nil) returns exactly the set from collector.List().
+	allNames := collector.List()
+	sort.Strings(allNames)
+
+	collectors, err := resolveCollectors(nil)
+	require.NoError(t, err)
+	require.Len(t, collectors, len(allNames))
+
+	for i, c := range collectors {
+		assert.Equal(t, allNames[i], c.Name(), "collector at index %d should be %q", i, allNames[i])
+	}
+}
+
+func TestResolveCollectors_MultipleValidNames(t *testing.T) {
+	registered := collector.List()
+	if len(registered) < 2 {
+		t.Skip("need at least 2 registered collectors")
+	}
+
+	// Request two valid collectors.
+	names := registered[:2]
+	collectors, err := resolveCollectors(names)
+	require.NoError(t, err)
+	require.Len(t, collectors, 2)
+	assert.Equal(t, names[0], collectors[0].Name())
+	assert.Equal(t, names[1], collectors[1].Name())
+}
+
+// TestNew_EmptyCollectorList tests that New() with no collector names succeeds.
+func TestNew_EmptyCollectorList(t *testing.T) {
+	config := signal.ScanConfig{
+		RepoPath:   "/tmp/repo",
+		Collectors: nil,
+	}
+
+	p, err := New(config)
+	require.NoError(t, err)
+	assert.NotNil(t, p)
+	assert.GreaterOrEqual(t, len(p.collectors), 1, "should have at least one collector from registry")
+}
+
+// TestNew_ValidCollectorName tests that New() with a valid name succeeds.
+func TestNew_ValidCollectorName(t *testing.T) {
+	registered := collector.List()
+	require.NotEmpty(t, registered)
+
+	config := signal.ScanConfig{
+		RepoPath:   "/tmp/repo",
+		Collectors: []string{registered[0]},
+	}
+
+	p, err := New(config)
+	require.NoError(t, err)
+	assert.NotNil(t, p)
+	assert.Len(t, p.collectors, 1)
 }
