@@ -43,6 +43,13 @@ func GetFormatter(name string) (Formatter, error) {
 	return f, nil
 }
 
+// resetFmtForTesting clears the formatter registry. Only for use in tests.
+func resetFmtForTesting() {
+	fmtMu.Lock()
+	defer fmtMu.Unlock()
+	fmtRegistry = make(map[string]Formatter)
+}
+
 // formatNames returns a comma-separated sorted list of registered format names.
 func formatNames() string {
 	names := make([]string, 0, len(fmtRegistry))
