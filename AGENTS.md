@@ -197,6 +197,25 @@ Optional but valuable:
 - `golangci-lint run ./...` — no new warnings
 - Test output against `bd import` on a real repo
 - Update AGENTS.md if you changed the architecture or interfaces
+- Run `make check` (fmt + vet + lint + test) to mirror CI locally
+
+### Main branch integrity
+
+`main` must never contain code that fails to build, test, or lint. All changes require a pull request with passing CI — no direct pushes to `main`.
+
+**Required CI status checks** (all must pass before merge):
+
+| Check | What it verifies |
+|-------|-----------------|
+| `Test (Go 1.24)` | Build + tests on minimum supported Go version |
+| `Test (Go 1.25)` | Build + tests on latest Go version |
+| `Vet` | `go vet` static analysis |
+| `Format` | `gofmt` formatting compliance |
+| `Lint` | `golangci-lint` (includes gosec SAST) |
+| `Tidy` | `go.mod` / `go.sum` are tidy |
+| `Vulncheck` | No known vulnerabilities in dependencies |
+
+**No exceptions.** Branch protection enforces these checks for all users including admins. If CI is broken, fix the checks — do not bypass them.
 
 ## Use Beads for task tracking
 

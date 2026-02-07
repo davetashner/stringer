@@ -1,5 +1,5 @@
 # Binaries
-stringer
+/stringer
 *.exe
 *.dll
 *.so
