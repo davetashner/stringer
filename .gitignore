@@ -1,0 +1,49 @@
+# Binaries
+stringer
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build
+/dist/
+/bin/
+
+# Test
+coverage.out
+coverage.html
+*.test
+
+# Go
+vendor/
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+credentials.json
+service-account*.json
+*secret*
+!*secret*_test.go
+token.json
+.anthropic
+.openai
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Beads lock
+.beads/.jsonl.lock
