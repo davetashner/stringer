@@ -8,6 +8,15 @@ linters:
     - staticcheck
     - unused
     - gosec
+    - gocritic
+    - misspell
+  settings:
+    gosec:
+      excludes:
+        - G204  # subprocess launch - needed for git interaction
+  exclusions:
+    paths:
+      - vendor
 
 formatters:
   enable:
