@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/davetashner/stringer/internal/collector"
 	"github.com/davetashner/stringer/internal/signal"
@@ -41,30 +44,66 @@ func NewWithCollectors(config signal.ScanConfig, collectors []collector.Collecto
 	}
 }
 
-// Run executes all configured collectors sequentially, validates their output,
-// and returns the aggregated ScanResult. Collectors that return errors are
-// recorded in their CollectorResult but do not abort the pipeline. Invalid
-// signals are logged and skipped.
+// Run executes all configured collectors in parallel, validates their output,
+// and returns the aggregated ScanResult. Each collector runs in its own
+// goroutine using errgroup with context cancellation. Results are collected
+// with proper synchronization and returned in deterministic order matching
+// the input collector list. Collectors that return errors are recorded in
+// their CollectorResult but do not abort the pipeline. Invalid signals are
+// logged and skipped.
 func (p *Pipeline) Run(ctx context.Context) (*signal.ScanResult, error) {
 	start := time.Now()
 
+	if len(p.collectors) == 0 {
+		return &signal.ScanResult{
+			Signals:  nil,
+			Results:  nil,
+			Duration: time.Since(start),
+		}, nil
+	}
+
+	var (
+		mu      sync.Mutex
+		results = make([]signal.CollectorResult, len(p.collectors))
+	)
+
+	g, gctx := errgroup.WithContext(ctx)
+
+	for i, c := range p.collectors {
+		i, c := i, c // capture loop variables
+		g.Go(func() error {
+			result := p.runCollector(gctx, c)
+
+			mu.Lock()
+			results[i] = result
+			mu.Unlock()
+
+			if result.Err != nil {
+				log.Printf("collector %q returned error: %v", result.Collector, result.Err)
+			}
+			return nil
+		})
+	}
+
+	// Wait for all collectors to finish.
+	if err := g.Wait(); err != nil {
+		return &signal.ScanResult{
+			Results:  results,
+			Duration: time.Since(start),
+		}, err
+	}
+
+	// Collect valid signals from all results in deterministic order.
 	var allSignals []signal.RawSignal
-	var results []signal.CollectorResult
-
-	for _, c := range p.collectors {
-		result := p.runCollector(ctx, c)
-		results = append(results, result)
-
+	for i, result := range results {
 		if result.Err != nil {
-			log.Printf("collector %q returned error: %v", result.Collector, result.Err)
 			continue
 		}
-
-		// Validate each signal, keeping only valid ones.
 		for _, s := range result.Signals {
 			errs := ValidateSignal(s)
 			if len(errs) > 0 {
-				log.Printf("skipping invalid signal from %q (title=%q): %v", c.Name(), s.Title, errs)
+				log.Printf("skipping invalid signal from %q (title=%q): %v",
+					p.collectors[i].Name(), s.Title, errs)
 				continue
 			}
 			allSignals = append(allSignals, s)

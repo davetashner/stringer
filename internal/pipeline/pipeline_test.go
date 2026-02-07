@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -344,4 +345,143 @@ func TestNew_UnknownCollector(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unknown collector, got nil")
 	}
+}
+
+// --- Parallel Execution Tests ---
+
+func TestPipeline_ParallelExecution(t *testing.T) {
+	// Two slow collectors should run in parallel, taking roughly the time
+	// of one collector, not the sum.
+	stub1 := &stubCollector{
+		name:  "slow1",
+		delay: 100 * time.Millisecond,
+		signals: []signal.RawSignal{
+			{Source: "slow1", Title: "Signal A", FilePath: "a.go", Confidence: 0.8},
+		},
+	}
+	stub2 := &stubCollector{
+		name:  "slow2",
+		delay: 100 * time.Millisecond,
+		signals: []signal.RawSignal{
+			{Source: "slow2", Title: "Signal B", FilePath: "b.go", Confidence: 0.7},
+		},
+	}
+
+	p := NewWithCollectors(signal.ScanConfig{RepoPath: "/tmp/repo"},
+		[]collector.Collector{stub1, stub2})
+
+	start := time.Now()
+	result, err := p.Run(context.Background())
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	// Both collectors' signals should be present.
+	if len(result.Signals) != 2 {
+		t.Errorf("expected 2 signals, got %d", len(result.Signals))
+	}
+
+	// Parallel execution: total should be ~100ms, not ~200ms.
+	// Use 180ms as threshold to be safe with scheduling jitter.
+	if elapsed >= 180*time.Millisecond {
+		t.Errorf("parallel execution took %v, expected less than 180ms (sequential would be ~200ms)", elapsed)
+	}
+}
+
+func TestPipeline_ParallelResultOrdering(t *testing.T) {
+	// Even though collectors run in parallel, results should be in the
+	// same order as the input collectors slice.
+	fast := &stubCollector{
+		name:  "fast",
+		delay: 0,
+		signals: []signal.RawSignal{
+			{Source: "fast", Title: "Fast signal", FilePath: "f.go", Confidence: 0.8},
+		},
+	}
+	slow := &stubCollector{
+		name:  "slow",
+		delay: 50 * time.Millisecond,
+		signals: []signal.RawSignal{
+			{Source: "slow", Title: "Slow signal", FilePath: "s.go", Confidence: 0.7},
+		},
+	}
+
+	// slow is first in the list, but finishes last.
+	p := NewWithCollectors(signal.ScanConfig{RepoPath: "/tmp/repo"},
+		[]collector.Collector{slow, fast})
+	result, err := p.Run(context.Background())
+
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	// Results should preserve input order.
+	if result.Results[0].Collector != "slow" {
+		t.Errorf("results[0] = %q, want %q", result.Results[0].Collector, "slow")
+	}
+	if result.Results[1].Collector != "fast" {
+		t.Errorf("results[1] = %q, want %q", result.Results[1].Collector, "fast")
+	}
+
+	// Signals should also follow input collector order (slow first, then fast).
+	if len(result.Signals) != 2 {
+		t.Fatalf("expected 2 signals, got %d", len(result.Signals))
+	}
+	if result.Signals[0].Source != "slow" {
+		t.Errorf("signals[0].Source = %q, want %q", result.Signals[0].Source, "slow")
+	}
+	if result.Signals[1].Source != "fast" {
+		t.Errorf("signals[1].Source = %q, want %q", result.Signals[1].Source, "fast")
+	}
+}
+
+func TestPipeline_ParallelContextCancellation(t *testing.T) {
+	// When context is cancelled, all goroutines should respect it.
+	var started atomic.Int32
+
+	blockingCollector := &funcCollector{
+		name: "blocking",
+		fn: func(ctx context.Context) ([]signal.RawSignal, error) {
+			started.Add(1)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	quickCollector := &funcCollector{
+		name: "quick",
+		fn: func(ctx context.Context) ([]signal.RawSignal, error) {
+			started.Add(1)
+			return []signal.RawSignal{
+				{Source: "quick", Title: "Quick", FilePath: "q.go", Confidence: 0.5},
+			}, nil
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	p := NewWithCollectors(signal.ScanConfig{RepoPath: "/tmp/repo"},
+		[]collector.Collector{blockingCollector, quickCollector})
+
+	_, err := p.Run(ctx)
+
+	// The blocking collector gets a context error which is logged (warn),
+	// so Run itself should not return an error.
+	if err != nil {
+		t.Fatalf("Run() should not return error in warn mode, got %v", err)
+	}
+}
+
+// funcCollector is a collector that executes a function, useful for custom test behavior.
+type funcCollector struct {
+	name string
+	fn   func(ctx context.Context) ([]signal.RawSignal, error)
+}
+
+func (f *funcCollector) Name() string { return f.name }
+
+func (f *funcCollector) Collect(ctx context.Context, _ string, _ signal.CollectorOpts) ([]signal.RawSignal, error) {
+	return f.fn(ctx)
 }
