@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	"github.com/davetashner/stringer/internal/redact"
 )
 
 // Version is set via -ldflags at build time.
@@ -14,11 +16,11 @@ func main() {
 		var ece *exitCodeError
 		if errors.As(err, &ece) {
 			if ece.msg != "" {
-				fmt.Fprintln(os.Stderr, ece.msg)
+				fmt.Fprintln(os.Stderr, redact.String(ece.msg))
 			}
 			os.Exit(ece.code)
 		}
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, redact.String(err.Error()))
 		os.Exit(1)
 	}
 }
