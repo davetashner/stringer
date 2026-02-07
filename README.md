@@ -28,14 +28,14 @@ Stringer runs a pipeline of **collectors** that extract raw signals, then option
 
 ```
 ┌─────────────────────────────────────────────┐
-│              Target Repository               │
-└──────────┬──────────┬──────────┬────────────┘
-           │          │          │
+│              Target Repository              │
+└──────────┬──────────┬─────────┬─────────────┘
+           │          │         │
      ┌─────▼──┐ ┌─────▼──┐ ┌────▼─────┐
-     │ TODO/  │ │  Git   │ │ GitHub   │  ... extensible
-     │ FIXME  │ │  Log   │ │ Issues   │
-     │ Scan   │ │Analysis│ │ Import   │
-     └─────┬──┘ └─────┬──┘ └────┬─────┘
+     │ TODO/  │ │  Git   │ │  GitHub  │  ... extensible
+     │ FIXME  │ │  Log   │ │  Issues  │
+     │ Scan   │ │Analysis│ │  Import  │
+     └─────┬──┘ └─────┬──┘ └─────┬────┘
            │          │          │
            ▼          ▼          ▼
      ┌─────────────────────────────────┐
@@ -43,14 +43,14 @@ Stringer runs a pipeline of **collectors** that extract raw signals, then option
      │  (deduplicated, normalized)     │
      └──────────────┬──────────────────┘
                     │
-              ┌─────▼──────┐
-              │ LLM Pass   │  (optional)
-              │ - Cluster   │
-              │ - Prioritize│
-              │ - Infer deps│
-              └─────┬──────┘
+              ┌─────▼────────┐
+              │ LLM Pass     │  (optional)
+              │ - Cluster    │
+              │ - Prioritize │
+              │ - Infer deps │
+              └─────┬────────┘
                     │
-              ┌─────▼──────┐
+              ┌─────▼───────┐
               │ Beads JSONL │
               │   Output    │
               └─────────────┘
