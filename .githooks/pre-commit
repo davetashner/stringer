@@ -1,7 +1,30 @@
 #!/bin/sh
 #
-# Pre-commit hook: secret detection + beads sync
+# Pre-commit hook: secret detection, Go checks, and beads sync
 #
+
+# --- Go checks (vet + fmt) ---
+if command -v go >/dev/null 2>&1; then
+    # Only run if Go files are staged
+    if git diff --cached --name-only --diff-filter=ACM | grep -q '\.go$'; then
+        go vet ./... 2>&1
+        if [ $? -ne 0 ]; then
+            echo ""
+            echo "ERROR: go vet found issues. Commit blocked."
+            exit 1
+        fi
+
+        unformatted=$(gofmt -l $(git diff --cached --name-only --diff-filter=ACM | grep '\.go$'))
+        if [ -n "$unformatted" ]; then
+            echo ""
+            echo "ERROR: Files not formatted with gofmt:"
+            echo "$unformatted"
+            echo ""
+            echo "  Run: gofmt -w <file>"
+            exit 1
+        fi
+    fi
+fi
 
 # --- Secret Detection (gitleaks) ---
 if command -v gitleaks >/dev/null 2>&1; then

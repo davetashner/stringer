@@ -1,4 +1,4 @@
-.PHONY: build test cover lint fmt vet tidy check clean
+.PHONY: build test cover lint fmt vet tidy check install clean
 
 VERSION ?= dev
 LDFLAGS := -X main.Version=$(VERSION)
@@ -32,6 +32,9 @@ tidy:
 	@git diff --exit-code go.mod || (echo "go.mod not tidy" && exit 1)
 
 check: fmt vet lint test
+
+install:
+	go install -ldflags '$(LDFLAGS)' ./cmd/stringer
 
 clean:
 	rm -f stringer coverage.out
