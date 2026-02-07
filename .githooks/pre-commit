@@ -1,0 +1,64 @@
+#!/bin/sh
+#
+# Pre-commit hook: secret detection + beads sync
+#
+
+# --- Secret Detection (gitleaks) ---
+if command -v gitleaks >/dev/null 2>&1; then
+    gitleaks protect --staged --no-banner 2>&1
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo "ERROR: Secrets detected in staged files. Commit blocked."
+        echo ""
+        echo "  To view details:  gitleaks protect --staged --verbose"
+        echo "  To allow (risky):  git commit --no-verify"
+        echo ""
+        exit 1
+    fi
+else
+    echo "Warning: gitleaks not installed, skipping secret scan" >&2
+    echo "  Install: brew install gitleaks" >&2
+fi
+
+# --- Beads JSONL sync ---
+if ! command -v bd >/dev/null 2>&1; then
+    exit 0
+fi
+
+BEADS_DIR=""
+if git rev-parse --git-dir >/dev/null 2>&1; then
+    if [ "$(git rev-parse --git-dir)" != "$(git rev-parse --git-common-dir)" ]; then
+        MAIN_REPO_ROOT="$(dirname "$(git rev-parse --git-common-dir)")"
+        if [ -d "$MAIN_REPO_ROOT/.beads" ]; then
+            BEADS_DIR="$MAIN_REPO_ROOT/.beads"
+        fi
+    else
+        if [ -d .beads ]; then
+            BEADS_DIR=".beads"
+        fi
+    fi
+fi
+
+if [ -z "$BEADS_DIR" ]; then
+    exit 0
+fi
+
+if [ -f "$BEADS_DIR/metadata.json" ]; then
+    if grep -q '"backend"[[:space:]]*:[[:space:]]*"dolt"' "$BEADS_DIR/metadata.json" 2>/dev/null; then
+        exit 0
+    fi
+fi
+
+if ! bd sync --flush-only >/dev/null 2>&1; then
+    echo "Error: Failed to flush bd changes to storage" >&2
+    echo "Run 'bd sync --flush-only' manually to diagnose" >&2
+    exit 1
+fi
+
+if [ -f "$BEADS_DIR/issues.jsonl" ]; then
+    if [ "$(git rev-parse --git-dir)" = "$(git rev-parse --git-common-dir)" ]; then
+        git add "$BEADS_DIR/issues.jsonl" 2>/dev/null || true
+    fi
+fi
+
+exit 0
