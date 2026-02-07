@@ -228,7 +228,12 @@ Optional but valuable:
 | `Format` | `gofmt` formatting compliance |
 | `Lint` | `golangci-lint` (includes gosec SAST) |
 | `Tidy` | `go.mod` / `go.sum` are tidy |
+| `Coverage` | Test coverage above 55% threshold |
 | `Vulncheck` | No known vulnerabilities in dependencies |
+| `Binary Size` | Binary does not exceed 2x baseline (`.github/binary-size-baseline`) |
+| `Commit Lint` | PR commits follow conventional commits format (PRs only) |
+| `Go Generate` | Generated files are up to date |
+| `License Check` | All dependency licenses are OSS-compatible |
 
 **No exceptions.** Branch protection enforces these checks for all users including admins. If CI is broken, fix the checks — do not bypass them.
 
