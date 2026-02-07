@@ -676,3 +676,63 @@ func TestPipeline_ErrorMode_DefaultIsWarn(t *testing.T) {
 		t.Fatalf("Run() should not return error with default warn mode, got %v", err)
 	}
 }
+
+// --- Deduplication Integration Tests ---
+
+func TestPipeline_DeduplicatesSignals(t *testing.T) {
+	// Two collectors producing signals with different Sources should NOT be deduplicated.
+	stub1 := &stubCollector{
+		name: "collector1",
+		signals: []signal.RawSignal{
+			{Source: "collector1", Kind: "todo", FilePath: "a.go", Line: 10, Title: "Fix bug", Confidence: 0.7},
+		},
+	}
+	stub2 := &stubCollector{
+		name: "collector2",
+		signals: []signal.RawSignal{
+			// Same signal but different Source means different hash.
+			{Source: "collector2", Kind: "todo", FilePath: "a.go", Line: 10, Title: "Fix bug", Confidence: 0.9},
+		},
+	}
+
+	p := NewWithCollectors(signal.ScanConfig{RepoPath: "/tmp/repo"},
+		[]collector.Collector{stub1, stub2})
+	result, err := p.Run(context.Background())
+
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	// Different Source means different hash, so both should be present.
+	if len(result.Signals) != 2 {
+		t.Errorf("expected 2 signals (different sources), got %d", len(result.Signals))
+	}
+}
+
+func TestPipeline_DeduplicatesSameSource(t *testing.T) {
+	// Same source, same signal should be deduplicated.
+	stub := &stubCollector{
+		name: "collector",
+		signals: []signal.RawSignal{
+			{Source: "collector", Kind: "todo", FilePath: "a.go", Line: 10, Title: "Fix bug", Confidence: 0.5},
+			{Source: "collector", Kind: "todo", FilePath: "a.go", Line: 10, Title: "Fix bug", Confidence: 0.9},
+		},
+	}
+
+	p := NewWithCollectors(signal.ScanConfig{RepoPath: "/tmp/repo"},
+		[]collector.Collector{stub})
+	result, err := p.Run(context.Background())
+
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if len(result.Signals) != 1 {
+		t.Fatalf("expected 1 signal after dedup, got %d", len(result.Signals))
+	}
+
+	// Should have the higher confidence.
+	if result.Signals[0].Confidence != 0.9 {
+		t.Errorf("expected confidence 0.9 after dedup, got %v", result.Signals[0].Confidence)
+	}
+}

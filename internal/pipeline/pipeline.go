@@ -45,15 +45,19 @@ func NewWithCollectors(config signal.ScanConfig, collectors []collector.Collecto
 }
 
 // Run executes all configured collectors in parallel, validates their output,
-// and returns the aggregated ScanResult. Each collector runs in its own
-// goroutine using errgroup with context cancellation. Results are collected
-// with proper synchronization and returned in deterministic order matching
-// the input collector list.
+// deduplicates signals, and returns the aggregated ScanResult. Each collector
+// runs in its own goroutine using errgroup with context cancellation. Results
+// are collected with proper synchronization and returned in deterministic order
+// matching the input collector list.
 //
 // Error handling is controlled per-collector via ErrorMode in CollectorOpts:
 //   - Skip: errors are silently ignored
 //   - Warn: errors are logged, pipeline continues (default)
 //   - Fail: first error aborts the entire scan
+//
+// Signals are deduplicated via content-based hashing (Source + Kind + FilePath +
+// Line + Title). When duplicates are found, the first occurrence is kept and its
+// confidence is updated if a later duplicate has a higher value.
 //
 // Invalid signals are logged and skipped.
 func (p *Pipeline) Run(ctx context.Context) (*signal.ScanResult, error) {
@@ -123,6 +127,9 @@ func (p *Pipeline) Run(ctx context.Context) (*signal.ScanResult, error) {
 			allSignals = append(allSignals, s)
 		}
 	}
+
+	// Deduplicate signals based on content hash.
+	allSignals = DeduplicateSignals(allSignals)
 
 	// Apply MaxIssues cap if configured.
 	if p.config.MaxIssues > 0 && len(allSignals) > p.config.MaxIssues {
