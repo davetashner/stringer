@@ -1,11 +1,12 @@
 module github.com/davetashner/stringer
 
-go 1.24
+go 1.24.0
 
 require (
 	github.com/go-git/go-git/v5 v5.16.4
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
+	golang.org/x/sync v0.19.0
 )
 
 require (

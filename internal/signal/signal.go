@@ -3,6 +3,20 @@ package signal
 
 import "time"
 
+// ErrorMode controls how the pipeline handles errors from a collector.
+type ErrorMode string
+
+const (
+	// ErrorModeWarn logs the error and continues (default).
+	ErrorModeWarn ErrorMode = "warn"
+
+	// ErrorModeSkip silently ignores errors.
+	ErrorModeSkip ErrorMode = "skip"
+
+	// ErrorModeFail aborts the entire scan on first error.
+	ErrorModeFail ErrorMode = "fail"
+)
+
 // RawSignal represents a single actionable signal extracted from a repository.
 type RawSignal struct {
 	Source      string    // Collector name: "todos", "gitlog", etc.
@@ -27,6 +41,10 @@ type CollectorOpts struct {
 
 	// ExcludePatterns skips files matching these globs.
 	ExcludePatterns []string
+
+	// ErrorMode controls how errors from this collector are handled.
+	// Default (zero value or empty string) is treated as ErrorModeWarn.
+	ErrorMode ErrorMode
 }
 
 // ScanConfig holds the overall configuration for a scan operation.
