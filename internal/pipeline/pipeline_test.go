@@ -485,3 +485,194 @@ func (f *funcCollector) Name() string { return f.name }
 func (f *funcCollector) Collect(ctx context.Context, _ string, _ signal.CollectorOpts) ([]signal.RawSignal, error) {
 	return f.fn(ctx)
 }
+
+// --- Error Mode Tests ---
+
+func TestPipeline_ErrorModeWarn_Default(t *testing.T) {
+	// Default behavior: errors are logged, pipeline continues.
+	errCollector := &stubCollector{
+		name: "warn-collector",
+		err:  errors.New("something went wrong"),
+	}
+	goodCollector := &stubCollector{
+		name: "good-collector",
+		signals: []signal.RawSignal{
+			{Source: "good-collector", Title: "Valid", FilePath: "v.go", Confidence: 0.8},
+		},
+	}
+
+	p := NewWithCollectors(signal.ScanConfig{RepoPath: "/tmp/repo"},
+		[]collector.Collector{errCollector, goodCollector})
+	result, err := p.Run(context.Background())
+
+	if err != nil {
+		t.Fatalf("Run() should not return error in warn mode, got %v", err)
+	}
+	if len(result.Signals) != 1 {
+		t.Errorf("expected 1 signal, got %d", len(result.Signals))
+	}
+	if result.Results[0].Err == nil {
+		t.Error("expected error recorded in warn-collector result")
+	}
+}
+
+func TestPipeline_ErrorModeSkip(t *testing.T) {
+	// Skip mode: errors are silently ignored.
+	errCollector := &stubCollector{
+		name: "skip-collector",
+		err:  errors.New("silently ignored"),
+	}
+	goodCollector := &stubCollector{
+		name: "good-collector",
+		signals: []signal.RawSignal{
+			{Source: "good-collector", Title: "Valid", FilePath: "v.go", Confidence: 0.8},
+		},
+	}
+
+	config := signal.ScanConfig{
+		RepoPath: "/tmp/repo",
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"skip-collector": {ErrorMode: signal.ErrorModeSkip},
+		},
+	}
+
+	p := NewWithCollectors(config, []collector.Collector{errCollector, goodCollector})
+	result, err := p.Run(context.Background())
+
+	if err != nil {
+		t.Fatalf("Run() should not return error in skip mode, got %v", err)
+	}
+	if len(result.Signals) != 1 {
+		t.Errorf("expected 1 signal, got %d", len(result.Signals))
+	}
+	// The error is still recorded in the result.
+	if result.Results[0].Err == nil {
+		t.Error("expected error recorded in skip-collector result")
+	}
+}
+
+func TestPipeline_ErrorModeFail(t *testing.T) {
+	// Fail mode: first error aborts the entire scan.
+	errCollector := &stubCollector{
+		name:  "fail-collector",
+		err:   errors.New("fatal error"),
+		delay: 0,
+	}
+	goodCollector := &stubCollector{
+		name:  "good-collector",
+		delay: 10 * time.Millisecond, // slight delay so fail collector finishes first
+		signals: []signal.RawSignal{
+			{Source: "good-collector", Title: "Valid", FilePath: "v.go", Confidence: 0.8},
+		},
+	}
+
+	config := signal.ScanConfig{
+		RepoPath: "/tmp/repo",
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"fail-collector": {ErrorMode: signal.ErrorModeFail},
+		},
+	}
+
+	p := NewWithCollectors(config, []collector.Collector{errCollector, goodCollector})
+	result, err := p.Run(context.Background())
+
+	if err == nil {
+		t.Fatal("Run() should return error in fail mode")
+	}
+
+	// The error message should mention the collector.
+	if !errors.Is(err, errCollector.err) {
+		// Check that the error wraps the original.
+		if err.Error() != `collector "fail-collector" failed: fatal error` {
+			t.Errorf("unexpected error message: %q", err.Error())
+		}
+	}
+
+	// Result should still be returned (partial results).
+	if result == nil {
+		t.Fatal("expected non-nil result even on failure")
+	}
+}
+
+func TestPipeline_ErrorModeFail_OnlyOneCollector(t *testing.T) {
+	errCollector := &stubCollector{
+		name: "sole-fail",
+		err:  errors.New("only collector failed"),
+	}
+
+	config := signal.ScanConfig{
+		RepoPath: "/tmp/repo",
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"sole-fail": {ErrorMode: signal.ErrorModeFail},
+		},
+	}
+
+	p := NewWithCollectors(config, []collector.Collector{errCollector})
+	_, err := p.Run(context.Background())
+
+	if err == nil {
+		t.Fatal("Run() should return error when sole fail-mode collector fails")
+	}
+}
+
+func TestPipeline_MixedErrorModes(t *testing.T) {
+	// Test a mix: one fail-mode (success), one warn-mode (error), one skip-mode (error).
+	successFail := &stubCollector{
+		name: "success-fail",
+		signals: []signal.RawSignal{
+			{Source: "success-fail", Title: "Good", FilePath: "g.go", Confidence: 0.9},
+		},
+	}
+	errorWarn := &stubCollector{
+		name: "error-warn",
+		err:  errors.New("warned"),
+	}
+	errorSkip := &stubCollector{
+		name: "error-skip",
+		err:  errors.New("skipped"),
+	}
+
+	config := signal.ScanConfig{
+		RepoPath: "/tmp/repo",
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"success-fail": {ErrorMode: signal.ErrorModeFail},
+			"error-warn":   {ErrorMode: signal.ErrorModeWarn},
+			"error-skip":   {ErrorMode: signal.ErrorModeSkip},
+		},
+	}
+
+	p := NewWithCollectors(config, []collector.Collector{successFail, errorWarn, errorSkip})
+	result, err := p.Run(context.Background())
+
+	if err != nil {
+		t.Fatalf("Run() should not return error (fail-mode collector succeeded), got %v", err)
+	}
+
+	if len(result.Signals) != 1 {
+		t.Errorf("expected 1 signal, got %d", len(result.Signals))
+	}
+
+	// Check that errors are recorded for warn and skip collectors.
+	if result.Results[1].Err == nil {
+		t.Error("expected error recorded for error-warn")
+	}
+	if result.Results[2].Err == nil {
+		t.Error("expected error recorded for error-skip")
+	}
+}
+
+func TestPipeline_ErrorMode_DefaultIsWarn(t *testing.T) {
+	// When no CollectorOpts are configured at all, error mode defaults to warn.
+	errCollector := &stubCollector{
+		name: "no-opts",
+		err:  errors.New("unhandled"),
+	}
+
+	p := NewWithCollectors(signal.ScanConfig{RepoPath: "/tmp/repo"},
+		[]collector.Collector{errCollector})
+	_, err := p.Run(context.Background())
+
+	if err != nil {
+		t.Fatalf("Run() should not return error with default warn mode, got %v", err)
+	}
+}

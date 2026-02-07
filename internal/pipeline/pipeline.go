@@ -48,9 +48,14 @@ func NewWithCollectors(config signal.ScanConfig, collectors []collector.Collecto
 // and returns the aggregated ScanResult. Each collector runs in its own
 // goroutine using errgroup with context cancellation. Results are collected
 // with proper synchronization and returned in deterministic order matching
-// the input collector list. Collectors that return errors are recorded in
-// their CollectorResult but do not abort the pipeline. Invalid signals are
-// logged and skipped.
+// the input collector list.
+//
+// Error handling is controlled per-collector via ErrorMode in CollectorOpts:
+//   - Skip: errors are silently ignored
+//   - Warn: errors are logged, pipeline continues (default)
+//   - Fail: first error aborts the entire scan
+//
+// Invalid signals are logged and skipped.
 func (p *Pipeline) Run(ctx context.Context) (*signal.ScanResult, error) {
 	start := time.Now()
 
@@ -79,7 +84,16 @@ func (p *Pipeline) Run(ctx context.Context) (*signal.ScanResult, error) {
 			mu.Unlock()
 
 			if result.Err != nil {
-				log.Printf("collector %q returned error: %v", result.Collector, result.Err)
+				mode := p.errorMode(c.Name())
+				switch mode {
+				case signal.ErrorModeFail:
+					return fmt.Errorf("collector %q failed: %w", c.Name(), result.Err)
+				case signal.ErrorModeSkip:
+					// Silently ignore.
+				default:
+					// ErrorModeWarn (default).
+					log.Printf("collector %q returned error: %v", result.Collector, result.Err)
+				}
 			}
 			return nil
 		})
@@ -120,6 +134,14 @@ func (p *Pipeline) Run(ctx context.Context) (*signal.ScanResult, error) {
 		Results:  results,
 		Duration: time.Since(start),
 	}, nil
+}
+
+// errorMode returns the ErrorMode for a given collector, defaulting to Warn.
+func (p *Pipeline) errorMode(collectorName string) signal.ErrorMode {
+	if opts, ok := p.config.CollectorOpts[collectorName]; ok && opts.ErrorMode != "" {
+		return opts.ErrorMode
+	}
+	return signal.ErrorModeWarn
 }
 
 // runCollector executes a single collector and captures its result and timing.
