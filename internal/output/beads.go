@@ -25,6 +25,10 @@ type beadRecord struct {
 	Labels      []string `json:"labels,omitempty"`
 }
 
+func init() {
+	RegisterFormatter(NewBeadsFormatter())
+}
+
 // BeadsFormatter writes signals as Beads-compatible JSONL.
 type BeadsFormatter struct{}
 
