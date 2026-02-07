@@ -2,6 +2,8 @@ package main
 
 import (
 	"github.com/spf13/cobra"
+
+	stringerlog "github.com/davetashner/stringer/internal/log"
 )
 
 // Global flag values.
@@ -21,6 +23,9 @@ signals already present in the repo — TODOs, FIXMEs, git history patterns,
 and more — giving agents instant situational awareness.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
+	PersistentPreRun: func(_ *cobra.Command, _ []string) {
+		stringerlog.Setup(verbose, quiet)
+	},
 }
 
 func init() {

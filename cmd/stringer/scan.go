@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -113,9 +114,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		collectorNames = collector.List()
 		sort.Strings(collectorNames)
 	}
-	if !quiet {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "stringer: scanning with %d collector(s)...\n", len(collectorNames))
-	}
+	slog.Info("scanning", "collectors", len(collectorNames))
 
 	// 7. Run pipeline.
 	result, err := p.Run(cmd.Context())
@@ -124,14 +123,11 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 
 	// 8. Report per-collector progress.
-	if !quiet {
-		for i, cr := range result.Results {
-			status := fmt.Sprintf("%d signals", len(cr.Signals))
-			if cr.Err != nil {
-				status = fmt.Sprintf("error: %v", cr.Err)
-			}
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "stringer: [%d/%d] %s: %s (%s)\n",
-				i+1, len(result.Results), cr.Collector, status, cr.Duration.Round(1_000_000))
+	for _, cr := range result.Results {
+		if cr.Err != nil {
+			slog.Error("collector failed", "name", cr.Collector, "error", cr.Err, "duration", cr.Duration)
+		} else {
+			slog.Info("collector complete", "name", cr.Collector, "signals", len(cr.Signals), "duration", cr.Duration)
 		}
 	}
 
@@ -160,9 +156,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		return exitError(ExitTotalFailure, "stringer: formatting failed (%v)", err)
 	}
 
-	if !quiet {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "stringer: wrote %d issue(s) in %s\n", len(result.Signals), result.Duration.Round(1_000_000))
-	}
+	slog.Info("scan complete", "issues", len(result.Signals), "duration", result.Duration)
 
 	if exitCode != ExitOK {
 		return exitError(exitCode, "")
