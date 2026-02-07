@@ -1,6 +1,6 @@
 # 004: Confidence Scoring Semantics
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-02-07
 **Context:** C1.4 (stringer-vkt.4) implements confidence scoring for the TODO collector. The `--min-confidence` flag (CLI1.2) exposes this to users. This record defines what confidence values mean so that agents and humans can make informed filtering decisions without guessing.
 
@@ -114,4 +114,6 @@ For MVP, implement the TODO collector formula only. Other collectors get their f
 
 ## Decision
 
-[Awaiting developer review.]
+**Accepted: Option C — Continuous score with named presets.**
+
+Implement per-collector heuristic formulas producing a 0.0-1.0 float. Expose named presets (`critical`, `high`, `medium`, `low`, `all`) on the `--min-confidence` flag alongside raw float values. Default to `0.0` (all signals) for MVP. Document semantic bands in `--help` output and README. Start with the TODO collector formula; other collectors define their own formulas when implemented.
