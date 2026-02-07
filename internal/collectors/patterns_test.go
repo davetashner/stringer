@@ -484,3 +484,384 @@ func TestNonSourceExtensionsSkipped(t *testing.T) {
 		}
 	}
 }
+
+// --- countLines edge case tests ---
+
+func TestCountLines_NonexistentFile(t *testing.T) {
+	_, err := countLines("/nonexistent/path/to/file.go")
+	assert.Error(t, err, "nonexistent file should return error")
+}
+
+func TestCountLines_SingleLineNoNewline(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "one.txt")
+	require.NoError(t, os.WriteFile(path, []byte("no newline"), 0o600))
+
+	count, err := countLines(path)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+}
+
+// --- hasTestCounterpart edge case tests ---
+
+func TestHasTestCounterpart_GoTestExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "handler.go"), []byte("package main\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "handler_test.go"), []byte("package main\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "handler.go"), "handler.go"))
+}
+
+func TestHasTestCounterpart_GoTestMissing(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "handler.go"), []byte("package main\n"), 0o600))
+
+	assert.False(t, hasTestCounterpart(filepath.Join(dir, "handler.go"), "handler.go"))
+}
+
+func TestHasTestCounterpart_TSTestExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.ts"), []byte("// ts\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.test.ts"), []byte("// test\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "app.ts"), "app.ts"))
+}
+
+func TestHasTestCounterpart_TSSpecExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.ts"), []byte("// ts\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.spec.ts"), []byte("// spec\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "app.ts"), "app.ts"))
+}
+
+func TestHasTestCounterpart_PythonTestPrefixExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "handler.py"), []byte("# py\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "test_handler.py"), []byte("# test\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "handler.py"), "handler.py"))
+}
+
+func TestHasTestCounterpart_PythonTestSuffixExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "handler.py"), []byte("# py\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "handler_test.py"), []byte("# test\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "handler.py"), "handler.py"))
+}
+
+func TestHasTestCounterpart_RubySpecExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "model.rb"), []byte("# rb\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "model_spec.rb"), []byte("# spec\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "model.rb"), "model.rb"))
+}
+
+func TestHasTestCounterpart_RubyTestExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "model.rb"), []byte("# rb\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "model_test.rb"), []byte("# test\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "model.rb"), "model.rb"))
+}
+
+func TestHasTestCounterpart_JavaTestExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Foo.java"), []byte("// java\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "FooTest.java"), []byte("// test\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "Foo.java"), "Foo.java"))
+}
+
+func TestHasTestCounterpart_JavaSpecExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Foo.java"), []byte("// java\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "FooSpec.java"), []byte("// spec\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "Foo.java"), "Foo.java"))
+}
+
+func TestHasTestCounterpart_KotlinTestExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Bar.kt"), []byte("// kt\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "BarTest.kt"), []byte("// test\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "Bar.kt"), "Bar.kt"))
+}
+
+func TestHasTestCounterpart_KotlinSpecExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Bar.kt"), []byte("// kt\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "BarSpec.kt"), []byte("// spec\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "Bar.kt"), "Bar.kt"))
+}
+
+func TestHasTestCounterpart_JSTestExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.js"), []byte("// js\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.test.js"), []byte("// test\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "app.js"), "app.js"))
+}
+
+func TestHasTestCounterpart_JSSpecExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.js"), []byte("// js\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.spec.js"), []byte("// spec\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "app.js"), "app.js"))
+}
+
+func TestHasTestCounterpart_JSXTestExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "component.jsx"), []byte("// jsx\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "component.test.jsx"), []byte("// test\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "component.jsx"), "component.jsx"))
+}
+
+func TestHasTestCounterpart_TSXSpecExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "component.tsx"), []byte("// tsx\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "component.spec.tsx"), []byte("// spec\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "component.tsx"), "component.tsx"))
+}
+
+func TestHasTestCounterpart_UnknownExtension(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("key: val\n"), 0o600))
+
+	assert.False(t, hasTestCounterpart(filepath.Join(dir, "config.yaml"), "config.yaml"))
+}
+
+// --- isTestFile edge case tests ---
+
+func TestIsTestFile_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "tsx_test", path: "component.test.tsx", want: true},
+		{name: "tsx_spec", path: "component.spec.tsx", want: true},
+		{name: "jsx_test", path: "component.test.jsx", want: true},
+		{name: "jsx_spec", path: "component.spec.jsx", want: true},
+		{name: "test_file_itself", path: "Test.java", want: false},         // Just "Test.java" with no prefix
+		{name: "spec_file_itself", path: "Spec.java", want: false},         // Just "Spec.java" with no prefix
+		{name: "nested_path", path: "src/pkg/handler_test.go", want: true}, // nested path
+		{name: "deep_ts_spec", path: "src/components/button.spec.ts", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isTestFile(tt.path)
+			assert.Equal(t, tt.want, got, "isTestFile(%q)", tt.path)
+		})
+	}
+}
+
+// --- Patterns Collector: symlink outside repo ---
+
+func TestPatterns_SymlinkOutsideRepoSkipped(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a normal large source file.
+	goContent := strings.Repeat("package main\n", 600)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte(goContent), 0o600))
+
+	// Create an outside file.
+	outsideDir := t.TempDir()
+	outsidePath := filepath.Join(outsideDir, "external.go")
+	bigContent := strings.Repeat("package ext\n", 600)
+	require.NoError(t, os.WriteFile(outsidePath, []byte(bigContent), 0o600))
+
+	// Create a symlink inside the dir pointing outside.
+	symlinkPath := filepath.Join(dir, "external_link.go")
+	if err := os.Symlink(outsidePath, symlinkPath); err != nil {
+		t.Skip("symlinks not supported on this OS")
+	}
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	for _, s := range signals {
+		if s.FilePath == "external_link.go" {
+			t.Error("symlink pointing outside repo should be skipped")
+		}
+	}
+}
+
+// --- largeFileConfidence edge case tests ---
+
+func TestLargeFileConfidence_AtThreshold(t *testing.T) {
+	// At exactly the threshold (501), confidence should be just above 0.4.
+	conf := largeFileConfidence(501)
+	assert.GreaterOrEqual(t, conf, 0.4)
+	assert.Less(t, conf, 0.41)
+}
+
+func TestLargeFileConfidence_ExtremelyLarge(t *testing.T) {
+	// 10000 lines should cap at 0.8.
+	conf := largeFileConfidence(10000)
+	assert.InDelta(t, 0.8, conf, 0.001)
+}
+
+// --- Patterns Collect: context cancellation during ratio loop ---
+
+func TestPatterns_ContextCancelledDuringRatioCheck(t *testing.T) {
+	dir := t.TempDir()
+	subdir := filepath.Join(dir, "pkg")
+	require.NoError(t, os.MkdirAll(subdir, 0o750))
+
+	// Create enough files to trigger the ratio check.
+	for i := 0; i < 5; i++ {
+		require.NoError(t, os.WriteFile(
+			filepath.Join(subdir, fmt.Sprintf("file%d.go", i)),
+			[]byte("package pkg\n"), 0o600))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	c := &PatternsCollector{}
+	_, err := c.Collect(ctx, dir, signal.CollectorOpts{})
+	assert.Error(t, err, "cancelled context should return error")
+}
+
+// --- Patterns Collect: excluded file (not directory) ---
+
+func TestPatterns_ExcludedFilePattern(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a large .go file and a large .generated.go file.
+	goContent := strings.Repeat("package main\n", 600)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte(goContent), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "code.generated.go"), []byte(goContent), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		ExcludePatterns: []string{"*.generated.go"},
+	})
+	require.NoError(t, err)
+
+	for _, s := range signals {
+		if strings.Contains(s.FilePath, "generated") {
+			t.Errorf("excluded file should be skipped: %s", s.FilePath)
+		}
+	}
+
+	// The non-excluded file should still be detected.
+	var found bool
+	for _, s := range signals {
+		if s.Kind == "large-file" && s.FilePath == "main.go" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "non-excluded large file should be detected")
+}
+
+// --- Patterns Collect: broken symlink ---
+
+func TestPatterns_BrokenSymlinkSkipped(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a normal file.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"),
+		[]byte(strings.Repeat("package main\n", 600)), 0o600))
+
+	// Create a broken symlink (points to nonexistent target).
+	symlinkPath := filepath.Join(dir, "broken_link.go")
+	if err := os.Symlink("/nonexistent/target.go", symlinkPath); err != nil {
+		t.Skip("symlinks not supported on this OS")
+	}
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	// Should not panic or error; the broken symlink is silently skipped.
+	for _, s := range signals {
+		if s.FilePath == "broken_link.go" {
+			t.Error("broken symlink should be skipped")
+		}
+	}
+}
+
+// --- Patterns Collect: unreadable file ---
+
+func TestPatterns_UnreadableFileSkipped(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a normal large file.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"),
+		[]byte(strings.Repeat("package main\n", 600)), 0o600))
+
+	// Create a file with no read permission.
+	noReadPath := filepath.Join(dir, "noread.go")
+	require.NoError(t, os.WriteFile(noReadPath, []byte(strings.Repeat("package main\n", 600)), 0o000))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	// The unreadable file should be silently skipped; the collector should
+	// still find the large-file signal from main.go.
+	var found bool
+	for _, s := range signals {
+		if s.Kind == "large-file" && s.FilePath == "main.go" {
+			found = true
+		}
+		if s.FilePath == "noread.go" {
+			t.Error("unreadable file should be skipped")
+		}
+	}
+	assert.True(t, found, "expected large-file signal for main.go")
+}
+
+// --- Patterns Collect: multiple directories with different ratios ---
+
+func TestPatterns_MultipleDirRatios(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create dir1 with 4 source files and 0 tests (low ratio).
+	dir1 := filepath.Join(dir, "dir1")
+	require.NoError(t, os.MkdirAll(dir1, 0o750))
+	for i := 0; i < 4; i++ {
+		require.NoError(t, os.WriteFile(
+			filepath.Join(dir1, fmt.Sprintf("f%d.go", i)),
+			[]byte("package dir1\n"), 0o600))
+	}
+
+	// Create dir2 with 3 source files and 1 test (good ratio).
+	dir2 := filepath.Join(dir, "dir2")
+	require.NoError(t, os.MkdirAll(dir2, 0o750))
+	for i := 0; i < 3; i++ {
+		require.NoError(t, os.WriteFile(
+			filepath.Join(dir2, fmt.Sprintf("f%d.go", i)),
+			[]byte("package dir2\n"), 0o600))
+	}
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir2, "f0_test.go"),
+		[]byte("package dir2\n"), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	var ratioSignals []signal.RawSignal
+	for _, s := range signals {
+		if s.Kind == "low-test-ratio" {
+			ratioSignals = append(ratioSignals, s)
+		}
+	}
+
+	// Only dir1 should have a low-test-ratio signal.
+	require.Len(t, ratioSignals, 1)
+	assert.Equal(t, "dir1", ratioSignals[0].FilePath)
+}
