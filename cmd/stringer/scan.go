@@ -1,9 +1,31 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/davetashner/stringer/internal/collector"
+	_ "github.com/davetashner/stringer/internal/collectors"
+	"github.com/davetashner/stringer/internal/output"
+	"github.com/davetashner/stringer/internal/pipeline"
+	"github.com/davetashner/stringer/internal/signal"
+)
+
+// Scan-specific flag values.
+var (
+	scanCollectors string
+	scanFormat     string
+	scanOutput     string
+	scanDryRun     bool
+	scanNoLLM      bool
+	scanJSON       bool
+	scanMaxIssues  int
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -14,8 +36,236 @@ var scanCmd = &cobra.Command{
 git history patterns, and other signals. Outputs Beads-formatted JSONL
 suitable for import with 'bd import'.`,
 	Args: cobra.MaximumNArgs(1),
-	RunE: func(_ *cobra.Command, _ []string) error {
-		fmt.Println("stringer scan: not implemented yet")
-		return nil
-	},
+	RunE: runScan,
+}
+
+func init() {
+	scanCmd.Flags().StringVarP(&scanCollectors, "collectors", "c", "", "comma-separated list of collectors to run")
+	scanCmd.Flags().StringVarP(&scanFormat, "format", "f", "beads", "output format (beads)")
+	scanCmd.Flags().StringVarP(&scanOutput, "output", "o", "", "output file path (default: stdout)")
+	scanCmd.Flags().BoolVar(&scanDryRun, "dry-run", false, "show signal count without producing output")
+	scanCmd.Flags().BoolVar(&scanNoLLM, "no-llm", false, "skip LLM clustering pass (noop for MVP)")
+	scanCmd.Flags().BoolVar(&scanJSON, "json", false, "machine-readable output for --dry-run")
+	scanCmd.Flags().IntVar(&scanMaxIssues, "max-issues", 0, "cap output count (0 = unlimited)")
+}
+
+func runScan(cmd *cobra.Command, args []string) error {
+	// 1. Parse path argument.
+	repoPath := "."
+	if len(args) > 0 {
+		repoPath = args[0]
+	}
+
+	absPath, err := filepath.Abs(repoPath)
+	if err != nil {
+		return exitError(ExitInvalidArgs, "stringer: cannot resolve path %q (%v)", repoPath, err)
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return exitError(ExitInvalidArgs, "stringer: path %q does not exist (check the path and try again)", repoPath)
+	}
+	if !info.IsDir() {
+		return exitError(ExitInvalidArgs, "stringer: %q is not a directory (provide a repository root)", repoPath)
+	}
+
+	// 2. Parse collectors flag.
+	var collectors []string
+	if scanCollectors != "" {
+		collectors = strings.Split(scanCollectors, ",")
+		for i := range collectors {
+			collectors[i] = strings.TrimSpace(collectors[i])
+		}
+	}
+
+	// 3. Validate format before scanning.
+	if _, err := output.GetFormatter(scanFormat); err != nil {
+		return exitError(ExitInvalidArgs, "stringer: %v", err)
+	}
+
+	// 4. Build scan config.
+	config := signal.ScanConfig{
+		RepoPath:     absPath,
+		Collectors:   collectors,
+		OutputFormat: scanFormat,
+		NoLLM:        scanNoLLM,
+		MaxIssues:    scanMaxIssues,
+	}
+
+	// 5. Create pipeline.
+	p, err := pipeline.New(config)
+	if err != nil {
+		// Provide helpful error for unknown collectors.
+		available := collector.List()
+		sort.Strings(available)
+		return exitError(ExitInvalidArgs, "stringer: %v (available: %s)", err, strings.Join(available, ", "))
+	}
+
+	// 6. Progress: announce scan.
+	collectorNames := collectors
+	if len(collectorNames) == 0 {
+		collectorNames = collector.List()
+		sort.Strings(collectorNames)
+	}
+	if !quiet {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "stringer: scanning with %d collector(s)...\n", len(collectorNames))
+	}
+
+	// 7. Run pipeline.
+	result, err := p.Run(cmd.Context())
+	if err != nil {
+		return exitError(ExitTotalFailure, "stringer: scan failed (%v)", err)
+	}
+
+	// 8. Report per-collector progress.
+	if !quiet {
+		for i, cr := range result.Results {
+			status := fmt.Sprintf("%d signals", len(cr.Signals))
+			if cr.Err != nil {
+				status = fmt.Sprintf("error: %v", cr.Err)
+			}
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "stringer: [%d/%d] %s: %s (%s)\n",
+				i+1, len(result.Results), cr.Collector, status, cr.Duration.Round(1_000_000))
+		}
+	}
+
+	// 9. Determine exit code based on collector results.
+	exitCode := computeExitCode(result)
+
+	// 10. Handle dry-run.
+	if scanDryRun {
+		return printDryRun(cmd, result, exitCode)
+	}
+
+	// 11. Format and write output.
+	formatter, _ := output.GetFormatter(scanFormat) // already validated above
+
+	w := cmd.OutOrStdout()
+	if scanOutput != "" {
+		f, err := os.Create(scanOutput) //nolint:gosec // user-specified output path
+		if err != nil {
+			return exitError(ExitInvalidArgs, "stringer: cannot create output file %q (%v)", scanOutput, err)
+		}
+		defer f.Close() //nolint:errcheck // best-effort close on output file
+		w = f
+	}
+
+	if err := formatter.Format(result.Signals, w); err != nil {
+		return exitError(ExitTotalFailure, "stringer: formatting failed (%v)", err)
+	}
+
+	if !quiet {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "stringer: wrote %d issue(s) in %s\n", len(result.Signals), result.Duration.Round(1_000_000))
+	}
+
+	if exitCode != ExitOK {
+		return exitError(exitCode, "")
+	}
+	return nil
+}
+
+// computeExitCode returns the appropriate exit code based on collector results.
+func computeExitCode(result *signal.ScanResult) int {
+	if len(result.Results) == 0 {
+		return ExitOK
+	}
+
+	failCount := 0
+	for _, cr := range result.Results {
+		if cr.Err != nil {
+			failCount++
+		}
+	}
+
+	switch {
+	case failCount == 0:
+		return ExitOK
+	case failCount < len(result.Results):
+		return ExitPartialFailure
+	default:
+		return ExitTotalFailure
+	}
+}
+
+// printDryRun prints a summary of the scan results without producing formatted output.
+func printDryRun(cmd *cobra.Command, result *signal.ScanResult, exitCode int) error {
+	if scanJSON {
+		type collectorSummary struct {
+			Name     string `json:"name"`
+			Signals  int    `json:"signals"`
+			Duration string `json:"duration"`
+			Error    string `json:"error,omitempty"`
+		}
+		type dryRunOutput struct {
+			TotalSignals int                `json:"total_signals"`
+			Collectors   []collectorSummary `json:"collectors"`
+			Duration     string             `json:"duration"`
+			ExitCode     int                `json:"exit_code"`
+		}
+
+		out := dryRunOutput{
+			TotalSignals: len(result.Signals),
+			Duration:     result.Duration.String(),
+			ExitCode:     exitCode,
+		}
+		for _, cr := range result.Results {
+			cs := collectorSummary{
+				Name:     cr.Collector,
+				Signals:  len(cr.Signals),
+				Duration: cr.Duration.String(),
+			}
+			if cr.Err != nil {
+				cs.Error = cr.Err.Error()
+			}
+			out.Collectors = append(out.Collectors, cs)
+		}
+
+		data, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			return exitError(ExitTotalFailure, "stringer: JSON marshal failed (%v)", err)
+		}
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), string(data))
+	} else {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "stringer: dry run — %d signal(s) found\n", len(result.Signals))
+		for _, cr := range result.Results {
+			status := fmt.Sprintf("%d signals", len(cr.Signals))
+			if cr.Err != nil {
+				status = fmt.Sprintf("error: %v", cr.Err)
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s: %s (%s)\n", cr.Collector, status, cr.Duration.Round(1_000_000))
+		}
+	}
+
+	if exitCode != ExitOK {
+		return exitError(exitCode, "")
+	}
+	return nil
+}
+
+// exitCodeError carries a non-zero exit code through cobra's error handling.
+type exitCodeError struct {
+	code int
+	msg  string
+}
+
+func (e *exitCodeError) Error() string { return e.msg }
+
+// ExitCode returns the exit code for this error.
+func (e *exitCodeError) ExitCode() int { return e.code }
+
+// exitError creates an exitCodeError. If msg is empty, the error message is
+// set to a generic description of the exit code.
+func exitError(code int, format string, args ...any) *exitCodeError {
+	msg := fmt.Sprintf(format, args...)
+	if msg == "" {
+		switch code {
+		case ExitPartialFailure:
+			msg = "stringer: some collectors failed"
+		case ExitTotalFailure:
+			msg = "stringer: all collectors failed"
+		default:
+			msg = "stringer: error"
+		}
+	}
+	return &exitCodeError{code: code, msg: msg}
 }

@@ -3,7 +3,10 @@
 package output
 
 import (
+	"fmt"
 	"io"
+	"sort"
+	"sync"
 
 	"github.com/davetashner/stringer/internal/signal"
 )
@@ -15,4 +18,44 @@ type Formatter interface {
 
 	// Format writes the signals to w.
 	Format(signals []signal.RawSignal, w io.Writer) error
+}
+
+var (
+	fmtMu       sync.RWMutex
+	fmtRegistry = make(map[string]Formatter)
+)
+
+// RegisterFormatter adds a formatter to the global registry.
+func RegisterFormatter(f Formatter) {
+	fmtMu.Lock()
+	defer fmtMu.Unlock()
+	fmtRegistry[f.Name()] = f
+}
+
+// GetFormatter returns the formatter with the given name, or an error if not found.
+func GetFormatter(name string) (Formatter, error) {
+	fmtMu.RLock()
+	defer fmtMu.RUnlock()
+	f, ok := fmtRegistry[name]
+	if !ok {
+		return nil, fmt.Errorf("unknown format: %q (available: %s)", name, formatNames())
+	}
+	return f, nil
+}
+
+// formatNames returns a comma-separated sorted list of registered format names.
+func formatNames() string {
+	names := make([]string, 0, len(fmtRegistry))
+	for name := range fmtRegistry {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	result := ""
+	for i, n := range names {
+		if i > 0 {
+			result += ", "
+		}
+		result += n
+	}
+	return result
 }

@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"os"
-	"os/exec"
 	"strings"
 	"testing"
 )
@@ -57,29 +55,5 @@ func TestGlobalFlags(t *testing.T) {
 	q := rootCmd.PersistentFlags().ShorthandLookup("q")
 	if q == nil || q.Name != "quiet" {
 		t.Error("-q shorthand not registered for --quiet")
-	}
-}
-
-func TestScanNotImplemented(t *testing.T) {
-	// Build the binary so we can test the actual command output.
-	binary := t.TempDir() + "/stringer-test"
-	build := exec.Command("go", "build", //nolint:gosec // test helper with fixed args
-		"-o", binary,
-		".",
-	)
-	build.Dir, _ = os.Getwd()
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build failed: %v\n%s", err, out)
-	}
-
-	cmd := exec.Command(binary, "scan") //nolint:gosec // test helper with fixed args
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("stringer scan failed: %v", err)
-	}
-
-	got := strings.TrimSpace(string(out))
-	if !strings.Contains(got, "not implemented yet") {
-		t.Errorf("stringer scan = %q, want 'not implemented yet'", got)
 	}
 }
