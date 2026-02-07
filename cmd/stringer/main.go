@@ -9,12 +9,8 @@ import (
 var Version = "dev"
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "version" {
-		fmt.Printf("stringer %s\n", Version)
-		return
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
-
-	fmt.Fprintln(os.Stderr, "usage: stringer <command>")
-	fmt.Fprintln(os.Stderr, "  version    Print version information")
-	os.Exit(1)
 }
