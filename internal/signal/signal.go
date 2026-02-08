@@ -67,6 +67,9 @@ type CollectorOpts struct {
 	// IncludeClosed includes closed/merged issues and PRs in the GitHub collector.
 	IncludeClosed bool
 
+	// HistoryDepth filters out closed items older than this duration (e.g., "6m", "90d").
+	HistoryDepth string
+
 	// Anonymize controls author name anonymization: "auto", "always", or "never".
 	Anonymize string
 }

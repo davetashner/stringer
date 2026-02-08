@@ -56,6 +56,9 @@ func Merge(fileCfg *Config, cliCfg signal.ScanConfig) signal.ScanConfig {
 			if co.Anonymize == "" && fc.Anonymize != "" {
 				co.Anonymize = fc.Anonymize
 			}
+			if co.HistoryDepth == "" && fc.HistoryDepth != "" {
+				co.HistoryDepth = fc.HistoryDepth
+			}
 			result.CollectorOpts[name] = co
 		}
 	}

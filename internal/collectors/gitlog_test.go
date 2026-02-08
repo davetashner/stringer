@@ -779,53 +779,7 @@ func TestGitlogCollector_ActiveBranchNotFlagged(t *testing.T) {
 	}
 }
 
-// --- parseDuration tests ---
-
-func TestParseDuration_Days(t *testing.T) {
-	d, err := parseDuration("90d")
-	require.NoError(t, err)
-	assert.Equal(t, 90*24*time.Hour, d)
-}
-
-func TestParseDuration_Weeks(t *testing.T) {
-	d, err := parseDuration("2w")
-	require.NoError(t, err)
-	assert.Equal(t, 14*24*time.Hour, d)
-}
-
-func TestParseDuration_Months(t *testing.T) {
-	d, err := parseDuration("6m")
-	require.NoError(t, err)
-	assert.Equal(t, 180*24*time.Hour, d)
-}
-
-func TestParseDuration_Years(t *testing.T) {
-	d, err := parseDuration("1y")
-	require.NoError(t, err)
-	assert.Equal(t, 365*24*time.Hour, d)
-}
-
-func TestParseDuration_InvalidTooShort(t *testing.T) {
-	_, err := parseDuration("d")
-	assert.Error(t, err)
-}
-
-func TestParseDuration_InvalidEmpty(t *testing.T) {
-	_, err := parseDuration("")
-	assert.Error(t, err)
-}
-
-func TestParseDuration_InvalidUnit(t *testing.T) {
-	_, err := parseDuration("10x")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid duration unit")
-}
-
-func TestParseDuration_InvalidNumber(t *testing.T) {
-	_, err := parseDuration("abcd")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid duration number")
-}
+// parseDuration tests have been moved to duration_test.go.
 
 // --- GitDepth tests ---
 

@@ -498,7 +498,7 @@ func TestIncludePRsFalse(t *testing.T) {
 
 	// Test that when include_prs is false, no PR signals are emitted.
 	// We simulate this by collecting only issues, then verifying no PR API calls.
-	signals, err := fetchIssues(context.Background(), mock, "testowner", "testrepo", 100, false)
+	signals, err := fetchIssues(context.Background(), mock, "testowner", "testrepo", 100, false, time.Time{})
 	require.NoError(t, err)
 	assert.Len(t, signals, 1)
 	assert.Equal(t, "github-issue", signals[0].Kind)
@@ -782,6 +782,57 @@ func makeClosedPR(number int, title string, created time.Time) *github.PullReque
 	closedAt := github.Timestamp{Time: created.Add(24 * time.Hour)}
 	pr.ClosedAt = &closedAt
 	return pr
+}
+
+func TestHistoryDepthFiltersOldClosedIssues(t *testing.T) {
+	now := time.Now()
+	recentIssue := makeClosedIssue(1, "Recent issue", now.Add(-30*24*time.Hour), nil, "completed")
+	oldIssue := makeClosedIssue(2, "Old issue", now.Add(-200*24*time.Hour), nil, "completed")
+	// oldIssue was closed at created+24h = ~199 days ago
+
+	mock := &mockGitHubAPI{
+		issues:    []*github.Issue{recentIssue, oldIssue},
+		issueResp: &github.Response{Response: &http.Response{StatusCode: 200}},
+	}
+
+	// Cutoff at 90 days ago — should keep recent, skip old.
+	cutoff := now.Add(-90 * 24 * time.Hour)
+	signals, err := fetchIssues(context.Background(), mock, "owner", "repo", 100, true, cutoff)
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "Recent issue", signals[0].Title)
+}
+
+func TestHistoryDepthFiltersOldMergedPRs(t *testing.T) {
+	now := time.Now()
+	recentPR := makeMergedPR(1, "Recent PR", now.Add(-30*24*time.Hour))
+	oldPR := makeMergedPR(2, "Old PR", now.Add(-200*24*time.Hour))
+
+	mock := &mockGitHubAPI{
+		prs:    []*github.PullRequest{recentPR, oldPR},
+		prResp: &github.Response{Response: &http.Response{StatusCode: 200}},
+	}
+
+	cutoff := now.Add(-90 * 24 * time.Hour)
+	signals, err := fetchPullRequests(context.Background(), mock, "owner", "repo", 100, 30, true, cutoff)
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "Recent PR", signals[0].Title)
+}
+
+func TestHistoryDepthZeroCutoffNoFiltering(t *testing.T) {
+	now := time.Now()
+	oldIssue := makeClosedIssue(1, "Old issue", now.Add(-200*24*time.Hour), nil, "completed")
+
+	mock := &mockGitHubAPI{
+		issues:    []*github.Issue{oldIssue},
+		issueResp: &github.Response{Response: &http.Response{StatusCode: 200}},
+	}
+
+	// Zero cutoff should not filter.
+	signals, err := fetchIssues(context.Background(), mock, "owner", "repo", 100, true, time.Time{})
+	require.NoError(t, err)
+	assert.Len(t, signals, 1)
 }
 
 // makeComment creates a test PR review comment.

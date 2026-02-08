@@ -346,7 +346,7 @@ func walkCommitsForOwnership(ctx context.Context, repo *git.Repository, repoPath
 		Order: git.LogOrderCommitterTime,
 	}
 	if opts.GitSince != "" {
-		if since, parseErr := parseDuration(opts.GitSince); parseErr == nil {
+		if since, parseErr := ParseDuration(opts.GitSince); parseErr == nil {
 			t := time.Now().Add(-since)
 			logOpts.Since = &t
 		}

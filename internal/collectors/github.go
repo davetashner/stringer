@@ -121,10 +121,22 @@ func (c *GitHubCollector) Collect(ctx context.Context, repoPath string, opts sig
 	// For now, use defaults. Config integration happens via the pipeline.
 
 	includeClosed := opts.IncludeClosed
+
+	// Compute history depth cutoff for closed items.
+	var historyCutoff time.Time
+	if includeClosed && opts.HistoryDepth != "" {
+		if d, parseErr := ParseDuration(opts.HistoryDepth); parseErr == nil {
+			historyCutoff = time.Now().Add(-d)
+			slog.Info("history depth filter", "cutoff", historyCutoff.Format(time.RFC3339))
+		} else {
+			slog.Warn("invalid history-depth, ignoring", "value", opts.HistoryDepth, "error", parseErr)
+		}
+	}
+
 	var signals []signal.RawSignal
 
 	// Fetch issues.
-	issueSigs, err := fetchIssues(ctx, api, owner, repo, maxIssues, includeClosed)
+	issueSigs, err := fetchIssues(ctx, api, owner, repo, maxIssues, includeClosed, historyCutoff)
 	if err != nil {
 		return nil, fmt.Errorf("fetching issues: %w", err)
 	}
@@ -132,7 +144,7 @@ func (c *GitHubCollector) Collect(ctx context.Context, repoPath string, opts sig
 
 	// Fetch PRs.
 	if includePRs {
-		prSigs, prErr := fetchPullRequests(ctx, api, owner, repo, maxIssues, commentDepth, includeClosed)
+		prSigs, prErr := fetchPullRequests(ctx, api, owner, repo, maxIssues, commentDepth, includeClosed, historyCutoff)
 		if prErr != nil {
 			return nil, fmt.Errorf("fetching pull requests: %w", prErr)
 		}
@@ -205,8 +217,9 @@ func parseGitHubURL(rawURL string) (owner, repo string, err error) {
 
 // fetchIssues fetches issues (excluding PRs) from GitHub. When includeClosed
 // is true, it fetches all issues (open and closed) and classifies closed ones
-// with dedicated kinds and lower confidence.
-func fetchIssues(ctx context.Context, api githubAPI, owner, repo string, maxIssues int, includeClosed bool) ([]signal.RawSignal, error) {
+// with dedicated kinds and lower confidence. If historyCutoff is non-zero,
+// closed items with ClosedAt before the cutoff are skipped.
+func fetchIssues(ctx context.Context, api githubAPI, owner, repo string, maxIssues int, includeClosed bool, historyCutoff time.Time) ([]signal.RawSignal, error) {
 	var signals []signal.RawSignal
 	state := "open"
 	if includeClosed {
@@ -234,6 +247,11 @@ func fetchIssues(ctx context.Context, api githubAPI, owner, repo string, maxIssu
 		for _, issue := range issues {
 			// Skip pull requests (GitHub API returns PRs as issues).
 			if issue.IsPullRequest() {
+				continue
+			}
+
+			// Skip closed issues older than the history depth cutoff.
+			if issue.GetState() == "closed" && !historyCutoff.IsZero() && issue.ClosedAt != nil && issue.ClosedAt.Before(historyCutoff) {
 				continue
 			}
 
@@ -293,7 +311,8 @@ func fetchIssues(ctx context.Context, api githubAPI, owner, repo string, maxIssu
 // fetchPullRequests fetches PRs with review state and actionable review
 // comments. When includeClosed is true, it also fetches merged and
 // closed-not-merged PRs with dedicated kinds and lower confidence.
-func fetchPullRequests(ctx context.Context, api githubAPI, owner, repo string, maxIssues, commentDepth int, includeClosed bool) ([]signal.RawSignal, error) {
+// If historyCutoff is non-zero, closed PRs before the cutoff are skipped.
+func fetchPullRequests(ctx context.Context, api githubAPI, owner, repo string, maxIssues, commentDepth int, includeClosed bool, historyCutoff time.Time) ([]signal.RawSignal, error) {
 	var signals []signal.RawSignal
 	state := "open"
 	if includeClosed {
@@ -321,6 +340,17 @@ func fetchPullRequests(ctx context.Context, api githubAPI, owner, repo string, m
 		for _, pr := range prs {
 			if err := ctx.Err(); err != nil {
 				return nil, err
+			}
+
+			// Skip closed PRs older than the history depth cutoff.
+			if pr.GetState() == "closed" && !historyCutoff.IsZero() {
+				closedTime := pr.ClosedAt
+				if pr.GetMerged() && pr.MergedAt != nil {
+					closedTime = pr.MergedAt
+				}
+				if closedTime != nil && closedTime.Before(historyCutoff) {
+					continue
+				}
 			}
 
 			var kind string

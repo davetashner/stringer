@@ -7,7 +7,6 @@ import (
 	"math"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -112,7 +111,7 @@ func (c *GitlogCollector) walkCommits(ctx context.Context, repo *git.Repository,
 		Order: git.LogOrderCommitterTime,
 	}
 	if opts.GitSince != "" {
-		if since, parseErr := parseDuration(opts.GitSince); parseErr == nil {
+		if since, parseErr := ParseDuration(opts.GitSince); parseErr == nil {
 			t := time.Now().Add(-since)
 			logOpts.Since = &t
 		}
@@ -440,33 +439,6 @@ func sortedKeys(m map[string]bool) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-// parseDuration parses duration strings like "90d", "6m", "1y" into time.Duration.
-func parseDuration(s string) (time.Duration, error) {
-	if len(s) < 2 {
-		return 0, fmt.Errorf("invalid duration: %q", s)
-	}
-	numStr := s[:len(s)-1]
-	unit := s[len(s)-1]
-
-	n, err := strconv.Atoi(numStr)
-	if err != nil {
-		return 0, fmt.Errorf("invalid duration number: %q", s)
-	}
-
-	switch unit {
-	case 'd':
-		return time.Duration(n) * 24 * time.Hour, nil
-	case 'w':
-		return time.Duration(n) * 7 * 24 * time.Hour, nil
-	case 'm':
-		return time.Duration(n) * 30 * 24 * time.Hour, nil
-	case 'y':
-		return time.Duration(n) * 365 * 24 * time.Hour, nil
-	default:
-		return 0, fmt.Errorf("invalid duration unit %q in %q (use d/w/m/y)", string(unit), s)
-	}
 }
 
 // Compile-time interface check.
