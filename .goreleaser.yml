@@ -56,7 +56,7 @@ brews:
     homepage: "https://github.com/davetashner/stringer"
     description: "Codebase archaeology tool that mines git repos for actionable Beads issues"
     license: "MIT"
-    folder: Formula
+    directory: Formula
     test: |
       system "#{bin}/stringer", "version"
     install: |
