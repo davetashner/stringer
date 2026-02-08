@@ -42,7 +42,7 @@ func (s *coverageSection) Analyze(result *signal.ScanResult) error {
 }
 
 func (s *coverageSection) Render(w io.Writer) error {
-	_, _ = fmt.Fprintf(w, "Test Coverage Gaps\n")
+	_, _ = fmt.Fprintf(w, "%s\n", SectionTitle("Test Coverage Gaps"))
 	_, _ = fmt.Fprintf(w, "------------------\n")
 
 	if len(s.dirs) == 0 {
@@ -55,7 +55,7 @@ func (s *coverageSection) Render(w io.Writer) error {
 		Column{Header: "Source", Align: AlignRight},
 		Column{Header: "Tests", Align: AlignRight},
 		Column{Header: "Ratio", Align: AlignRight},
-		Column{Header: "Assessment"},
+		Column{Header: "Assessment", Color: ColorAssessment},
 	)
 
 	for _, d := range s.dirs {

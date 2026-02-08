@@ -54,11 +54,11 @@ func (s *churnSection) Analyze(result *signal.ScanResult) error {
 }
 
 func (s *churnSection) Render(w io.Writer) error {
-	_, _ = fmt.Fprintf(w, "Code Churn\n")
+	_, _ = fmt.Fprintf(w, "%s\n", SectionTitle("Code Churn"))
 	_, _ = fmt.Fprintf(w, "----------\n")
 
-	_, _ = fmt.Fprintf(w, "  Reverts detected: %d\n", s.revertCount)
-	_, _ = fmt.Fprintf(w, "  Stale branches:   %d\n", s.staleBranches)
+	_, _ = fmt.Fprintf(w, "  Reverts detected: %s\n", colorCount(s.revertCount))
+	_, _ = fmt.Fprintf(w, "  Stale branches:   %s\n", colorCount(s.staleBranches))
 
 	if len(s.churns) == 0 {
 		if s.revertCount > 0 {
@@ -75,7 +75,7 @@ func (s *churnSection) Render(w io.Writer) error {
 		Column{Header: "File"},
 		Column{Header: "Changes", Align: AlignRight},
 		Column{Header: "Authors", Align: AlignRight},
-		Column{Header: "Stability"},
+		Column{Header: "Stability", Color: ColorStability},
 	)
 
 	for _, fc := range s.churns {

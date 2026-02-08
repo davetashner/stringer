@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	"github.com/davetashner/stringer/internal/collector"
@@ -219,8 +220,9 @@ func runReport(cmd *cobra.Command, args []string) error {
 // renderReport writes a terminal-friendly summary of the scan results.
 func renderReport(result *signal.ScanResult, repoPath string, collectorNames []string, sections []string, w interface{ Write([]byte) (int, error) }) error {
 	// Header.
-	_, _ = fmt.Fprintf(w, "Stringer Report\n")
-	_, _ = fmt.Fprintf(w, "===============\n\n")
+	bold := color.New(color.Bold)
+	_, _ = bold.Fprintf(w, "Stringer Report\n")
+	_, _ = bold.Fprintf(w, "===============\n\n")
 	_, _ = fmt.Fprintf(w, "Repository: %s\n", repoPath)
 	_, _ = fmt.Fprintf(w, "Generated:  %s\n", time.Now().Format(time.RFC3339))
 	_, _ = fmt.Fprintf(w, "Duration:   %s\n", result.Duration.Round(time.Millisecond))

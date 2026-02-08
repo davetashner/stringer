@@ -109,7 +109,7 @@ func (s *todoAgeSection) Analyze(result *signal.ScanResult) error {
 }
 
 func (s *todoAgeSection) Render(w io.Writer) error {
-	_, _ = fmt.Fprintf(w, "TODO Age Distribution\n")
+	_, _ = fmt.Fprintf(w, "%s\n", SectionTitle("TODO Age Distribution"))
 	_, _ = fmt.Fprintf(w, "---------------------\n")
 	_, _ = fmt.Fprintf(w, "  Total TODOs: %d\n\n", s.total)
 
@@ -123,16 +123,21 @@ func (s *todoAgeSection) Render(w io.Writer) error {
 
 	barWidth := 30
 	bucketTotal := 0
-	for _, b := range s.buckets {
+	for i, b := range s.buckets {
 		bucketTotal += b.Count
 		bar := ""
 		if maxCount > 0 {
 			n := (b.Count * barWidth) / maxCount
-			for i := 0; i < n; i++ {
+			for j := 0; j < n; j++ {
 				bar += "#"
 			}
 		}
-		_, _ = fmt.Fprintf(w, "  %-12s %3d  %s\n", b.Label, b.Count, bar)
+		// Color the last bucket (> 1 year) red if non-empty.
+		if i == len(s.buckets)-1 && b.Count > 0 {
+			_, _ = fmt.Fprintf(w, "  %-12s %3d  %s\n", colorRed.Sprint(b.Label), b.Count, colorRed.Sprint(bar))
+		} else {
+			_, _ = fmt.Fprintf(w, "  %-12s %3d  %s\n", b.Label, b.Count, bar)
+		}
 	}
 
 	// Show unknown-age count when some TODOs couldn't be bucketed.

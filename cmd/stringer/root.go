@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 
 	stringerlog "github.com/davetashner/stringer/internal/log"
@@ -25,6 +26,7 @@ and more — giving agents instant situational awareness.`,
 	SilenceErrors: true,
 	PersistentPreRun: func(_ *cobra.Command, _ []string) {
 		stringerlog.Setup(verbose, quiet)
+		color.NoColor = noColor
 	},
 }
 
