@@ -71,7 +71,7 @@ func TestFieldMapping(t *testing.T) {
 		}
 	})
 
-	t.Run("status_always_open", func(t *testing.T) {
+	t.Run("status_open_without_pre_closed_tag", func(t *testing.T) {
 		if rec.Status != "open" {
 			t.Errorf("Status = %q, want %q", rec.Status, "open")
 		}
@@ -756,5 +756,220 @@ func TestFormat_WithConventions(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("labels %v should contain 'stringer_generated'", labels)
+	}
+}
+
+// -----------------------------------------------------------------------
+// Pre-closed bead tests
+// -----------------------------------------------------------------------
+
+func TestPreClosedSignal_StatusClosed(t *testing.T) {
+	closedAt := time.Date(2026, 1, 20, 14, 0, 0, 0, time.UTC)
+	sig := signal.RawSignal{
+		Source:      "github",
+		Kind:        "github-closed-issue",
+		FilePath:    "github/issues/42",
+		Title:       "Fix login bug",
+		Description: "Closed at: 2026-01-20, Reason: completed",
+		Author:      "bob",
+		Timestamp:   time.Date(2026, 1, 10, 10, 0, 0, 0, time.UTC),
+		Confidence:  0.3,
+		Tags:        []string{"github-closed-issue", "pre-closed", "stringer-generated"},
+		ClosedAt:    closedAt,
+	}
+
+	rec := NewBeadsFormatter().signalToBead(sig)
+
+	if rec.Status != "closed" {
+		t.Errorf("Status = %q, want %q", rec.Status, "closed")
+	}
+	if rec.ClosedAt != "2026-01-20T14:00:00Z" {
+		t.Errorf("ClosedAt = %q, want %q", rec.ClosedAt, "2026-01-20T14:00:00Z")
+	}
+	if rec.CloseReason != "completed" {
+		t.Errorf("CloseReason = %q, want %q", rec.CloseReason, "completed")
+	}
+}
+
+func TestPreClosedSignal_MergedPR(t *testing.T) {
+	sig := signal.RawSignal{
+		Source:     "github",
+		Kind:       "github-merged-pr",
+		FilePath:   "github/prs/99",
+		Title:      "Add feature X",
+		Author:     "alice",
+		Timestamp:  time.Date(2026, 1, 5, 8, 0, 0, 0, time.UTC),
+		Confidence: 0.3,
+		Tags:       []string{"github-merged-pr", "pre-closed", "stringer-generated"},
+		ClosedAt:   time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC),
+	}
+
+	rec := NewBeadsFormatter().signalToBead(sig)
+
+	if rec.Status != "closed" {
+		t.Errorf("Status = %q, want %q", rec.Status, "closed")
+	}
+	if rec.CloseReason != "merged" {
+		t.Errorf("CloseReason = %q, want %q", rec.CloseReason, "merged")
+	}
+}
+
+func TestPreClosedSignal_ClosedPR(t *testing.T) {
+	sig := signal.RawSignal{
+		Source:     "github",
+		Kind:       "github-closed-pr",
+		FilePath:   "github/prs/50",
+		Title:      "Abandoned PR",
+		Confidence: 0.2,
+		Tags:       []string{"github-closed-pr", "pre-closed", "stringer-generated"},
+		ClosedAt:   time.Date(2026, 1, 18, 16, 0, 0, 0, time.UTC),
+	}
+
+	rec := NewBeadsFormatter().signalToBead(sig)
+
+	if rec.Status != "closed" {
+		t.Errorf("Status = %q, want %q", rec.Status, "closed")
+	}
+	if rec.CloseReason != "closed" {
+		t.Errorf("CloseReason = %q, want %q", rec.CloseReason, "closed")
+	}
+}
+
+func TestSignalWithoutPreClosedTag_StaysOpen(t *testing.T) {
+	sig := signal.RawSignal{
+		Source:     "github",
+		Kind:       "github-issue",
+		Title:      "Open issue",
+		Confidence: 0.5,
+		Tags:       []string{"github-issue", "stringer-generated"},
+	}
+
+	rec := NewBeadsFormatter().signalToBead(sig)
+
+	if rec.Status != "open" {
+		t.Errorf("Status = %q, want %q", rec.Status, "open")
+	}
+	if rec.ClosedAt != "" {
+		t.Errorf("ClosedAt = %q, want empty for open signal", rec.ClosedAt)
+	}
+	if rec.CloseReason != "" {
+		t.Errorf("CloseReason = %q, want empty for open signal", rec.CloseReason)
+	}
+}
+
+func TestPreClosedSignal_ZeroClosedAt(t *testing.T) {
+	sig := signal.RawSignal{
+		Source:     "github",
+		Kind:       "github-closed-issue",
+		Title:      "Closed with no timestamp",
+		Confidence: 0.3,
+		Tags:       []string{"github-closed-issue", "pre-closed", "stringer-generated"},
+		// ClosedAt is zero value
+	}
+
+	rec := NewBeadsFormatter().signalToBead(sig)
+
+	if rec.Status != "closed" {
+		t.Errorf("Status = %q, want %q", rec.Status, "closed")
+	}
+	if rec.ClosedAt != "" {
+		t.Errorf("ClosedAt = %q, want empty for zero time", rec.ClosedAt)
+	}
+}
+
+func TestPreClosedSignal_JSONL(t *testing.T) {
+	signals := []signal.RawSignal{
+		{
+			Source:     "github",
+			Kind:       "github-closed-issue",
+			FilePath:   "github/issues/10",
+			Title:      "Closed bug",
+			Author:     "dev",
+			Timestamp:  time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			Confidence: 0.3,
+			Tags:       []string{"github-closed-issue", "pre-closed", "stringer-generated"},
+			ClosedAt:   time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC),
+		},
+		testSignal(), // open signal for comparison
+	}
+
+	var buf bytes.Buffer
+	f := NewBeadsFormatter()
+	if err := f.Format(signals, &buf); err != nil {
+		t.Fatalf("Format() error: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(lines))
+	}
+
+	// Line 0: closed signal.
+	var closed map[string]interface{}
+	if err := json.Unmarshal([]byte(lines[0]), &closed); err != nil {
+		t.Fatalf("line 0 is not valid JSON: %v", err)
+	}
+	if closed["status"] != "closed" {
+		t.Errorf("line 0: status = %v, want 'closed'", closed["status"])
+	}
+	if closed["closed_at"] != "2026-01-10T00:00:00Z" {
+		t.Errorf("line 0: closed_at = %v, want '2026-01-10T00:00:00Z'", closed["closed_at"])
+	}
+	if closed["close_reason"] != "completed" {
+		t.Errorf("line 0: close_reason = %v, want 'completed'", closed["close_reason"])
+	}
+
+	// Line 1: open signal — no closed_at or close_reason.
+	var open map[string]interface{}
+	if err := json.Unmarshal([]byte(lines[1]), &open); err != nil {
+		t.Fatalf("line 1 is not valid JSON: %v", err)
+	}
+	if open["status"] != "open" {
+		t.Errorf("line 1: status = %v, want 'open'", open["status"])
+	}
+	if _, ok := open["closed_at"]; ok {
+		t.Errorf("line 1: closed_at should be omitted for open signals")
+	}
+	if _, ok := open["close_reason"]; ok {
+		t.Errorf("line 1: close_reason should be omitted for open signals")
+	}
+}
+
+func TestClosedKindToTypeMapping(t *testing.T) {
+	cases := []struct {
+		kind     string
+		wantType string
+	}{
+		{"github-closed-issue", "task"},
+		{"github-merged-pr", "task"},
+		{"github-closed-pr", "task"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.kind, func(t *testing.T) {
+			got := mapKindToType(tc.kind)
+			if got != tc.wantType {
+				t.Errorf("mapKindToType(%q) = %q, want %q", tc.kind, got, tc.wantType)
+			}
+		})
+	}
+}
+
+func TestDeriveCloseReason(t *testing.T) {
+	cases := []struct {
+		kind string
+		want string
+	}{
+		{"github-merged-pr", "merged"},
+		{"github-closed-pr", "closed"},
+		{"github-closed-issue", "completed"},
+		{"unknown-kind", "resolved"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.kind, func(t *testing.T) {
+			got := deriveCloseReason(tc.kind)
+			if got != tc.want {
+				t.Errorf("deriveCloseReason(%q) = %q, want %q", tc.kind, got, tc.want)
+			}
+		})
 	}
 }
