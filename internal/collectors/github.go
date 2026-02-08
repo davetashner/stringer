@@ -377,6 +377,14 @@ func fetchPullRequests(ctx context.Context, api githubAPI, owner, repo string, m
 					closedAt = pr.ClosedAt.GetTime().Format(time.RFC3339)
 				}
 				desc = fmt.Sprintf("Merged at: %s, Closed at: %s\n%s", mergedAt, closedAt, desc)
+
+				// Enrich with module context from changed files.
+				files, _, filesErr := api.ListPullRequestFiles(ctx, owner, repo, pr.GetNumber(), &github.ListOptions{PerPage: 100})
+				if filesErr == nil {
+					if moduleCtx := extractModuleContext(files); moduleCtx != "" {
+						desc = moduleCtx + "\n" + desc
+					}
+				}
 			} else {
 				// Open PR: fetch reviews and classify.
 				reviews, reviewErr := fetchAllReviews(ctx, api, owner, repo, pr.GetNumber())
@@ -601,6 +609,58 @@ func truncateBody(body string, maxLen int) string {
 		return body[:maxLen] + "..."
 	}
 	return body
+}
+
+// extractModuleContext groups changed files by top-level directory and returns
+// a summary string like "Modules affected: internal/collectors (3 files), cmd (1 file)".
+func extractModuleContext(files []*github.CommitFile) string {
+	if len(files) == 0 {
+		return ""
+	}
+
+	counts := make(map[string]int)
+	for _, f := range files {
+		path := f.GetFilename()
+		module := moduleFromPath(path)
+		counts[module]++
+	}
+
+	// Sort for deterministic output.
+	modules := make([]string, 0, len(counts))
+	for m := range counts {
+		modules = append(modules, m)
+	}
+	sort.Strings(modules)
+
+	parts := make([]string, 0, len(modules))
+	for _, m := range modules {
+		n := counts[m]
+		if n == 1 {
+			parts = append(parts, fmt.Sprintf("%s (1 file)", m))
+		} else {
+			parts = append(parts, fmt.Sprintf("%s (%d files)", m, n))
+		}
+	}
+	return "Modules affected: " + strings.Join(parts, ", ")
+}
+
+// ModuleFromPath derives a module name from a file path by taking the
+// first two path segments (e.g., "internal/collectors") or the directory
+// name if only one level deep. Root-level files return ".".
+func ModuleFromPath(path string) string {
+	return moduleFromPath(path)
+}
+
+func moduleFromPath(path string) string {
+	parts := strings.Split(path, "/")
+	switch {
+	case len(parts) >= 3:
+		return parts[0] + "/" + parts[1]
+	case len(parts) == 2:
+		return parts[0]
+	default:
+		return "."
+	}
 }
 
 // Compile-time interface check.

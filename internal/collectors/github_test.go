@@ -835,6 +835,54 @@ func TestHistoryDepthZeroCutoffNoFiltering(t *testing.T) {
 	assert.Len(t, signals, 1)
 }
 
+func TestExtractModuleContext_Various(t *testing.T) {
+	files := []*github.CommitFile{
+		{Filename: github.Ptr("internal/collectors/todos.go")},
+		{Filename: github.Ptr("internal/collectors/github.go")},
+		{Filename: github.Ptr("internal/collectors/duration.go")},
+		{Filename: github.Ptr("cmd/stringer/main.go")},
+		{Filename: github.Ptr("README.md")},
+	}
+
+	result := extractModuleContext(files)
+	assert.Contains(t, result, "Modules affected:")
+	assert.Contains(t, result, "internal/collectors (3 files)")
+	assert.Contains(t, result, "cmd/stringer (1 file)")
+	assert.Contains(t, result, ". (1 file)")
+}
+
+func TestExtractModuleContext_Empty(t *testing.T) {
+	result := extractModuleContext(nil)
+	assert.Equal(t, "", result)
+}
+
+func TestExtractModuleContext_SingleModule(t *testing.T) {
+	files := []*github.CommitFile{
+		{Filename: github.Ptr("internal/state/state.go")},
+		{Filename: github.Ptr("internal/state/state_test.go")},
+	}
+
+	result := extractModuleContext(files)
+	assert.Equal(t, "Modules affected: internal/state (2 files)", result)
+}
+
+func TestModuleFromPath(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected string
+	}{
+		{"internal/collectors/todos.go", "internal/collectors"},
+		{"cmd/stringer/main.go", "cmd/stringer"},
+		{"cmd/main.go", "cmd"},
+		{"README.md", "."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			assert.Equal(t, tt.expected, moduleFromPath(tt.path))
+		})
+	}
+}
+
 // makeComment creates a test PR review comment.
 func makeComment(body, path string, line int, created time.Time) *github.PullRequestComment {
 	ts := github.Timestamp{Time: created}

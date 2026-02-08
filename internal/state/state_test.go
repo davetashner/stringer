@@ -665,6 +665,7 @@ func TestBuildResolvedTodoSignals_SignalFields(t *testing.T) {
 	assert.Equal(t, "handler.go", s.FilePath)
 	assert.Equal(t, 42, s.Line)
 	assert.Equal(t, "implement retry logic", s.Title)
+	assert.Contains(t, s.Description, "Module: .")
 	assert.Contains(t, s.Description, "handler.go:42")
 	assert.InEpsilon(t, 0.3, s.Confidence, 0.001)
 	assert.Equal(t, []string{"todo", "pre-closed", "resolved", "stringer-generated"}, s.Tags)
@@ -711,6 +712,40 @@ func TestBuildResolvedTodoSignals_Empty(t *testing.T) {
 		{Source: "gitlog", Kind: "churn", FilePath: "x.go", Title: "churn"},
 	})
 	assert.Nil(t, signals)
+}
+
+func TestBuildResolvedTodoSignals_ModuleContext(t *testing.T) {
+	dir := t.TempDir()
+	removed := []SignalMeta{
+		{Source: "todos", Kind: "todo", FilePath: "internal/collectors/todos.go", Line: 10, Title: "deep module"},
+		{Source: "todos", Kind: "fixme", FilePath: "cmd/main.go", Line: 5, Title: "shallow module"},
+		{Source: "todos", Kind: "todo", FilePath: "README.md", Line: 1, Title: "root level"},
+	}
+
+	signals := BuildResolvedTodoSignals(dir, removed)
+	require.Len(t, signals, 3)
+	assert.Contains(t, signals[0].Description, "Module: internal/collectors")
+	assert.Contains(t, signals[1].Description, "Module: cmd")
+	assert.Contains(t, signals[2].Description, "Module: .")
+}
+
+func TestModuleFromFilePath(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected string
+	}{
+		{"internal/collectors/todos.go", "internal/collectors"},
+		{"cmd/stringer/main.go", "cmd/stringer"},
+		{"cmd/main.go", "cmd"},
+		{"README.md", "."},
+		{"go.mod", "."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			assert.Equal(t, tt.expected, moduleFromFilePath(tt.path))
+		})
+	}
 }
 
 func TestSave_Load_RoundTrip_V2WithMetas(t *testing.T) {
