@@ -23,15 +23,17 @@ import (
 
 // Scan-specific flag values.
 var (
-	scanCollectors string
-	scanFormat     string
-	scanOutput     string
-	scanDryRun     bool
-	scanDelta      bool
-	scanNoLLM      bool
-	scanJSON       bool
-	scanMaxIssues  int
-	scanStrict     bool
+	scanCollectors    string
+	scanFormat        string
+	scanOutput        string
+	scanDryRun        bool
+	scanDelta         bool
+	scanNoLLM         bool
+	scanJSON          bool
+	scanMaxIssues     int
+	scanMinConfidence float64
+	scanKind          string
+	scanStrict        bool
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -54,6 +56,8 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanNoLLM, "no-llm", false, "skip LLM clustering pass (noop for MVP)")
 	scanCmd.Flags().BoolVar(&scanJSON, "json", false, "machine-readable output for --dry-run")
 	scanCmd.Flags().IntVar(&scanMaxIssues, "max-issues", 0, "cap output count (0 = unlimited)")
+	scanCmd.Flags().Float64Var(&scanMinConfidence, "min-confidence", 0, "filter signals below this confidence threshold (0.0-1.0)")
+	scanCmd.Flags().StringVar(&scanKind, "kind", "", "filter signals by kind (comma-separated, e.g., todo,churn,revert)")
 	scanCmd.Flags().BoolVar(&scanStrict, "strict", false, "exit non-zero on any collector failure")
 }
 
@@ -229,6 +233,34 @@ func runScan(cmd *cobra.Command, args []string) error {
 				}
 			}
 		}
+	}
+
+	// 10.6. Post-pipeline confidence filter.
+	if scanMinConfidence > 0 {
+		var filtered []signal.RawSignal
+		for _, sig := range result.Signals {
+			if sig.Confidence >= scanMinConfidence {
+				filtered = append(filtered, sig)
+			}
+		}
+		slog.Info("confidence filter", "before", len(result.Signals), "after", len(filtered), "min", scanMinConfidence)
+		result.Signals = filtered
+	}
+
+	// 10.7. Post-pipeline kind filter.
+	if scanKind != "" {
+		kinds := make(map[string]bool)
+		for _, k := range strings.Split(scanKind, ",") {
+			kinds[strings.TrimSpace(strings.ToLower(k))] = true
+		}
+		var filtered []signal.RawSignal
+		for _, sig := range result.Signals {
+			if kinds[sig.Kind] {
+				filtered = append(filtered, sig)
+			}
+		}
+		slog.Info("kind filter", "before", len(result.Signals), "after", len(filtered), "kinds", scanKind)
+		result.Signals = filtered
 	}
 
 	// 11. Determine exit code based on collector results.

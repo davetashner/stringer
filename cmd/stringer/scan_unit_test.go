@@ -31,6 +31,8 @@ func resetScanFlags() {
 	scanNoLLM = false
 	scanJSON = false
 	scanMaxIssues = 0
+	scanMinConfidence = 0
+	scanKind = ""
 	scanStrict = false
 
 	// Reset cobra flag "Changed" state and values to avoid test contamination.
@@ -733,6 +735,8 @@ func TestScanCmd_FlagsRegistered(t *testing.T) {
 		{"no-llm", ""},
 		{"json", ""},
 		{"max-issues", ""},
+		{"min-confidence", ""},
+		{"kind", ""},
 		{"strict", ""},
 	}
 
@@ -870,6 +874,64 @@ func TestComputeExitCode_AllSuccess_Strict(t *testing.T) {
 func TestComputeExitCode_NoResults_Strict(t *testing.T) {
 	result := &signal.ScanResult{Results: nil}
 	assert.Equal(t, ExitOK, computeExitCode(result, true))
+}
+
+// -----------------------------------------------------------------------
+// --min-confidence flag tests
+// -----------------------------------------------------------------------
+
+func TestRunScan_MinConfidenceFilter(t *testing.T) {
+	resetScanFlags()
+	root := repoRoot(t)
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", root, "--min-confidence=0.9", "--dry-run", "--quiet", "--collectors=todos"})
+	err := cmd.Execute()
+	require.NoError(t, err)
+	// With very high confidence filter, most/all signals should be filtered out.
+	out := stdout.String()
+	assert.Contains(t, out, "signal(s) found")
+}
+
+// -----------------------------------------------------------------------
+// --kind flag tests
+// -----------------------------------------------------------------------
+
+func TestRunScan_KindFilter(t *testing.T) {
+	resetScanFlags()
+	root := repoRoot(t)
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", root, "--kind=todo", "--dry-run", "--quiet", "--collectors=todos"})
+	err := cmd.Execute()
+	require.NoError(t, err)
+	out := stdout.String()
+	assert.Contains(t, out, "signal(s) found")
+}
+
+func TestRunScan_KindFilterNoMatch(t *testing.T) {
+	resetScanFlags()
+	root := repoRoot(t)
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", root, "--kind=nonexistentkind", "--dry-run", "--quiet", "--collectors=todos"})
+	err := cmd.Execute()
+	require.NoError(t, err)
+	out := stdout.String()
+	assert.Contains(t, out, "0 signal(s) found")
+}
+
+// -----------------------------------------------------------------------
+// New flag registration tests
+// -----------------------------------------------------------------------
+
+func TestScanCmd_MinConfidenceFlagRegistered(t *testing.T) {
+	f := scanCmd.Flags().Lookup("min-confidence")
+	require.NotNil(t, f, "flag --min-confidence not registered")
+	assert.Equal(t, "0", f.DefValue)
+}
+
+func TestScanCmd_KindFlagRegistered(t *testing.T) {
+	f := scanCmd.Flags().Lookup("kind")
+	require.NotNil(t, f, "flag --kind not registered")
+	assert.Equal(t, "", f.DefValue)
 }
 
 func TestScanCmd_StrictFlagRegistered(t *testing.T) {
