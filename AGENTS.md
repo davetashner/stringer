@@ -20,7 +20,8 @@ stringer/
 │   ├── collectors/         # Signal extraction modules
 │   │   ├── todos.go            # TODO/FIXME/HACK/XXX/BUG/OPTIMIZE scanner
 │   │   ├── gitlog.go           # Reverts, high-churn files, stale branches
-│   │   └── patterns.go         # Large files, low test coverage ratios
+│   │   ├── patterns.go         # Large files, low test coverage ratios
+│   │   └── busfactor.go        # Bus factor analysis (ownership risk per directory)
 │   ├── config/             # .stringer.yaml config file support
 │   │   ├── config.go           # Config and CollectorConfig structs
 │   │   ├── yaml.go             # Load() and Write() — YAML marshal/unmarshal

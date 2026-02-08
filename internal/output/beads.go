@@ -99,7 +99,7 @@ func mapKindToType(kind string) string {
 		return "bug"
 	case "todo":
 		return "task"
-	case "hack", "xxx", "optimize":
+	case "hack", "xxx", "optimize", "low-bus-factor":
 		return "chore"
 	default:
 		return "task"
