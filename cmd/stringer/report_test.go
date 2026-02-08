@@ -6,10 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/davetashner/stringer/internal/signal"
 )
 
 // resetReportFlags resets all package-level report flags to their default values.
@@ -197,4 +200,118 @@ func TestReportCmd_InRootHelp(t *testing.T) {
 
 	out := buf.String()
 	assert.True(t, strings.Contains(out, "report"), "root help should list report subcommand")
+}
+
+func TestReportCmd_SectionsFilter(t *testing.T) {
+	resetReportFlags()
+	root := repoRoot(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"report", root, "--sections=lottery-risk", "--quiet"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "Lottery Risk")
+	assert.NotContains(t, out, "Code Churn")
+	assert.NotContains(t, out, "TODO Age")
+	assert.NotContains(t, out, "Test Coverage Gaps")
+}
+
+func TestReportCmd_UnknownSection(t *testing.T) {
+	resetReportFlags()
+	root := repoRoot(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"report", root, "--sections=nonexistent", "--quiet"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "Warning: unknown section")
+	assert.Contains(t, out, "nonexistent")
+}
+
+func TestReportCmd_SectionSkipWhenCollectorNotRun(t *testing.T) {
+	resetReportFlags()
+	root := repoRoot(t)
+
+	// Run only the todos collector, but request the lottery-risk section.
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"report", root, "-c", "todos", "--sections=lottery-risk", "--quiet"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "lottery-risk: skipped (collector not run)")
+}
+
+func TestReportCmd_AllSectionsDefault(t *testing.T) {
+	resetReportFlags()
+	root := repoRoot(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"report", root, "--quiet"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	out := stdout.String()
+	// All sections should appear when no --sections filter.
+	assert.Contains(t, out, "Lottery Risk")
+	assert.Contains(t, out, "Code Churn")
+	assert.Contains(t, out, "TODO Age Distribution")
+	assert.Contains(t, out, "Test Coverage Gaps")
+}
+
+func TestRenderReport_EmptyResult(t *testing.T) {
+	result := &signal.ScanResult{
+		Duration: 100 * time.Millisecond,
+		Metrics:  map[string]any{},
+	}
+
+	var buf bytes.Buffer
+	err := renderReport(result, "/tmp/test", []string{"todos"}, nil, &buf)
+	require.NoError(t, err)
+
+	out := buf.String()
+	assert.Contains(t, out, "Stringer Report")
+	assert.Contains(t, out, "/tmp/test")
+	assert.Contains(t, out, "Total signals: 0")
+	// With no metrics, all sections should show "skipped".
+	assert.Contains(t, out, "skipped (collector not run)")
+}
+
+func TestRenderReport_SelectedSections(t *testing.T) {
+	result := &signal.ScanResult{
+		Duration: 50 * time.Millisecond,
+		Metrics:  map[string]any{},
+	}
+
+	var buf bytes.Buffer
+	err := renderReport(result, "/tmp/test", []string{"todos"}, []string{"churn"}, &buf)
+	require.NoError(t, err)
+
+	out := buf.String()
+	assert.Contains(t, out, "churn: skipped")
+	assert.NotContains(t, out, "Lottery Risk")
+}
+
+func TestResolveSections_UnknownPrintsWarning(t *testing.T) {
+	var buf bytes.Buffer
+	names := resolveSections([]string{"lottery-risk", "nonexistent"}, &buf)
+
+	assert.Equal(t, []string{"lottery-risk"}, names)
+	assert.Contains(t, buf.String(), "Warning: unknown section")
+	assert.Contains(t, buf.String(), "nonexistent")
+}
+
+func TestResolveSections_EmptyReturnsAll(t *testing.T) {
+	var buf bytes.Buffer
+	names := resolveSections(nil, &buf)
+	assert.NotEmpty(t, names)
+	assert.Empty(t, buf.String())
 }
