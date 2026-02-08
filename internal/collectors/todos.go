@@ -42,7 +42,7 @@ var todoKeyword = map[string]float64{
 // The keyword match is case-insensitive.
 var todoPattern = regexp.MustCompile(
 	`(?i)(?://|#|/\*|\*|--)\s*` + // comment prefix
-		`(TODO|FIXME|HACK|XXX|BUG|OPTIMIZE)` + // keyword (captured)
+		`(TODO|FIXME|HACK|XXX|BUG|OPTIMIZE)\b` + // keyword (captured, word boundary prevents TODOIST etc.)
 		`(?:\([^)]*\))?` + // optional (author)
 		`\s*[:>\-]?\s*` + // optional separator
 		`(.*)`, // message (captured)

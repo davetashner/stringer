@@ -82,6 +82,10 @@ func TestTodoPatternNoMatch(t *testing.T) {
 		{name: "string_literal", input: `fmt.Println("TODO: test")`},
 		{name: "empty_line", input: ""},
 		{name: "just_comment", input: "// This is a normal comment"},
+		{name: "todoist_api", input: "// TODOIST_API: config"},
+		{name: "fixmeup", input: "// FIXMEUP: handler"},
+		{name: "todoist_tasks", input: "// TODOIST_TASKS: config"},
+		{name: "bugzilla", input: "// BUGZILLA: tracker"},
 	}
 
 	for _, tt := range noMatch {
@@ -325,6 +329,58 @@ func runGit(t *testing.T, dir string, args ...string) {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v failed: %v\n%s", args, err, out)
+	}
+}
+
+func TestScanFile_NoFalsePositives(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "nofp.go")
+	content := `package main
+
+// TODOIST_API_TASKS: config
+func todoistHandler() {}
+
+// FIXMEUP_HANDLER: recovery
+func fixmeHandler() {}
+
+// BUGZILLA_ID: 12345
+func bugTracker() {}
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	signals, err := scanFile(path, "nofp.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(signals) != 0 {
+		t.Errorf("expected 0 signals (no false positives), got %d: %v", len(signals), signals)
+	}
+}
+
+func TestScanFile_TodoWithAuthorAfterWordBoundary(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "author.go")
+	content := "// TODO(alice): refactor this code\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	signals, err := scanFile(path, "author.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(signals) != 1 {
+		t.Fatalf("expected 1 signal, got %d", len(signals))
+	}
+	if signals[0].Kind != "todo" {
+		t.Errorf("Kind = %q, want %q", signals[0].Kind, "todo")
+	}
+	if signals[0].Title != "TODO: refactor this code" {
+		t.Errorf("Title = %q, want %q", signals[0].Title, "TODO: refactor this code")
 	}
 }
 
