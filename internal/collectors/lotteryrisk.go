@@ -105,12 +105,12 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 	}
 
 	// Blame source files and attribute lines to directories.
-	if err := blameDirectories(ctx, repo, repoPath, ownership, defaultMaxBlameFiles); err != nil {
+	if err := blameDirectories(ctx, repo, repoPath, ownership, defaultMaxBlameFiles, opts); err != nil {
 		return nil, fmt.Errorf("blaming files: %w", err)
 	}
 
 	// Walk commits and attribute weighted commit activity to directories.
-	if err := walkCommitsForOwnership(ctx, repo, repoPath, ownership); err != nil {
+	if err := walkCommitsForOwnership(ctx, repo, repoPath, ownership, opts); err != nil {
 		return nil, fmt.Errorf("walking commits for ownership: %w", err)
 	}
 
@@ -202,7 +202,7 @@ func discoverDirectories(ctx context.Context, repoPath string, maxDepth int) ([]
 
 // blameDirectories blames source files and attributes line counts to their
 // containing directories. It caps blame at maxFiles per directory.
-func blameDirectories(ctx context.Context, repo *git.Repository, repoPath string, ownership map[string]*dirOwnership, maxFiles int) error {
+func blameDirectories(ctx context.Context, repo *git.Repository, repoPath string, ownership map[string]*dirOwnership, maxFiles int, opts signal.CollectorOpts) error {
 	head, err := repo.Head()
 	if err != nil {
 		return nil // empty repo, no blame data
@@ -215,6 +215,7 @@ func blameDirectories(ctx context.Context, repo *git.Repository, repoPath string
 
 	// Count files per directory to respect the cap.
 	dirFileCount := make(map[string]int)
+	totalFiles := 0
 
 	err = filepath.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -265,6 +266,10 @@ func blameDirectories(ctx context.Context, repo *git.Repository, repoPath string
 			return nil
 		}
 		dirFileCount[dir]++
+		totalFiles++
+		if opts.ProgressFunc != nil && totalFiles%50 == 0 {
+			opts.ProgressFunc(fmt.Sprintf("lotteryrisk: blamed %d files", totalFiles))
+		}
 
 		// Blame the file.
 		blameResult, blameErr := git.Blame(commit, filepath.ToSlash(relPath))
@@ -297,18 +302,31 @@ func blameDirectories(ctx context.Context, repo *git.Repository, repoPath string
 
 // walkCommitsForOwnership iterates commits and applies recency-weighted
 // attribution to directories based on changed files.
-func walkCommitsForOwnership(ctx context.Context, repo *git.Repository, repoPath string, ownership map[string]*dirOwnership) error {
+func walkCommitsForOwnership(ctx context.Context, repo *git.Repository, repoPath string, ownership map[string]*dirOwnership, opts signal.CollectorOpts) error {
 	head, err := repo.Head()
 	if err != nil {
 		return nil // empty repo
 	}
 
-	iter, err := repo.Log(&git.LogOptions{
+	logOpts := &git.LogOptions{
 		From:  head.Hash(),
 		Order: git.LogOrderCommitterTime,
-	})
+	}
+	if opts.GitSince != "" {
+		if since, parseErr := parseDuration(opts.GitSince); parseErr == nil {
+			t := time.Now().Add(-since)
+			logOpts.Since = &t
+		}
+	}
+
+	iter, err := repo.Log(logOpts)
 	if err != nil {
 		return fmt.Errorf("creating log iterator: %w", err)
+	}
+
+	maxWalk := maxCommitWalk
+	if opts.GitDepth > 0 {
+		maxWalk = opts.GitDepth
 	}
 
 	now := time.Now()
@@ -318,10 +336,14 @@ func walkCommitsForOwnership(ctx context.Context, repo *git.Repository, repoPath
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if count >= maxCommitWalk {
+		if count >= maxWalk {
 			return errStopIter
 		}
 		count++
+
+		if opts.ProgressFunc != nil && count%100 == 0 {
+			opts.ProgressFunc(fmt.Sprintf("lotteryrisk: examined %d commits", count))
+		}
 
 		author := c.Author.Name
 		if author == "" {

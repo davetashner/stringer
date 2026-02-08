@@ -7,6 +7,7 @@ import (
 	"math"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,7 +77,7 @@ func (c *GitlogCollector) Collect(ctx context.Context, repoPath string, opts sig
 	var signals []signal.RawSignal
 
 	// Collect reverts and build churn data in a single commit walk.
-	reverts, churnSignals, err := c.walkCommits(ctx, repo)
+	reverts, churnSignals, err := c.walkCommits(ctx, repo, opts)
 	if err != nil {
 		return nil, fmt.Errorf("walking commits: %w", err)
 	}
@@ -99,19 +100,32 @@ func (c *GitlogCollector) Collect(ctx context.Context, repoPath string, opts sig
 
 // walkCommits iterates over the most recent commits and returns revert signals
 // and churn signals.
-func (c *GitlogCollector) walkCommits(ctx context.Context, repo *git.Repository) ([]signal.RawSignal, []signal.RawSignal, error) {
+func (c *GitlogCollector) walkCommits(ctx context.Context, repo *git.Repository, opts signal.CollectorOpts) ([]signal.RawSignal, []signal.RawSignal, error) {
 	head, err := repo.Head()
 	if err != nil {
 		// Empty repo or detached HEAD with no commits.
 		return nil, nil, nil //nolint:nilerr // gracefully handle repos with no commits
 	}
 
-	iter, err := repo.Log(&git.LogOptions{
+	logOpts := &git.LogOptions{
 		From:  head.Hash(),
 		Order: git.LogOrderCommitterTime,
-	})
+	}
+	if opts.GitSince != "" {
+		if since, parseErr := parseDuration(opts.GitSince); parseErr == nil {
+			t := time.Now().Add(-since)
+			logOpts.Since = &t
+		}
+	}
+
+	iter, err := repo.Log(logOpts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating log iterator: %w", err)
+	}
+
+	maxWalk := maxCommitWalk
+	if opts.GitDepth > 0 {
+		maxWalk = opts.GitDepth
 	}
 
 	var reverts []signal.RawSignal
@@ -124,10 +138,14 @@ func (c *GitlogCollector) walkCommits(ctx context.Context, repo *git.Repository)
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if count >= maxCommitWalk {
+		if count >= maxWalk {
 			return errStopIter
 		}
 		count++
+
+		if opts.ProgressFunc != nil && count%100 == 0 {
+			opts.ProgressFunc(fmt.Sprintf("gitlog: examined %d commits", count))
+		}
 
 		// --- Revert detection ---
 		if sig, ok := detectRevert(commit); ok {
@@ -422,6 +440,33 @@ func sortedKeys(m map[string]bool) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// parseDuration parses duration strings like "90d", "6m", "1y" into time.Duration.
+func parseDuration(s string) (time.Duration, error) {
+	if len(s) < 2 {
+		return 0, fmt.Errorf("invalid duration: %q", s)
+	}
+	numStr := s[:len(s)-1]
+	unit := s[len(s)-1]
+
+	n, err := strconv.Atoi(numStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration number: %q", s)
+	}
+
+	switch unit {
+	case 'd':
+		return time.Duration(n) * 24 * time.Hour, nil
+	case 'w':
+		return time.Duration(n) * 7 * 24 * time.Hour, nil
+	case 'm':
+		return time.Duration(n) * 30 * 24 * time.Hour, nil
+	case 'y':
+		return time.Duration(n) * 365 * 24 * time.Hour, nil
+	default:
+		return 0, fmt.Errorf("invalid duration unit %q in %q (use d/w/m/y)", string(unit), s)
+	}
 }
 
 // Compile-time interface check.

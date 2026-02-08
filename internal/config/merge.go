@@ -44,6 +44,12 @@ func Merge(fileCfg *Config, cliCfg signal.ScanConfig) signal.ScanConfig {
 			if co.LargeFileThreshold == 0 && fc.LargeFileThreshold > 0 {
 				co.LargeFileThreshold = fc.LargeFileThreshold
 			}
+			if co.GitDepth == 0 && fc.GitDepth > 0 {
+				co.GitDepth = fc.GitDepth
+			}
+			if co.GitSince == "" && fc.GitSince != "" {
+				co.GitSince = fc.GitSince
+			}
 			result.CollectorOpts[name] = co
 		}
 	}

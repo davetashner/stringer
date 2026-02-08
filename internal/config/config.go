@@ -26,6 +26,10 @@ type CollectorConfig struct {
 	// Patterns collector settings.
 	LargeFileThreshold int `yaml:"large_file_threshold,omitempty"`
 
+	// Git collector settings.
+	GitDepth int    `yaml:"git_depth,omitempty"`
+	GitSince string `yaml:"git_since,omitempty"`
+
 	// GitHub collector settings.
 	IncludePRs            *bool `yaml:"include_prs,omitempty"`
 	CommentDepth          int   `yaml:"comment_depth,omitempty"`

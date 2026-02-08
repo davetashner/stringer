@@ -35,6 +35,8 @@ func resetScanFlags() {
 	scanMinConfidence = 0
 	scanKind = ""
 	scanStrict = false
+	scanGitDepth = 0
+	scanGitSince = ""
 
 	// Reset cobra flag "Changed" state and values to avoid test contamination.
 	scanCmd.Flags().VisitAll(func(f *pflag.Flag) {
@@ -721,6 +723,52 @@ func TestRunScan_SymlinkPath(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
+// Git depth/since integration tests
+// -----------------------------------------------------------------------
+
+func TestRunScan_GitDepthFlag(t *testing.T) {
+	resetScanFlags()
+	root := repoRoot(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", root, "--git-depth=50", "--dry-run", "--quiet", "--collectors=gitlog"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "signal(s) found")
+}
+
+func TestRunScan_GitSinceFlag(t *testing.T) {
+	resetScanFlags()
+	root := repoRoot(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", root, "--git-since=30d", "--dry-run", "--quiet", "--collectors=gitlog"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "signal(s) found")
+}
+
+func TestRunScan_GitDepthAndGitSinceTogether(t *testing.T) {
+	resetScanFlags()
+	root := repoRoot(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", root, "--git-depth=100", "--git-since=90d", "--dry-run", "--quiet", "--collectors=gitlog"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "signal(s) found")
+}
+
+// -----------------------------------------------------------------------
 // Scan flags tests
 // -----------------------------------------------------------------------
 
@@ -739,6 +787,8 @@ func TestScanCmd_FlagsRegistered(t *testing.T) {
 		{"min-confidence", ""},
 		{"kind", ""},
 		{"strict", ""},
+		{"git-depth", ""},
+		{"git-since", ""},
 	}
 
 	for _, ff := range flags {
@@ -979,4 +1029,20 @@ func TestRunScan_SubdirectoryFindsGitRoot(t *testing.T) {
 
 	out := stdout.String()
 	assert.Contains(t, out, "total_signals")
+}
+
+// -----------------------------------------------------------------------
+// Git depth/since flag default value tests
+// -----------------------------------------------------------------------
+
+func TestScanCmd_GitDepthDefaultValue(t *testing.T) {
+	f := scanCmd.Flags().Lookup("git-depth")
+	require.NotNil(t, f)
+	assert.Equal(t, "0", f.DefValue)
+}
+
+func TestScanCmd_GitSinceDefaultValue(t *testing.T) {
+	f := scanCmd.Flags().Lookup("git-since")
+	require.NotNil(t, f)
+	assert.Equal(t, "", f.DefValue)
 }

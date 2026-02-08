@@ -778,3 +778,159 @@ func TestGitlogCollector_ActiveBranchNotFlagged(t *testing.T) {
 			"recently active branch should not be flagged as stale")
 	}
 }
+
+// --- parseDuration tests ---
+
+func TestParseDuration_Days(t *testing.T) {
+	d, err := parseDuration("90d")
+	require.NoError(t, err)
+	assert.Equal(t, 90*24*time.Hour, d)
+}
+
+func TestParseDuration_Weeks(t *testing.T) {
+	d, err := parseDuration("2w")
+	require.NoError(t, err)
+	assert.Equal(t, 14*24*time.Hour, d)
+}
+
+func TestParseDuration_Months(t *testing.T) {
+	d, err := parseDuration("6m")
+	require.NoError(t, err)
+	assert.Equal(t, 180*24*time.Hour, d)
+}
+
+func TestParseDuration_Years(t *testing.T) {
+	d, err := parseDuration("1y")
+	require.NoError(t, err)
+	assert.Equal(t, 365*24*time.Hour, d)
+}
+
+func TestParseDuration_InvalidTooShort(t *testing.T) {
+	_, err := parseDuration("d")
+	assert.Error(t, err)
+}
+
+func TestParseDuration_InvalidEmpty(t *testing.T) {
+	_, err := parseDuration("")
+	assert.Error(t, err)
+}
+
+func TestParseDuration_InvalidUnit(t *testing.T) {
+	_, err := parseDuration("10x")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid duration unit")
+}
+
+func TestParseDuration_InvalidNumber(t *testing.T) {
+	_, err := parseDuration("abcd")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid duration number")
+}
+
+// --- GitDepth tests ---
+
+func TestGitlogCollector_GitDepthLimitsCommits(t *testing.T) {
+	repo, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n",
+	})
+
+	// Create 15 commits modifying the same file (to trigger churn at default depth).
+	now := time.Now()
+	for i := 0; i < 15; i++ {
+		content := fmt.Sprintf("package main\n// change %d\n", i)
+		addCommit(t, repo, dir, "hot.go", content,
+			fmt.Sprintf("chore: tweak hot.go (%d)", i),
+			now.Add(-time.Duration(i)*24*time.Hour))
+	}
+
+	// With default depth (1000), all 15 commits are seen, triggering churn.
+	c := &GitlogCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	churn := filterByKind(signals, "churn")
+	require.Len(t, churn, 1, "all commits should be walked at default depth")
+
+	// With GitDepth=5, only 5 commits are seen, not enough for churn threshold.
+	signals, err = c.Collect(context.Background(), dir, signal.CollectorOpts{
+		GitDepth: 5,
+	})
+	require.NoError(t, err)
+	churn = filterByKind(signals, "churn")
+	assert.Empty(t, churn, "with depth 5, only 5 commits seen, below churn threshold of 10")
+}
+
+// --- Progress callback tests ---
+
+func TestGitlogCollector_ProgressCallback(t *testing.T) {
+	repo, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n",
+	})
+
+	// Create 250 commits to trigger progress at 100 mark.
+	now := time.Now()
+	for i := 0; i < 250; i++ {
+		content := fmt.Sprintf("package main\n// change %d\n", i)
+		addCommit(t, repo, dir, "file.go", content,
+			fmt.Sprintf("chore: tweak (%d)", i),
+			now.Add(-time.Duration(i)*time.Hour))
+	}
+
+	var progressMessages []string
+	c := &GitlogCollector{}
+	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		ProgressFunc: func(msg string) {
+			progressMessages = append(progressMessages, msg)
+		},
+	})
+	require.NoError(t, err)
+
+	// With 250+ commits (plus initial), progress should fire at least twice (100, 200).
+	assert.GreaterOrEqual(t, len(progressMessages), 2,
+		"expected at least 2 progress messages for 250+ commits")
+	for _, msg := range progressMessages {
+		assert.Contains(t, msg, "gitlog: examined")
+	}
+}
+
+// --- GitSince tests ---
+
+func TestGitlogCollector_GitSinceFiltersOldCommits(t *testing.T) {
+	repo, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n",
+	})
+
+	// Create 12 commits, all old (150+ days ago), which would normally trigger churn.
+	old := time.Now().AddDate(0, 0, -200)
+	for i := 0; i < 12; i++ {
+		content := fmt.Sprintf("package main\n// old change %d\n", i)
+		addCommit(t, repo, dir, "hot.go", content,
+			fmt.Sprintf("chore: old tweak (%d)", i),
+			old.Add(-time.Duration(i)*24*time.Hour))
+	}
+
+	// Without GitSince, old commits outside churn window don't trigger churn
+	// (the churn window is 90 days), so this test verifies GitSince works at
+	// the log level. Add recent commits too.
+	now := time.Now()
+	for i := 0; i < 12; i++ {
+		content := fmt.Sprintf("package main\n// recent change %d\n", i)
+		addCommit(t, repo, dir, "hot.go", content,
+			fmt.Sprintf("chore: recent tweak (%d)", i),
+			now.Add(-time.Duration(i)*24*time.Hour))
+	}
+
+	// With no git-since, churn is detected from recent commits.
+	c := &GitlogCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	churn := filterByKind(signals, "churn")
+	assert.NotEmpty(t, churn, "should detect churn from recent commits")
+
+	// With git-since="1d", only very recent commits are considered.
+	signals, err = c.Collect(context.Background(), dir, signal.CollectorOpts{
+		GitSince: "1d",
+	})
+	require.NoError(t, err)
+	churn = filterByKind(signals, "churn")
+	assert.Empty(t, churn, "with git-since=1d, very few commits seen, below churn threshold")
+}

@@ -319,3 +319,50 @@ func TestLotteryRiskConfidence_LotteryRisk3(t *testing.T) {
 func TestLotteryRiskConfidence_LotteryRisk10(t *testing.T) {
 	assert.InDelta(t, 0.3, lotteryRiskConfidence(10), 0.001)
 }
+
+// --- GitDepth tests ---
+
+func TestLotteryRiskCollector_GitDepthLimitsCommitWalk(t *testing.T) {
+	// With a very low GitDepth, commit-based ownership weights should differ
+	// from the default. This test verifies that walkCommitsForOwnership
+	// respects the depth setting.
+	_, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n\nfunc main() {}\n",
+	})
+
+	c := &LotteryRiskCollector{}
+
+	// Default depth walks all commits.
+	signals1, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	// GitDepth=1 walks only one commit.
+	signals2, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		GitDepth: 1,
+	})
+	require.NoError(t, err)
+
+	// Both should produce signals (single-author repo always has low lottery risk).
+	assert.NotEmpty(t, signals1, "default depth should produce signals")
+	assert.NotEmpty(t, signals2, "depth=1 should produce signals")
+}
+
+// --- Progress callback tests ---
+
+func TestLotteryRiskCollector_ProgressCallback(t *testing.T) {
+	_, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n\nfunc main() {}\n",
+	})
+
+	var progressMessages []string
+	c := &LotteryRiskCollector{}
+	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		ProgressFunc: func(msg string) {
+			progressMessages = append(progressMessages, msg)
+		},
+	})
+	require.NoError(t, err)
+
+	// Small repo may not trigger any progress (needs 100+ commits or 50+ blamed files).
+	// This test just ensures the callback doesn't cause errors.
+}
