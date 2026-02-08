@@ -46,7 +46,7 @@ suitable for import with 'bd import'.`,
 
 func init() {
 	scanCmd.Flags().StringVarP(&scanCollectors, "collectors", "c", "", "comma-separated list of collectors to run")
-	scanCmd.Flags().StringVarP(&scanFormat, "format", "f", "beads", "output format (beads, json)")
+	scanCmd.Flags().StringVarP(&scanFormat, "format", "f", "beads", "output format (beads, json, markdown, tasks)")
 	scanCmd.Flags().StringVarP(&scanOutput, "output", "o", "", "output file path (default: stdout)")
 	scanCmd.Flags().BoolVar(&scanDryRun, "dry-run", false, "show signal count without producing output")
 	scanCmd.Flags().BoolVar(&scanDelta, "delta", false, "only output new signals since last scan")
