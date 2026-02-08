@@ -1060,8 +1060,8 @@ func TestRunScan_ExcludeFlag(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "src")
 	testDir := filepath.Join(dir, "tests")
-	require.NoError(t, os.MkdirAll(srcDir, 0o755))
-	require.NoError(t, os.MkdirAll(testDir, 0o755))
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
 
 	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "main.go"),
 		[]byte("package main\n// TODO: fix this\n"), 0o600))
@@ -1086,7 +1086,7 @@ func TestRunScan_ExcludeMultiplePatterns(t *testing.T) {
 
 	dir := t.TempDir()
 	for _, sub := range []string{"src", "docs", "extra"} {
-		require.NoError(t, os.MkdirAll(filepath.Join(dir, sub), 0o755))
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, sub), 0o750))
 		require.NoError(t, os.WriteFile(filepath.Join(dir, sub, "file.go"),
 			[]byte("package x\n// TODO: something\n"), 0o600))
 	}
