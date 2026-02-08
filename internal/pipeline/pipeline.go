@@ -169,6 +169,13 @@ func (p *Pipeline) runCollector(ctx context.Context, c collector.Collector) sign
 		opts.ExcludePatterns = append(p.config.ExcludePatterns, opts.ExcludePatterns...)
 	}
 
+	// Apply per-collector timeout if configured.
+	if opts.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
+		defer cancel()
+	}
+
 	start := time.Now()
 
 	signals, err := c.Collect(ctx, p.config.RepoPath, opts)
