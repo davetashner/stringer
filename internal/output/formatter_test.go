@@ -35,8 +35,9 @@ func TestGetFormatter_Known(t *testing.T) {
 	resetFmtForTesting()
 	defer func() {
 		resetFmtForTesting()
-		// Re-register the beads formatter so other tests in the package work.
+		// Re-register formatters so other tests in the package work.
 		RegisterFormatter(NewBeadsFormatter())
+		RegisterFormatter(NewMarkdownFormatter())
 	}()
 
 	RegisterFormatter(&stubFormatter{name: "json"})
@@ -56,6 +57,7 @@ func TestGetFormatter_Unknown(t *testing.T) {
 	defer func() {
 		resetFmtForTesting()
 		RegisterFormatter(NewBeadsFormatter())
+		RegisterFormatter(NewMarkdownFormatter())
 	}()
 
 	RegisterFormatter(&stubFormatter{name: "beads"})
@@ -72,6 +74,7 @@ func TestGetFormatter_UnknownEmptyRegistry(t *testing.T) {
 	defer func() {
 		resetFmtForTesting()
 		RegisterFormatter(NewBeadsFormatter())
+		RegisterFormatter(NewMarkdownFormatter())
 	}()
 
 	f, err := GetFormatter("anything")
@@ -87,6 +90,7 @@ func TestFormatNames_Empty(t *testing.T) {
 	defer func() {
 		resetFmtForTesting()
 		RegisterFormatter(NewBeadsFormatter())
+		RegisterFormatter(NewMarkdownFormatter())
 	}()
 
 	result := formatNames()
@@ -98,6 +102,7 @@ func TestFormatNames_Single(t *testing.T) {
 	defer func() {
 		resetFmtForTesting()
 		RegisterFormatter(NewBeadsFormatter())
+		RegisterFormatter(NewMarkdownFormatter())
 	}()
 
 	RegisterFormatter(&stubFormatter{name: "beads"})
@@ -110,6 +115,7 @@ func TestFormatNames_MultipleSorted(t *testing.T) {
 	defer func() {
 		resetFmtForTesting()
 		RegisterFormatter(NewBeadsFormatter())
+		RegisterFormatter(NewMarkdownFormatter())
 	}()
 
 	RegisterFormatter(&stubFormatter{name: "markdown"})
@@ -196,6 +202,7 @@ func TestGetFormatter_ErrorListsAvailableFormatters(t *testing.T) {
 	defer func() {
 		resetFmtForTesting()
 		RegisterFormatter(NewBeadsFormatter())
+		RegisterFormatter(NewMarkdownFormatter())
 	}()
 
 	RegisterFormatter(&stubFormatter{name: "alpha"})
