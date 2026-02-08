@@ -12,7 +12,7 @@
 [![Release](https://img.shields.io/github/v/release/davetashner/stringer)](https://github.com/davetashner/stringer/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **Status: v0.3.0.** Five collectors, three output formats, parallel pipeline with signal deduplication, delta scanning. See [Current Limitations](#current-limitations) for what's not here yet.
+> **Status: v0.4.0.** Five collectors, four output formats, parallel pipeline with signal deduplication, delta scanning, pre-closed beads, and beads-aware dedup. See [Current Limitations](#current-limitations) for what's not here yet.
 
 **Codebase archaeology for [Beads](https://github.com/steveyegge/beads).** Mine your repo for actionable work items, output them as Beads-formatted issues, and give your AI agents instant situational awareness.
 
@@ -47,19 +47,23 @@ Stringer solves the cold-start problem. It mines signals already present in your
 - **Git log collector** (`gitlog`) — Detects reverts, high-churn files, and stale branches from git history.
 - **Patterns collector** (`patterns`) — Flags large files and modules with low test coverage ratios.
 - **Lottery risk analyzer** (`lotteryrisk`) — Flags directories with low lottery risk (single-author ownership risk) using git blame and commit history with recency weighting.
-- **GitHub collector** (`github`) — Imports open issues, pull requests, and actionable review comments from GitHub. Requires `GITHUB_TOKEN` env var.
+- **GitHub collector** (`github`) — Imports open issues, pull requests, and actionable review comments from GitHub. With `--include-closed`, also generates pre-closed beads from merged PRs and closed issues with architectural module context. Requires `GITHUB_TOKEN` env var.
 
 ### Output Formats
 
 - **Beads JSONL** (`beads`) — Produces JSONL ready for `bd import`, with deterministic content-based IDs
 - **JSON** (`json`) — Raw signals with metadata envelope, TTY-aware pretty/compact output
 - **Markdown** (`markdown`) — Human-readable summary grouped by collector with priority distribution
+- **Tasks** (`tasks`) — Claude Code task format for direct agent consumption
 
 ### Pipeline
 
 - **Parallel execution** — Collectors run concurrently via errgroup
 - **Per-collector error modes** — skip, warn (default), or fail
 - **Signal deduplication** — Content-based SHA-256 hashing merges duplicate signals
+- **Beads-aware dedup** — Filters signals already tracked as beads in the repo
+- **Delta scanning** — `--delta` mode tracks state between scans, showing only new/removed/moved signals
+- **Pre-closed beads** — Generates closed beads from merged PRs, closed issues, and resolved TODOs
 - **Dry-run mode** — Preview signal counts without producing output
 
 ```
@@ -161,22 +165,31 @@ stringer scan . --dry-run --json
 stringer scan [path] [flags]
 ```
 
-| Flag           | Short | Default | Description                                               |
-| -------------- | ----- | ------- | --------------------------------------------------------- |
-| `--collectors` | `-c`  | (all)   | Comma-separated list of collectors to run                 |
-| `--format`     | `-f`  | `beads` | Output format                                             |
-| `--output`     | `-o`  | stdout  | Output file path                                          |
-| `--dry-run`    |       |         | Show signal count without producing output                |
-| `--delta`      |       |         | Only output new signals since last scan                   |
-| `--json`       |       |         | Machine-readable output for `--dry-run`                   |
-| `--max-issues` |       | `0`     | Cap output count (0 = unlimited)                          |
-| `--no-llm`     |       |         | Skip LLM clustering pass (noop — reserved for future use) |
+| Flag               | Short | Default | Description                                               |
+| ------------------ | ----- | ------- | --------------------------------------------------------- |
+| `--collectors`     | `-c`  | (all)   | Comma-separated list of collectors to run                 |
+| `--format`         | `-f`  | `beads` | Output format                                             |
+| `--output`         | `-o`  | stdout  | Output file path                                          |
+| `--dry-run`        |       |         | Show signal count without producing output                |
+| `--delta`          |       |         | Only output new signals since last scan                   |
+| `--json`           |       |         | Machine-readable output for `--dry-run`                   |
+| `--max-issues`     |       | `0`     | Cap output count (0 = unlimited)                          |
+| `--min-confidence` |       | `0`     | Filter signals below this threshold (0.0-1.0)            |
+| `--kind`           |       |         | Filter by signal kind (comma-separated)                   |
+| `--strict`         |       |         | Exit non-zero on any collector failure                    |
+| `--git-depth`      |       | `0`     | Max commits to examine (default 1000)                     |
+| `--git-since`      |       |         | Only examine commits after this duration (e.g., 90d, 6m)  |
+| `--exclude`        | `-e`  |         | Glob patterns to exclude from scanning                    |
+| `--include-closed` |       |         | Include closed/merged issues and PRs from GitHub          |
+| `--history-depth`  |       |         | Filter closed items older than this duration (e.g., 90d)  |
+| `--anonymize`      |       | `auto`  | Anonymize author names: auto, always, or never            |
+| `--no-llm`         |       |         | Skip LLM clustering pass (noop — reserved for future use) |
 
 **Global flags:** `--quiet` (`-q`), `--verbose` (`-v`), `--no-color`, `--help` (`-h`)
 
 **Available collectors:** `todos`, `gitlog`, `patterns`, `lotteryrisk`, `github`
 
-**Available formats:** `beads`, `json`, `markdown`
+**Available formats:** `beads`, `json`, `markdown`, `tasks`
 
 ## Configuration File
 
@@ -200,12 +213,35 @@ collectors:
       - vendor/**
       - node_modules/**
   gitlog:
-    enabled: false
+    git_depth: 500
+    git_since: 6m
+  github:
+    include_closed: true
+    history_depth: 90d
 ```
 
 **Precedence:** CLI flags > `.stringer.yaml` > defaults
 
 If no config file exists, stringer uses its built-in defaults (all collectors enabled, beads format, no issue cap).
+
+## Other Commands
+
+### `stringer docs`
+
+Auto-generates an `AGENTS.md` scaffold from your repository structure, documenting modules, entry points, and conventions for AI agents.
+
+```bash
+stringer docs .              # print to stdout
+stringer docs . -o AGENTS.md # write to file
+```
+
+### `stringer context`
+
+Generates a compact context summary of the repository for use in AI prompts. Includes project structure, recent git activity, and open work items.
+
+```bash
+stringer context .
+```
 
 ## How Output Works
 
@@ -277,20 +313,16 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 
 - **No LLM clustering.** The `--no-llm` flag exists but is a noop. There is no LLM pass to cluster related signals or infer dependencies.
 - **No global config.** Per-repo `.stringer.yaml` is supported, but there is no global `~/.stringer.yaml`.
-- **Line-sensitive hashing.** Moving a TODO to a different line changes its ID, which means `bd import` sees it as a new issue.
-- **No `--min-confidence` flag.** Use `--max-issues` to cap output volume. Confidence-based filtering is planned.
-- **Manual cleanup needed.** If you delete a TODO from source and re-scan, the old bead remains in `.beads/`. You need to close it manually with `bd close`.
+- **Line-sensitive hashing.** Moving a TODO to a different line changes its ID, which means `bd import` sees it as a new issue. Delta scanning (`--delta`) detects moved signals but doesn't update beads IDs.
+- **No monorepo support.** Scanning targets a single repository root. Per-workspace scanning is planned.
 
 ## Roadmap
 
 Planned for future releases:
 
+- **`stringer report`** — Summary reports with bus factor, churn/stability, TODO age distribution, and coverage gap sections
 - **LLM clustering pass** — Group related signals, infer dependencies, prioritize
 - **Monorepo support** — Per-workspace scanning and scoped output
-- **`--min-confidence` flag** — Filter by confidence threshold with named presets
-- **`stringer docs`** — Auto-generate AGENTS.md scaffolds from repo structure
-- **Beads-aware output** — Deduplicate against existing beads, adopt conventions
-- **Pre-closed beads** — Generate closed beads from merged PRs and resolved TODOs
 
 ## Design Principles
 
