@@ -194,3 +194,42 @@ func TestTodoAge_Analyze_Reinitializes(t *testing.T) {
 	assert.Equal(t, 1, s.total)
 	assert.Empty(t, s.stale)
 }
+
+func TestTodoAge_Render_UnknownAge(t *testing.T) {
+	// total=5 but only 3 are bucketed → 2 have unknown age.
+	s := &todoAgeSection{
+		total: 5,
+		buckets: []ageBucket{
+			{Label: "< 1 week", Count: 2},
+			{Label: "1-4 weeks", Count: 1},
+			{Label: "1-3 months"},
+			{Label: "3-12 months"},
+			{Label: "> 1 year"},
+		},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, s.Render(&buf))
+
+	out := buf.String()
+	assert.Contains(t, out, "Unknown age")
+	assert.Contains(t, out, "  2")
+}
+
+func TestTodoAge_Render_NoUnknownAge(t *testing.T) {
+	// total matches bucket sum → no unknown-age line.
+	s := &todoAgeSection{
+		total: 3,
+		buckets: []ageBucket{
+			{Label: "< 1 week", Count: 2},
+			{Label: "1-4 weeks", Count: 1},
+			{Label: "1-3 months"},
+			{Label: "3-12 months"},
+			{Label: "> 1 year"},
+		},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, s.Render(&buf))
+	assert.NotContains(t, buf.String(), "Unknown age")
+}

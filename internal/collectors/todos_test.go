@@ -699,7 +699,7 @@ func TestMatchesAny_DoubleStarPatterns(t *testing.T) {
 
 func TestEnrichWithBlame_NilRepo(t *testing.T) {
 	sig := signal.RawSignal{Line: 1}
-	enrichWithBlame(nil, "any.go", &sig)
+	enrichWithBlame(nil, "any.go", &sig, "any.go")
 	if sig.Author != "" {
 		t.Errorf("expected empty author when repo is nil, got %q", sig.Author)
 	}
@@ -717,7 +717,7 @@ func TestEnrichWithBlame_LineOutOfBounds(t *testing.T) {
 
 	// Line 100 is way beyond the file (1 line), so blame should skip gracefully.
 	sig := signal.RawSignal{Line: 100}
-	enrichWithBlame(repo, "small.go", &sig)
+	enrichWithBlame(repo, "small.go", &sig, filepath.Join(repoPath, "small.go"))
 	if sig.Author != "" {
 		t.Errorf("expected empty author for out-of-bounds line, got %q", sig.Author)
 	}
@@ -735,7 +735,7 @@ func TestEnrichWithBlame_LineZero(t *testing.T) {
 
 	// Line=0 → idx=-1 which is out of bounds.
 	sig := signal.RawSignal{Line: 0}
-	enrichWithBlame(repo, "z.go", &sig)
+	enrichWithBlame(repo, "z.go", &sig, filepath.Join(repoPath, "z.go"))
 	if sig.Author != "" {
 		t.Errorf("expected empty author for line=0, got %q", sig.Author)
 	}
@@ -752,7 +752,7 @@ func TestEnrichWithBlame_NegativeLine(t *testing.T) {
 	}
 
 	sig := signal.RawSignal{Line: -5}
-	enrichWithBlame(repo, "neg.go", &sig)
+	enrichWithBlame(repo, "neg.go", &sig, filepath.Join(repoPath, "neg.go"))
 	if sig.Author != "" {
 		t.Errorf("expected empty author for negative line, got %q", sig.Author)
 	}
@@ -770,9 +770,49 @@ func TestEnrichWithBlame_NonexistentFile(t *testing.T) {
 
 	// Blame on a file not in the repo should fail gracefully.
 	sig := signal.RawSignal{Line: 1}
-	enrichWithBlame(repo, "nonexistent.go", &sig)
+	enrichWithBlame(repo, "nonexistent.go", &sig, filepath.Join(repoPath, "nonexistent.go"))
 	if sig.Author != "" {
 		t.Errorf("expected empty author for nonexistent file, got %q", sig.Author)
+	}
+}
+
+func TestEnrichWithBlame_MtimeFallback(t *testing.T) {
+	repoPath := initTestGitRepo(t, map[string]string{
+		"exists.go": "package main\n",
+	})
+
+	repo, err := git.PlainOpen(repoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a file on disk that is NOT tracked in git, so blame fails.
+	untracked := filepath.Join(repoPath, "untracked.go")
+	if err := os.WriteFile(untracked, []byte("// TODO: fix\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sig := signal.RawSignal{Line: 1, Tags: []string{"todo"}}
+	enrichWithBlame(repo, "untracked.go", &sig, untracked)
+
+	// Blame fails, but file exists → should get mtime as timestamp.
+	if sig.Timestamp.IsZero() {
+		t.Error("expected non-zero timestamp from mtime fallback")
+	}
+	// Should be tagged with estimated-timestamp.
+	found := false
+	for _, tag := range sig.Tags {
+		if tag == "estimated-timestamp" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'estimated-timestamp' tag, got %v", sig.Tags)
+	}
+	// Author should remain empty (no blame data).
+	if sig.Author != "" {
+		t.Errorf("expected empty author, got %q", sig.Author)
 	}
 }
 

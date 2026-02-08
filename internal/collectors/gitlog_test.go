@@ -49,6 +49,7 @@ func TestGitlogCollector_RevertDetected_SubjectPattern(t *testing.T) {
 	assert.Contains(t, sig.Title, "feat: add Foo function")
 	assert.Equal(t, 0.7, sig.Confidence)
 	assert.Contains(t, sig.Tags, "revert")
+	assert.Contains(t, sig.Tags, "historical-path")
 	assert.NotEmpty(t, sig.Author)
 	assert.NotEmpty(t, sig.Description)
 }
