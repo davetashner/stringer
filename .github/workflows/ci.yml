@@ -270,10 +270,23 @@ jobs:
           pr_number="${{ github.event.pull_request.number }}"
           repo="${{ github.repository }}"
 
-          # Get additions and deletions from the PR
-          pr_data=$(gh api "repos/${repo}/pulls/${pr_number}" --jq '{additions: .additions, deletions: .deletions}')
-          additions=$(echo "$pr_data" | jq '.additions')
-          deletions=$(echo "$pr_data" | jq '.deletions')
+          # Get per-file diff stats, excluding test files
+          total=0
+          additions=0
+          deletions=0
+          while IFS= read -r line; do
+            file=$(echo "$line" | jq -r '.filename')
+            # Skip test files — they don't count against PR size
+            case "$file" in
+              *_test.go|*_test.ts|*_test.js|*.test.*|*.spec.*)
+                continue
+                ;;
+            esac
+            a=$(echo "$line" | jq '.additions')
+            d=$(echo "$line" | jq '.deletions')
+            additions=$((additions + a))
+            deletions=$((deletions + d))
+          done < <(gh api "repos/${repo}/pulls/${pr_number}/files" --paginate --jq '.[] | {filename, additions, deletions}' | jq -c '.')
           total=$((additions + deletions))
 
           echo "PR #${pr_number}: +${additions} -${deletions} = ${total} lines changed"
