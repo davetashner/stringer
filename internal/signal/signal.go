@@ -81,6 +81,9 @@ type ScanConfig struct {
 	// CollectorOpts provides per-collector options keyed by collector name.
 	CollectorOpts map[string]CollectorOpts
 
+	// ExcludePatterns holds global exclude globs applied to all collectors.
+	ExcludePatterns []string
+
 	// MaxIssues caps the number of output issues (0 = unlimited).
 	MaxIssues int
 }

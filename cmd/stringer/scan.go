@@ -36,6 +36,7 @@ var (
 	scanStrict        bool
 	scanGitDepth      int
 	scanGitSince      string
+	scanExclude       []string
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -63,6 +64,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanStrict, "strict", false, "exit non-zero on any collector failure")
 	scanCmd.Flags().IntVar(&scanGitDepth, "git-depth", 0, "max commits to examine (default 1000)")
 	scanCmd.Flags().StringVar(&scanGitSince, "git-since", "", "only examine commits after this duration (e.g., 90d, 6m, 1y)")
+	scanCmd.Flags().StringSliceVarP(&scanExclude, "exclude", "e", nil, "glob patterns to exclude from scanning (e.g. \"tests/**,docs/**\")")
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
@@ -130,11 +132,12 @@ func runScan(cmd *cobra.Command, args []string) error {
 		cliFormat = scanFormat
 	}
 	scanCfg := signal.ScanConfig{
-		RepoPath:     absPath,
-		Collectors:   collectors,
-		OutputFormat: cliFormat,
-		NoLLM:        scanNoLLM,
-		MaxIssues:    scanMaxIssues,
+		RepoPath:        absPath,
+		Collectors:      collectors,
+		OutputFormat:    cliFormat,
+		NoLLM:           scanNoLLM,
+		ExcludePatterns: scanExclude,
+		MaxIssues:       scanMaxIssues,
 	}
 
 	// 5. Merge file config into CLI config.

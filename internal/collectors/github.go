@@ -83,7 +83,7 @@ func (c *GitHubCollector) Collect(ctx context.Context, repoPath string, opts sig
 	// Check for GITHUB_TOKEN.
 	token := os.Getenv("GITHUB_TOKEN")
 	if token == "" {
-		slog.Info("GITHUB_TOKEN not set, skipping GitHub collector")
+		slog.Info("GITHUB_TOKEN not set, skipping GitHub collector (set via: export GITHUB_TOKEN=$(gh auth token))")
 		return nil, nil
 	}
 

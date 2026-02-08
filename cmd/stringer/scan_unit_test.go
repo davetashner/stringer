@@ -37,6 +37,7 @@ func resetScanFlags() {
 	scanStrict = false
 	scanGitDepth = 0
 	scanGitSince = ""
+	scanExclude = nil
 
 	// Reset cobra flag "Changed" state and values to avoid test contamination.
 	scanCmd.Flags().VisitAll(func(f *pflag.Flag) {
@@ -789,6 +790,7 @@ func TestScanCmd_FlagsRegistered(t *testing.T) {
 		{"strict", ""},
 		{"git-depth", ""},
 		{"git-since", ""},
+		{"exclude", "e"},
 	}
 
 	for _, ff := range flags {
@@ -1045,4 +1047,71 @@ func TestScanCmd_GitSinceDefaultValue(t *testing.T) {
 	f := scanCmd.Flags().Lookup("git-since")
 	require.NotNil(t, f)
 	assert.Equal(t, "", f.DefValue)
+}
+
+// -----------------------------------------------------------------------
+// --exclude flag tests (use buildBinary to avoid cobra global state issues)
+// -----------------------------------------------------------------------
+
+func TestRunScan_ExcludeFlag(t *testing.T) {
+	binary := buildBinary(t)
+
+	// Create a temp directory with source files containing TODOs in two directories.
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "src")
+	testDir := filepath.Join(dir, "tests")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "main.go"),
+		[]byte("package main\n// TODO: fix this\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(testDir, "helper.go"),
+		[]byte("package tests\n// TODO: excluded todo\n"), 0o600))
+
+	// Scan with --exclude=tests/**: should only find the src TODO.
+	cmd := exec.Command(binary, "scan", dir, "--dry-run", "--json", "--quiet", //nolint:gosec // test helper
+		"--collectors=todos", "--exclude=tests/**")
+	stdout, err := cmd.Output()
+	require.NoError(t, err, "stderr: %s", stderr(cmd))
+
+	var result struct {
+		TotalSignals int `json:"total_signals"`
+	}
+	require.NoError(t, json.Unmarshal(stdout, &result), "output: %s", stdout)
+	assert.Equal(t, 1, result.TotalSignals, "expected 1 signal with --exclude=tests/**")
+}
+
+func TestRunScan_ExcludeMultiplePatterns(t *testing.T) {
+	binary := buildBinary(t)
+
+	dir := t.TempDir()
+	for _, sub := range []string{"src", "docs", "extra"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, sub), 0o750))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, sub, "file.go"),
+			[]byte("package x\n// TODO: something\n"), 0o600))
+	}
+
+	cmd := exec.Command(binary, "scan", dir, "--dry-run", "--json", "--quiet", //nolint:gosec // test helper
+		"--collectors=todos", "--exclude=docs/**,extra/**")
+	stdout, err := cmd.Output()
+	require.NoError(t, err, "stderr: %s", stderr(cmd))
+
+	var result struct {
+		TotalSignals int `json:"total_signals"`
+	}
+	require.NoError(t, json.Unmarshal(stdout, &result), "output: %s", stdout)
+	// docs/** and extra/** are excluded. Only src/file.go should remain.
+	assert.Equal(t, 1, result.TotalSignals, "expected 1 signal with multiple excludes")
+}
+
+// stderr is a helper that captures stderr from a failed exec.Command.
+// It returns an empty string if the command has not been run yet.
+func stderr(cmd *exec.Cmd) string {
+	if cmd.Stderr == nil {
+		return ""
+	}
+	if buf, ok := cmd.Stderr.(*bytes.Buffer); ok {
+		return buf.String()
+	}
+	return ""
 }

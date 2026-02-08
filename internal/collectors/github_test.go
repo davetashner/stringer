@@ -1,8 +1,10 @@
 package collectors
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"testing"
 	"time"
@@ -79,6 +81,23 @@ func TestGitHubCollector_MissingToken(t *testing.T) {
 	signals, err := c.Collect(context.Background(), t.TempDir(), signal.CollectorOpts{})
 	require.NoError(t, err)
 	assert.Empty(t, signals)
+}
+
+func TestGitHubCollector_MissingTokenLogMessage(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+
+	// Capture log output to verify actionable message.
+	var buf bytes.Buffer
+	handler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	oldLogger := slog.Default()
+	slog.SetDefault(slog.New(handler))
+	defer slog.SetDefault(oldLogger)
+
+	c := &GitHubCollector{}
+	_, _ = c.Collect(context.Background(), t.TempDir(), signal.CollectorOpts{})
+
+	logOutput := buf.String()
+	assert.Contains(t, logOutput, "gh auth token", "log message should suggest how to set the token")
 }
 
 func TestGitHubCollector_NonGitHubRemote(t *testing.T) {
