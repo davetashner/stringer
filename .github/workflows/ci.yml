@@ -144,7 +144,7 @@ jobs:
           # Check all commits in the PR
           base="${{ github.event.pull_request.base.sha }}"
           head="${{ github.event.pull_request.head.sha }}"
-          pattern='^(feat|fix|chore|docs|test|refactor|style|perf|ci|build|revert)(\(.+\))?: .+'
+          pattern='^(feat|fix|chore|docs|test|refactor|style|perf|ci|build|revert)(\(.+\))?!?: .+'
           failed=0
           while IFS= read -r msg; do
             # Skip merge commits
@@ -162,6 +162,41 @@ jobs:
             exit 1
           fi
           echo "All commit messages follow conventional commits format."
+
+  breaking-change-guard:
+    name: Breaking Change Guard
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check for breaking changes
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          found=0
+          while IFS= read -r sha; do
+            subject=$(git log -1 --format=%s "$sha")
+            body=$(git log -1 --format=%b "$sha")
+            # Check for ! marker in subject (e.g., feat!: or feat(scope)!:)
+            if echo "$subject" | grep -qE '^(feat|fix|chore|docs|test|refactor|style|perf|ci|build|revert)(\(.+\))?!:'; then
+              echo "::error::Breaking change detected in commit $sha: $subject"
+              found=1
+            fi
+            # Check for BREAKING CHANGE in body/footer
+            if echo "$body" | grep -qE '^BREAKING CHANGE:'; then
+              echo "::error::Breaking change footer detected in commit $sha: $subject"
+              found=1
+            fi
+          done < <(git rev-list "$base".."$head")
+          if [ "$found" -eq 1 ]; then
+            echo ""
+            echo "Breaking changes require a major version bump."
+            echo "If this is intentional, coordinate with the maintainer before merging."
+            exit 1
+          fi
+          echo "No breaking changes detected."
 
   go-generate:
     name: Go Generate
