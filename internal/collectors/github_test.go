@@ -490,13 +490,134 @@ func TestIncludePRsFalse(t *testing.T) {
 
 	// Test that when include_prs is false, no PR signals are emitted.
 	// We simulate this by collecting only issues, then verifying no PR API calls.
-	signals, err := fetchIssues(context.Background(), mock, "testowner", "testrepo", 100)
+	signals, err := fetchIssues(context.Background(), mock, "testowner", "testrepo", 100, false)
 	require.NoError(t, err)
 	assert.Len(t, signals, 1)
 	assert.Equal(t, "github-issue", signals[0].Kind)
 
 	// Verify PR API was not called.
 	assert.Equal(t, 0, mock.prCallCount, "PR API should not be called when include_prs is false")
+}
+
+func TestGitHubCollector_IncludeClosedIssues(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
+	repoPath := initGitHubTestRepo(t, "https://github.com/testowner/testrepo.git")
+
+	now := time.Now()
+	mock := &mockGitHubAPI{
+		issues: []*github.Issue{
+			makeIssue(1, "Open bug", now, []string{"bug"}),
+			makeClosedIssue(2, "Closed feature", now, []string{"enhancement"}, "completed"),
+		},
+		issueResp: emptyResponse(),
+		prs:       []*github.PullRequest{},
+		prResp:    emptyResponse(),
+		reviews:   map[int][]*github.PullRequestReview{},
+		comments:  map[int][]*github.PullRequestComment{},
+	}
+
+	c := &GitHubCollector{api: mock}
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{
+		IncludeClosed: true,
+	})
+	require.NoError(t, err)
+	require.Len(t, signals, 2)
+
+	sigMap := make(map[string]signal.RawSignal)
+	for _, s := range signals {
+		sigMap[s.FilePath] = s
+	}
+
+	// Open issue classified normally.
+	openSig := sigMap["github/issues/1"]
+	assert.Equal(t, "github-bug", openSig.Kind)
+	assert.InDelta(t, 0.7, openSig.Confidence, 0.01)
+
+	// Closed issue gets dedicated kind and lower confidence.
+	closedSig := sigMap["github/issues/2"]
+	assert.Equal(t, "github-closed-issue", closedSig.Kind)
+	assert.InDelta(t, 0.3, closedSig.Confidence, 0.01)
+	assert.Contains(t, closedSig.Tags, "pre-closed")
+	assert.Contains(t, closedSig.Description, "completed")
+}
+
+func TestGitHubCollector_IncludeMergedPRs(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
+	repoPath := initGitHubTestRepo(t, "https://github.com/testowner/testrepo.git")
+
+	now := time.Now()
+	mock := &mockGitHubAPI{
+		issues:    []*github.Issue{},
+		issueResp: emptyResponse(),
+		prs: []*github.PullRequest{
+			makePR(10, "Open PR", now),
+			makeMergedPR(11, "Merged PR", now),
+			makeClosedPR(12, "Closed PR", now),
+		},
+		prResp:   emptyResponse(),
+		reviews:  map[int][]*github.PullRequestReview{},
+		comments: map[int][]*github.PullRequestComment{},
+	}
+
+	c := &GitHubCollector{api: mock}
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{
+		IncludeClosed: true,
+	})
+	require.NoError(t, err)
+	require.Len(t, signals, 3)
+
+	sigMap := make(map[string]signal.RawSignal)
+	for _, s := range signals {
+		sigMap[s.FilePath] = s
+	}
+
+	// Open PR classified normally.
+	openSig := sigMap["github/prs/10"]
+	assert.Equal(t, "github-pr-pending", openSig.Kind)
+
+	// Merged PR gets dedicated kind.
+	mergedSig := sigMap["github/prs/11"]
+	assert.Equal(t, "github-merged-pr", mergedSig.Kind)
+	assert.InDelta(t, 0.3, mergedSig.Confidence, 0.01)
+	assert.Contains(t, mergedSig.Tags, "pre-closed")
+
+	// Closed (not merged) PR gets lower confidence.
+	closedSig := sigMap["github/prs/12"]
+	assert.Equal(t, "github-closed-pr", closedSig.Kind)
+	assert.InDelta(t, 0.2, closedSig.Confidence, 0.01)
+	assert.Contains(t, closedSig.Tags, "pre-closed")
+}
+
+func TestGitHubCollector_DefaultExcludesClosed(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
+	repoPath := initGitHubTestRepo(t, "https://github.com/testowner/testrepo.git")
+
+	now := time.Now()
+	// Even with closed issues in the mock, default (IncludeClosed=false)
+	// should only request open state.
+	mock := &mockGitHubAPI{
+		issues: []*github.Issue{
+			makeIssue(1, "Open issue", now, nil),
+		},
+		issueResp: emptyResponse(),
+		prs:       []*github.PullRequest{},
+		prResp:    emptyResponse(),
+		reviews:   map[int][]*github.PullRequestReview{},
+		comments:  map[int][]*github.PullRequestComment{},
+	}
+
+	c := &GitHubCollector{api: mock}
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "github-issue", signals[0].Kind)
+	// No closed signals present.
+	for _, s := range signals {
+		assert.NotContains(t, s.Tags, "pre-closed")
+	}
 }
 
 // paginatingMockAPI simulates paginated GitHub API responses.
@@ -608,6 +729,43 @@ func makeReview(state string) *github.PullRequestReview {
 	return &github.PullRequestReview{
 		State: &state,
 	}
+}
+
+// makeClosedIssue creates a test closed GitHub issue.
+func makeClosedIssue(number int, title string, created time.Time, labelNames []string, stateReason string) *github.Issue {
+	issue := makeIssue(number, title, created, labelNames)
+	state := "closed"
+	issue.State = &state
+	issue.StateReason = &stateReason
+	closedAt := github.Timestamp{Time: created.Add(24 * time.Hour)}
+	issue.ClosedAt = &closedAt
+	return issue
+}
+
+// makeMergedPR creates a test merged pull request.
+func makeMergedPR(number int, title string, created time.Time) *github.PullRequest {
+	pr := makePR(number, title, created)
+	state := "closed"
+	pr.State = &state
+	merged := true
+	pr.Merged = &merged
+	mergedAt := github.Timestamp{Time: created.Add(24 * time.Hour)}
+	pr.MergedAt = &mergedAt
+	closedAt := github.Timestamp{Time: created.Add(24 * time.Hour)}
+	pr.ClosedAt = &closedAt
+	return pr
+}
+
+// makeClosedPR creates a test closed (not merged) pull request.
+func makeClosedPR(number int, title string, created time.Time) *github.PullRequest {
+	pr := makePR(number, title, created)
+	state := "closed"
+	pr.State = &state
+	merged := false
+	pr.Merged = &merged
+	closedAt := github.Timestamp{Time: created.Add(24 * time.Hour)}
+	pr.ClosedAt = &closedAt
+	return pr
 }
 
 // makeComment creates a test PR review comment.

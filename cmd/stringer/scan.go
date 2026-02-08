@@ -37,6 +37,8 @@ var (
 	scanGitDepth      int
 	scanGitSince      string
 	scanExclude       []string
+	scanIncludeClosed bool
+	scanAnonymize     string
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -65,6 +67,8 @@ func init() {
 	scanCmd.Flags().IntVar(&scanGitDepth, "git-depth", 0, "max commits to examine (default 1000)")
 	scanCmd.Flags().StringVar(&scanGitSince, "git-since", "", "only examine commits after this duration (e.g., 90d, 6m, 1y)")
 	scanCmd.Flags().StringSliceVarP(&scanExclude, "exclude", "e", nil, "glob patterns to exclude from scanning (e.g. \"tests/**,docs/**\")")
+	scanCmd.Flags().BoolVar(&scanIncludeClosed, "include-closed", false, "include closed/merged issues and PRs from GitHub")
+	scanCmd.Flags().StringVar(&scanAnonymize, "anonymize", "auto", "anonymize author names: auto, always, or never")
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
@@ -203,6 +207,26 @@ func runScan(cmd *cobra.Command, args []string) error {
 			}
 			scanCfg.CollectorOpts[name] = co
 		}
+	}
+
+	// Apply --include-closed to the github collector.
+	if scanIncludeClosed {
+		if scanCfg.CollectorOpts == nil {
+			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
+		}
+		co := scanCfg.CollectorOpts["github"]
+		co.IncludeClosed = true
+		scanCfg.CollectorOpts["github"] = co
+	}
+
+	// Apply --anonymize to the lotteryrisk collector.
+	if cmd.Flags().Changed("anonymize") {
+		if scanCfg.CollectorOpts == nil {
+			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
+		}
+		co := scanCfg.CollectorOpts["lotteryrisk"]
+		co.Anonymize = scanAnonymize
+		scanCfg.CollectorOpts["lotteryrisk"] = co
 	}
 
 	// Wire progress callback for long-running collectors.
