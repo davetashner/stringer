@@ -21,6 +21,11 @@ stringer/
 │   │   ├── todos.go            # TODO/FIXME/HACK/XXX/BUG/OPTIMIZE scanner
 │   │   ├── gitlog.go           # Reverts, high-churn files, stale branches
 │   │   └── patterns.go         # Large files, low test coverage ratios
+│   ├── config/             # .stringer.yaml config file support
+│   │   ├── config.go           # Config and CollectorConfig structs
+│   │   ├── yaml.go             # Load() and Write() — YAML marshal/unmarshal
+│   │   ├── validate.go         # Validate() — multi-error validation
+│   │   └── merge.go            # Merge() — file config + CLI merge
 │   ├── output/             # Output formatters
 │   │   ├── formatter.go        # Formatter interface and registry
 │   │   ├── beads.go            # Beads JSONL writer (primary)

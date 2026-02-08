@@ -13,6 +13,7 @@ import (
 
 	"github.com/davetashner/stringer/internal/collector"
 	_ "github.com/davetashner/stringer/internal/collectors"
+	"github.com/davetashner/stringer/internal/config"
 	"github.com/davetashner/stringer/internal/output"
 	"github.com/davetashner/stringer/internal/pipeline"
 	"github.com/davetashner/stringer/internal/signal"
@@ -85,22 +86,65 @@ func runScan(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 3. Validate format before scanning.
-	if _, err := output.GetFormatter(scanFormat); err != nil {
+	// 3. Load config file.
+	fileCfg, err := config.Load(absPath)
+	if err != nil {
+		return exitError(ExitInvalidArgs, "stringer: failed to load %s (%v)", config.FileName, err)
+	}
+	if err := config.Validate(fileCfg); err != nil {
 		return exitError(ExitInvalidArgs, "stringer: %v", err)
 	}
 
-	// 4. Build scan config.
-	config := signal.ScanConfig{
+	// 4. Build CLI scan config (only set OutputFormat if explicitly passed).
+	cliFormat := ""
+	if cmd.Flags().Changed("format") {
+		cliFormat = scanFormat
+	}
+	scanCfg := signal.ScanConfig{
 		RepoPath:     absPath,
 		Collectors:   collectors,
-		OutputFormat: scanFormat,
+		OutputFormat: cliFormat,
 		NoLLM:        scanNoLLM,
 		MaxIssues:    scanMaxIssues,
 	}
 
-	// 5. Create pipeline.
-	p, err := pipeline.New(config)
+	// 5. Merge file config into CLI config.
+	scanCfg = config.Merge(fileCfg, scanCfg)
+
+	// Apply default format if neither CLI nor file config specified one.
+	if scanCfg.OutputFormat == "" {
+		scanCfg.OutputFormat = "beads"
+	}
+
+	// Filter disabled collectors from file config.
+	if len(fileCfg.Collectors) > 0 && len(scanCfg.Collectors) == 0 {
+		// No CLI collector filter — apply enabled/disabled from file config.
+		for name, cc := range fileCfg.Collectors {
+			if cc.Enabled != nil && !*cc.Enabled {
+				// Ensure this collector is excluded.
+				if scanCfg.Collectors == nil {
+					// Build explicit list from all registered minus disabled.
+					all := collector.List()
+					for _, c := range all {
+						if fc, ok := fileCfg.Collectors[c]; ok && fc.Enabled != nil && !*fc.Enabled {
+							continue
+						}
+						scanCfg.Collectors = append(scanCfg.Collectors, c)
+					}
+					_ = name // used in loop above
+					break
+				}
+			}
+		}
+	}
+
+	// Validate format after merge.
+	if _, err := output.GetFormatter(scanCfg.OutputFormat); err != nil {
+		return exitError(ExitInvalidArgs, "stringer: %v", err)
+	}
+
+	// 6. Create pipeline.
+	p, err := pipeline.New(scanCfg)
 	if err != nil {
 		// Provide helpful error for unknown collectors.
 		available := collector.List()
@@ -108,21 +152,21 @@ func runScan(cmd *cobra.Command, args []string) error {
 		return exitError(ExitInvalidArgs, "stringer: %v (available: %s)", err, strings.Join(available, ", "))
 	}
 
-	// 6. Progress: announce scan.
-	collectorNames := collectors
+	// 7. Progress: announce scan.
+	collectorNames := scanCfg.Collectors
 	if len(collectorNames) == 0 {
 		collectorNames = collector.List()
 		sort.Strings(collectorNames)
 	}
 	slog.Info("scanning", "collectors", len(collectorNames))
 
-	// 7. Run pipeline.
+	// 8. Run pipeline.
 	result, err := p.Run(cmd.Context())
 	if err != nil {
 		return exitError(ExitTotalFailure, "stringer: scan failed (%v)", err)
 	}
 
-	// 8. Report per-collector progress.
+	// 9. Report per-collector progress.
 	for _, cr := range result.Results {
 		if cr.Err != nil {
 			slog.Error("collector failed", "name", cr.Collector, "error", cr.Err, "duration", cr.Duration)
@@ -131,16 +175,16 @@ func runScan(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 9. Determine exit code based on collector results.
+	// 10. Determine exit code based on collector results.
 	exitCode := computeExitCode(result)
 
-	// 10. Handle dry-run.
+	// 11. Handle dry-run.
 	if scanDryRun {
 		return printDryRun(cmd, result, exitCode)
 	}
 
-	// 11. Format and write output.
-	formatter, _ := output.GetFormatter(scanFormat) // already validated above
+	// 12. Format and write output.
+	formatter, _ := output.GetFormatter(scanCfg.OutputFormat) // already validated above
 
 	w := cmd.OutOrStdout()
 	if scanOutput != "" {

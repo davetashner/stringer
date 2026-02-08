@@ -174,6 +174,35 @@ stringer scan [path] [flags]
 
 **Available formats:** `beads`, `json`, `markdown`
 
+## Configuration File
+
+Place a `.stringer.yaml` in your repository root to set persistent scan options. CLI flags override config file values.
+
+```yaml
+# .stringer.yaml
+output_format: json
+max_issues: 50
+no_llm: true
+
+collectors:
+  todos:
+    enabled: true
+    error_mode: warn
+    min_confidence: 0.5
+    include_patterns:
+      - "*.go"
+      - "*.ts"
+    exclude_patterns:
+      - vendor/**
+      - node_modules/**
+  gitlog:
+    enabled: false
+```
+
+**Precedence:** CLI flags > `.stringer.yaml` > defaults
+
+If no config file exists, stringer uses its built-in defaults (all collectors enabled, beads format, no issue cap).
+
 ## How Output Works
 
 ### Confidence Scoring
@@ -244,7 +273,7 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 
 - **No delta scanning.** Every run scans the full repo. No way to find only new signals since the last scan.
 - **No LLM clustering.** The `--no-llm` flag exists but is a noop. There is no LLM pass to cluster related signals or infer dependencies.
-- **No config file.** No `.stringer.yaml` or global config. All options are CLI flags.
+- **No global config.** Per-repo `.stringer.yaml` is supported, but there is no global `~/.stringer.yaml`.
 - **Line-sensitive hashing.** Moving a TODO to a different line changes its ID, which means `bd import` sees it as a new issue.
 - **No `--min-confidence` flag.** Use `--max-issues` to cap output volume. Confidence-based filtering is planned.
 - **Manual cleanup needed.** If you delete a TODO from source and re-scan, the old bead remains in `.beads/`. You need to close it manually with `bd close`.
@@ -256,7 +285,6 @@ Planned for future releases:
 - **GitHub issues collector** — Import open issues, PRs, and review comments as beads
 - **Bus factor analyzer** — Flag modules with single-author ownership risk
 - **Delta scanning** — Only find signals added since last scan
-- **Config file support** — `.stringer.yaml` for persistent scan configuration
 - **LLM clustering pass** — Group related signals, infer dependencies, prioritize
 - **Monorepo support** — Per-workspace scanning and scoped output
 - **`--min-confidence` flag** — Filter by confidence threshold with named presets
