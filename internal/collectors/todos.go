@@ -86,6 +86,7 @@ func (c *TodoCollector) Collect(ctx context.Context, repoPath string, opts signa
 	}
 
 	var signals []signal.RawSignal
+	var fileCount int
 
 	err = filepath.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -151,6 +152,12 @@ func (c *TodoCollector) Collect(ctx context.Context, repoPath string, opts signa
 		}
 
 		signals = append(signals, found...)
+
+		fileCount++
+		if opts.ProgressFunc != nil && fileCount%500 == 0 {
+			opts.ProgressFunc(fmt.Sprintf("todos: scanned %d files", fileCount))
+		}
+
 		return nil
 	})
 

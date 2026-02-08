@@ -34,6 +34,8 @@ var (
 	scanMinConfidence float64
 	scanKind          string
 	scanStrict        bool
+	scanGitDepth      int
+	scanGitSince      string
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -59,6 +61,8 @@ func init() {
 	scanCmd.Flags().Float64Var(&scanMinConfidence, "min-confidence", 0, "filter signals below this confidence threshold (0.0-1.0)")
 	scanCmd.Flags().StringVar(&scanKind, "kind", "", "filter signals by kind (comma-separated, e.g., todo,churn,revert)")
 	scanCmd.Flags().BoolVar(&scanStrict, "strict", false, "exit non-zero on any collector failure")
+	scanCmd.Flags().IntVar(&scanGitDepth, "git-depth", 0, "max commits to examine (default 1000)")
+	scanCmd.Flags().StringVar(&scanGitSince, "git-since", "", "only examine commits after this duration (e.g., 90d, 6m, 1y)")
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
@@ -179,6 +183,36 @@ func runScan(cmd *cobra.Command, args []string) error {
 	// Validate format after merge.
 	if _, err := output.GetFormatter(scanCfg.OutputFormat); err != nil {
 		return exitError(ExitInvalidArgs, "stringer: %v", err)
+	}
+
+	// Apply git-depth and git-since to relevant collectors.
+	if scanGitDepth > 0 || scanGitSince != "" {
+		if scanCfg.CollectorOpts == nil {
+			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
+		}
+		for _, name := range []string{"gitlog", "lotteryrisk"} {
+			co := scanCfg.CollectorOpts[name]
+			if scanGitDepth > 0 && co.GitDepth == 0 {
+				co.GitDepth = scanGitDepth
+			}
+			if scanGitSince != "" && co.GitSince == "" {
+				co.GitSince = scanGitSince
+			}
+			scanCfg.CollectorOpts[name] = co
+		}
+	}
+
+	// Wire progress callback for long-running collectors.
+	progressFn := func(msg string) {
+		slog.Info(msg)
+	}
+	if scanCfg.CollectorOpts == nil {
+		scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
+	}
+	for _, name := range collector.List() {
+		co := scanCfg.CollectorOpts[name]
+		co.ProgressFunc = progressFn
+		scanCfg.CollectorOpts[name] = co
 	}
 
 	// 6. Create pipeline.

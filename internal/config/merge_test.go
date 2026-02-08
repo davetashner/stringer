@@ -178,3 +178,84 @@ func TestMerge_LargeFileThresholdCLIOverride(t *testing.T) {
 	// CLI value should win.
 	assert.Equal(t, 750, result.CollectorOpts["patterns"].LargeFileThreshold)
 }
+
+func TestMerge_GitDepthFromFile(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"gitlog": {
+				GitDepth: 500,
+			},
+		},
+	}
+	cliCfg := signal.ScanConfig{}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.Equal(t, 500, result.CollectorOpts["gitlog"].GitDepth)
+}
+
+func TestMerge_GitDepthCLIOverridesFile(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"gitlog": {
+				GitDepth: 500,
+			},
+		},
+	}
+	cliCfg := signal.ScanConfig{
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"gitlog": {GitDepth: 200},
+		},
+	}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.Equal(t, 200, result.CollectorOpts["gitlog"].GitDepth)
+}
+
+func TestMerge_GitSinceFromFile(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"gitlog": {
+				GitSince: "90d",
+			},
+		},
+	}
+	cliCfg := signal.ScanConfig{}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.Equal(t, "90d", result.CollectorOpts["gitlog"].GitSince)
+}
+
+func TestMerge_GitSinceCLIOverridesFile(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"gitlog": {
+				GitSince: "90d",
+			},
+		},
+	}
+	cliCfg := signal.ScanConfig{
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"gitlog": {GitSince: "30d"},
+		},
+	}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.Equal(t, "30d", result.CollectorOpts["gitlog"].GitSince)
+}
+
+func TestMerge_GitDepthAndSinceBothFromFile(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"lotteryrisk": {
+				GitDepth: 300,
+				GitSince: "6m",
+			},
+		},
+	}
+	cliCfg := signal.ScanConfig{}
+
+	result := Merge(fileCfg, cliCfg)
+	opts := result.CollectorOpts["lotteryrisk"]
+	assert.Equal(t, 300, opts.GitDepth)
+	assert.Equal(t, "6m", opts.GitSince)
+}

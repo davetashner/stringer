@@ -53,6 +53,15 @@ type CollectorOpts struct {
 	// GitRoot is the path to the .git directory root, which may differ
 	// from RepoPath when scanning a subdirectory.
 	GitRoot string
+
+	// GitDepth caps the number of commits walked. 0 uses default (1000).
+	GitDepth int
+
+	// GitSince limits commit walking to commits after this duration (e.g., "90d", "6m", "1y").
+	GitSince string
+
+	// ProgressFunc is called periodically with status messages during long operations.
+	ProgressFunc func(msg string)
 }
 
 // ScanConfig holds the overall configuration for a scan operation.

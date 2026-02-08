@@ -103,6 +103,7 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 	}
 
 	var signals []signal.RawSignal
+	var fileCount int
 
 	// Track per-directory file counts for test-ratio analysis.
 	type dirStats struct {
@@ -211,6 +212,11 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 					})
 				}
 			}
+		}
+
+		fileCount++
+		if opts.ProgressFunc != nil && fileCount%500 == 0 {
+			opts.ProgressFunc(fmt.Sprintf("patterns: scanned %d files", fileCount))
 		}
 
 		return nil
