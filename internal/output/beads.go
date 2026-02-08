@@ -97,10 +97,14 @@ func mapKindToType(kind string) string {
 	switch strings.ToLower(kind) {
 	case "bug", "fixme":
 		return "bug"
+	case "github-bug":
+		return "bug"
 	case "todo":
 		return "task"
 	case "hack", "xxx", "optimize", "low-bus-factor":
 		return "chore"
+	case "github-feature", "github-issue", "github-pr-changes", "github-pr-approved", "github-pr-pending", "github-review-todo":
+		return "task"
 	default:
 		return "task"
 	}

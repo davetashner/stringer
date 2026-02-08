@@ -122,6 +122,55 @@ func TestValidate_MultipleErrors(t *testing.T) {
 	assert.Contains(t, err.Error(), "error_mode")
 }
 
+func TestValidate_NegativeCommentDepth(t *testing.T) {
+	cfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {CommentDepth: -1},
+		},
+	}
+	err := Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "comment_depth")
+}
+
+func TestValidate_ZeroCommentDepthValid(t *testing.T) {
+	cfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {CommentDepth: 0},
+		},
+	}
+	assert.NoError(t, Validate(cfg))
+}
+
+func TestValidate_NegativeMaxIssuesPerCollector(t *testing.T) {
+	cfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {MaxIssuesPerCollector: -5},
+		},
+	}
+	err := Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max_issues_per_collector")
+}
+
+func TestValidate_ZeroMaxIssuesPerCollectorValid(t *testing.T) {
+	cfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {MaxIssuesPerCollector: 0},
+		},
+	}
+	assert.NoError(t, Validate(cfg))
+}
+
+func TestValidate_PositiveCommentDepthValid(t *testing.T) {
+	cfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {CommentDepth: 50},
+		},
+	}
+	assert.NoError(t, Validate(cfg))
+}
+
 func TestValidate_ValidErrorModes(t *testing.T) {
 	for _, mode := range []string{"warn", "skip", "fail"} {
 		cfg := &Config{

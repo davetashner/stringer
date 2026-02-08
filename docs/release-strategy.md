@@ -58,7 +58,7 @@ The version string is injected at build time via `-ldflags`:
 
 | Change Type | Version Bump | Examples |
 |-------------|-------------|---------|
-| New collector | Minor | Adding GitHub collector, bus factor analyzer |
+| New collector | Minor | Adding GitHub collector, lottery risk analyzer |
 | New output format | Minor | Adding JSON, markdown formatters |
 | New CLI command or flag | Minor | Adding `stringer docs`, `--min-confidence` |
 | Pipeline enhancement | Minor | Parallel execution, deduplication |
