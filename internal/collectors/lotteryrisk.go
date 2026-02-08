@@ -126,6 +126,16 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 		return nil, fmt.Errorf("walking commits for ownership: %w", err)
 	}
 
+	// Resolve anonymization mode.
+	ghCtx := c.ghCtx
+	if ghCtx == nil {
+		ghCtx = newGitHubContext(repoPath)
+	}
+	var anon *nameAnonymizer
+	if resolveAnonymize(ctx, ghCtx, opts.Anonymize) {
+		anon = newNameAnonymizer()
+	}
+
 	// Compute lottery risk for each directory and build signals.
 	var signals []signal.RawSignal
 	for _, dir := range dirs {
@@ -142,22 +152,18 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 		own.LotteryRisk = bf
 
 		if bf <= defaultLotteryRiskThreshold {
-			sig := buildLotteryRiskSignal(own)
+			sig := buildLotteryRiskSignal(own, anon)
 			signals = append(signals, sig)
 		}
 	}
 
 	// Review participation analysis via GitHub API (optional).
-	ghCtx := c.ghCtx
-	if ghCtx == nil {
-		ghCtx = newGitHubContext(repoPath)
-	}
 	if ghCtx != nil {
 		reviewData, reviewErr := fetchReviewParticipation(ctx, ghCtx, ownership, maxReviewPRs)
 		if reviewErr != nil {
 			slog.Warn("review participation analysis failed, continuing without it", "error", reviewErr)
 		} else {
-			reviewSignals := buildReviewConcentrationSignals(reviewData)
+			reviewSignals := buildReviewConcentrationSignals(reviewData, anon)
 			signals = append(signals, reviewSignals...)
 		}
 	}
@@ -483,7 +489,8 @@ func totalCommitWeight(own *dirOwnership) float64 {
 }
 
 // buildLotteryRiskSignal constructs a RawSignal for a low-lottery-risk directory.
-func buildLotteryRiskSignal(own *dirOwnership) signal.RawSignal {
+// If anon is non-nil, author names are anonymized.
+func buildLotteryRiskSignal(own *dirOwnership, anon *nameAnonymizer) signal.RawSignal {
 	// Find primary author (highest ownership).
 	totalBlameLines := own.TotalLines
 	totalCW := totalCommitWeight(own)
@@ -504,7 +511,11 @@ func buildLotteryRiskSignal(own *dirOwnership) signal.RawSignal {
 			commitFrac = stats.CommitWeight / totalCW
 		}
 		pct := (blameFrac*blameWeight + commitFrac*commitWeightFraction) * 100
-		authors = append(authors, authorPct{Name: name, Pct: pct})
+		displayName := name
+		if anon != nil {
+			displayName = anon.anonymize(name)
+		}
+		authors = append(authors, authorPct{Name: displayName, Pct: pct})
 	}
 
 	// Sort by percentage descending, then by name for determinism.
@@ -588,6 +599,65 @@ func findOwningDir(relPath string, ownership map[string]*dirOwnership) string {
 // isSourceExtension returns true for file extensions considered source code.
 func isSourceExtension(ext string) bool {
 	return sourceExtensions[ext]
+}
+
+// nameAnonymizer provides stable, deterministic anonymization of author names.
+// The same real name always maps to the same label within a single scan.
+type nameAnonymizer struct {
+	mapping map[string]string
+	next    int
+}
+
+// newNameAnonymizer creates a new anonymizer.
+func newNameAnonymizer() *nameAnonymizer {
+	return &nameAnonymizer{mapping: make(map[string]string)}
+}
+
+// anonymize returns a stable anonymous label for the given name.
+func (a *nameAnonymizer) anonymize(name string) string {
+	if label, ok := a.mapping[name]; ok {
+		return label
+	}
+	label := contributorLabel(a.next)
+	a.mapping[name] = label
+	a.next++
+	return label
+}
+
+// contributorLabel returns "Contributor A", "Contributor B", ..., "Contributor Z",
+// "Contributor AA", "Contributor AB", etc.
+func contributorLabel(id int) string {
+	if id < 26 {
+		return "Contributor " + string(rune('A'+id))
+	}
+	// For id >= 26: AA=26, AB=27, ..., AZ=51, BA=52, ...
+	first := (id / 26) - 1
+	second := id % 26
+	return "Contributor " + string(rune('A'+first)) + string(rune('A'+second))
+}
+
+// resolveAnonymize determines whether author names should be anonymized based
+// on the mode ("always", "never", "auto") and the repository visibility.
+func resolveAnonymize(ctx context.Context, ghCtx *githubContext, mode string) bool {
+	switch mode {
+	case "always":
+		return true
+	case "never":
+		return false
+	case "auto", "":
+		// Auto mode: anonymize if the repo is public.
+		if ghCtx == nil {
+			return false // no API available, default to not anonymizing
+		}
+		repo, _, err := ghCtx.API.GetRepository(ctx, ghCtx.Owner, ghCtx.Repo)
+		if err != nil || repo == nil {
+			return false // can't determine visibility, default to not anonymizing
+		}
+		// Public repos → anonymize; private repos → don't.
+		return !repo.GetPrivate()
+	default:
+		return false
+	}
 }
 
 // reviewParticipation tracks review activity in a directory.
@@ -687,7 +757,8 @@ func fetchReviewParticipation(ctx context.Context, ghCtx *githubContext, ownersh
 
 // buildReviewConcentrationSignals produces signals for directories where a
 // single reviewer handles more than 70% of all reviews.
-func buildReviewConcentrationSignals(reviewData map[string]*reviewParticipation) []signal.RawSignal {
+// If anon is non-nil, reviewer names are anonymized.
+func buildReviewConcentrationSignals(reviewData map[string]*reviewParticipation, anon *nameAnonymizer) []signal.RawSignal {
 	var signals []signal.RawSignal
 
 	for dir, rp := range reviewData {
@@ -707,13 +778,18 @@ func buildReviewConcentrationSignals(reviewData map[string]*reviewParticipation)
 					dirPath += "/"
 				}
 
+				displayName := reviewer
+				if anon != nil {
+					displayName = anon.anonymize(reviewer)
+				}
+
 				signals = append(signals, signal.RawSignal{
 					Source:      "lotteryrisk",
 					Kind:        "review-concentration",
 					FilePath:    dirPath,
 					Line:        0,
-					Title:       fmt.Sprintf("Review bottleneck: %s reviews %.0f%% of PRs in %s", reviewer, fraction*100, dirPath),
-					Description: fmt.Sprintf("Reviewer %s handled %d of %d reviews (%.0f%%) in %s. Consider distributing review responsibility to reduce knowledge silos.", reviewer, count, totalReviews, fraction*100, dirPath),
+					Title:       fmt.Sprintf("Review bottleneck: %s reviews %.0f%% of PRs in %s", displayName, fraction*100, dirPath),
+					Description: fmt.Sprintf("Reviewer %s handled %d of %d reviews (%.0f%%) in %s. Consider distributing review responsibility to reduce knowledge silos.", displayName, count, totalReviews, fraction*100, dirPath),
 					Confidence:  0.6,
 					Tags:        []string{"review-concentration", "stringer-generated"},
 				})

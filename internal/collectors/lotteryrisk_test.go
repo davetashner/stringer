@@ -535,7 +535,7 @@ func TestBuildReviewConcentrationSignals(t *testing.T) {
 		},
 	}
 
-	signals := buildReviewConcentrationSignals(reviewData)
+	signals := buildReviewConcentrationSignals(reviewData, nil)
 	require.Len(t, signals, 1)
 	assert.Equal(t, "review-concentration", signals[0].Kind)
 	assert.Contains(t, signals[0].Title, "alice")
@@ -550,6 +550,90 @@ func TestBuildReviewConcentrationSignals_TooFewReviews(t *testing.T) {
 		},
 	}
 
-	signals := buildReviewConcentrationSignals(reviewData)
+	signals := buildReviewConcentrationSignals(reviewData, nil)
 	assert.Empty(t, signals, "fewer than 3 reviews should not produce signals")
+}
+
+// --- Anonymization tests ---
+
+func TestNameAnonymizer_Stable(t *testing.T) {
+	anon := newNameAnonymizer()
+	label1 := anon.anonymize("Alice")
+	label2 := anon.anonymize("Alice")
+	assert.Equal(t, label1, label2, "same name should produce same label")
+}
+
+func TestNameAnonymizer_Unique(t *testing.T) {
+	anon := newNameAnonymizer()
+	label1 := anon.anonymize("Alice")
+	label2 := anon.anonymize("Bob")
+	assert.NotEqual(t, label1, label2, "different names should produce different labels")
+}
+
+func TestContributorLabel(t *testing.T) {
+	tests := []struct {
+		id   int
+		want string
+	}{
+		{0, "Contributor A"},
+		{1, "Contributor B"},
+		{25, "Contributor Z"},
+		{26, "Contributor AA"},
+		{27, "Contributor AB"},
+		{51, "Contributor AZ"},
+		{52, "Contributor BA"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			assert.Equal(t, tt.want, contributorLabel(tt.id))
+		})
+	}
+}
+
+func TestResolveAnonymize_Always(t *testing.T) {
+	assert.True(t, resolveAnonymize(context.Background(), nil, "always"))
+}
+
+func TestResolveAnonymize_Never(t *testing.T) {
+	assert.False(t, resolveAnonymize(context.Background(), nil, "never"))
+}
+
+func TestResolveAnonymize_AutoPublic(t *testing.T) {
+	mock := &reviewMockAPI{
+		repo: &github.Repository{Private: github.Ptr(false)},
+	}
+	ghCtx := &githubContext{Owner: "o", Repo: "r", API: mock}
+	assert.True(t, resolveAnonymize(context.Background(), ghCtx, "auto"))
+}
+
+func TestResolveAnonymize_AutoPrivate(t *testing.T) {
+	mock := &reviewMockAPI{
+		repo: &github.Repository{Private: github.Ptr(true)},
+	}
+	ghCtx := &githubContext{Owner: "o", Repo: "r", API: mock}
+	assert.False(t, resolveAnonymize(context.Background(), ghCtx, "auto"))
+}
+
+func TestResolveAnonymize_AutoNoToken(t *testing.T) {
+	assert.False(t, resolveAnonymize(context.Background(), nil, "auto"))
+}
+
+func TestLotteryRiskCollector_AnonymizeAlways(t *testing.T) {
+	_, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n\nfunc main() {}\n",
+	})
+
+	c := &LotteryRiskCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		Anonymize: "always",
+	})
+	require.NoError(t, err)
+
+	lotterySigs := filterByKind(signals, "low-lottery-risk")
+	require.NotEmpty(t, lotterySigs)
+
+	for _, sig := range lotterySigs {
+		assert.Contains(t, sig.Title, "Contributor A", "anonymized name should appear in title")
+		assert.NotContains(t, sig.Title, "Test Author", "real name should not appear when anonymized")
+	}
 }
