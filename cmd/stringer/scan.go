@@ -24,24 +24,25 @@ import (
 
 // Scan-specific flag values.
 var (
-	scanCollectors       string
-	scanFormat           string
-	scanOutput           string
-	scanDryRun           bool
-	scanDelta            bool
-	scanNoLLM            bool
-	scanJSON             bool
-	scanMaxIssues        int
-	scanMinConfidence    float64
-	scanKind             string
-	scanStrict           bool
-	scanGitDepth         int
-	scanGitSince         string
-	scanExclude          []string
-	scanIncludeClosed    bool
-	scanAnonymize        string
-	scanHistoryDepth     string
-	scanCollectorTimeout string
+	scanCollectors        string
+	scanFormat            string
+	scanOutput            string
+	scanDryRun            bool
+	scanDelta             bool
+	scanNoLLM             bool
+	scanJSON              bool
+	scanMaxIssues         int
+	scanMinConfidence     float64
+	scanKind              string
+	scanStrict            bool
+	scanGitDepth          int
+	scanGitSince          string
+	scanExclude           []string
+	scanIncludeClosed     bool
+	scanAnonymize         string
+	scanHistoryDepth      string
+	scanCollectorTimeout  string
+	scanExcludeCollectors string
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -74,6 +75,7 @@ func init() {
 	scanCmd.Flags().StringVar(&scanHistoryDepth, "history-depth", "", "filter closed items older than this duration (e.g., 90d, 6m, 1y)")
 	scanCmd.Flags().StringVar(&scanAnonymize, "anonymize", "auto", "anonymize author names: auto, always, or never")
 	scanCmd.Flags().StringVar(&scanCollectorTimeout, "collector-timeout", "", "per-collector timeout (e.g. 60s, 2m); 0 or empty = no timeout")
+	scanCmd.Flags().StringVarP(&scanExcludeCollectors, "exclude-collectors", "x", "", "comma-separated list of collectors to skip")
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
@@ -125,6 +127,9 @@ func runScan(cmd *cobra.Command, args []string) error {
 			collectors[i] = strings.TrimSpace(collectors[i])
 		}
 	}
+
+	// 2b. Apply --exclude-collectors.
+	collectors = applyCollectorExclusions(collectors, scanExcludeCollectors)
 
 	// 3. Load config file.
 	fileCfg, err := config.Load(absPath)
@@ -504,6 +509,31 @@ func printDryRun(cmd *cobra.Command, result *signal.ScanResult, exitCode int) er
 		return exitError(exitCode, "")
 	}
 	return nil
+}
+
+// applyCollectorExclusions removes excluded collectors from the include list.
+// If include is empty, it starts from the full registry (collector.List()).
+func applyCollectorExclusions(include []string, exclude string) []string {
+	if exclude == "" {
+		return include
+	}
+	skip := make(map[string]bool)
+	for _, name := range strings.Split(exclude, ",") {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			skip[name] = true
+		}
+	}
+	if len(include) == 0 {
+		include = collector.List()
+	}
+	var result []string
+	for _, name := range include {
+		if !skip[name] {
+			result = append(result, name)
+		}
+	}
+	return result
 }
 
 // exitCodeError carries a non-zero exit code through cobra's error handling.
