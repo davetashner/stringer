@@ -101,7 +101,7 @@ func mapKindToType(kind string) string {
 		return "bug"
 	case "todo":
 		return "task"
-	case "hack", "xxx", "optimize", "low-bus-factor":
+	case "hack", "xxx", "optimize", "low-lottery-risk":
 		return "chore"
 	case "github-feature", "github-issue", "github-pr-changes", "github-pr-approved", "github-pr-pending", "github-review-todo":
 		return "task"

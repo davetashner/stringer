@@ -1,12 +1,12 @@
-# 006: Bus Factor Ownership Model
+# 006: Lottery Risk Ownership Model
 
 **Status:** Accepted
 **Date:** 2026-02-07
-**Context:** C5: Bus Factor Analyzer (stringer-lmo) — flag directories with single-author ownership risk
+**Context:** C5: Lottery Risk Analyzer (stringer-lmo) — flag directories with single-author ownership risk
 
 ## Problem
 
-How should stringer model code ownership and compute bus factor? We need to decide the unit of analysis (file vs. directory), the ownership signals (blame vs. commits vs. both), and how to weight recent contributions more heavily.
+How should stringer model code ownership and compute lottery risk? We need to decide the unit of analysis (file vs. directory), the ownership signals (blame vs. commits vs. both), and how to weight recent contributions more heavily.
 
 ## Options
 
@@ -27,7 +27,7 @@ How should stringer model code ownership and compute bus factor? We need to deci
 - Combines two ownership signals: blame (current state) and commits (sustained involvement)
 - Exponential decay (`e^(-ln2/half_life * days)`) naturally downweights old contributions
 - Configurable depth, threshold, and file limits
-- Well-established in academic bus factor literature
+- Well-established in academic lottery risk literature
 
 **Cons:**
 - More complex to implement
@@ -52,10 +52,10 @@ Parameters:
 - **Analysis unit:** Directory (up to configurable depth, default 2)
 - **Ownership formula:** `ownership = blame_fraction * 0.6 + commit_weight_fraction * 0.4`
 - **Recency decay:** `weight = e^(-ln2/180 * days_old)` (half-life 180 days)
-- **Bus factor:** Minimum number of authors whose combined ownership exceeds 50%
-- **Signal threshold:** Emit signal when bus factor <= configurable threshold (default 1)
+- **Lottery risk:** Minimum number of authors whose combined ownership exceeds 50%
+- **Signal threshold:** Emit signal when lottery risk <= configurable threshold (default 1)
 - **Performance:** Cap blame at `max_blame_files` (default 50) per directory
-- **Confidence mapping:** bus factor 1 → 0.8, bus factor 2 → 0.5, bus factor 3+ → 0.3
+- **Confidence mapping:** lottery risk 1 → 0.8, lottery risk 2 → 0.5, lottery risk 3+ → 0.3
 
 ## Decision
 

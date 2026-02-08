@@ -12,38 +12,38 @@ import (
 	"github.com/davetashner/stringer/internal/signal"
 )
 
-func TestBusFactorCollector_Name(t *testing.T) {
-	c := &BusFactorCollector{}
-	assert.Equal(t, "busfactor", c.Name())
+func TestLotteryRiskCollector_Name(t *testing.T) {
+	c := &LotteryRiskCollector{}
+	assert.Equal(t, "lotteryrisk", c.Name())
 }
 
-func TestBusFactorCollector_SingleAuthor(t *testing.T) {
-	// All files by one author should yield bus factor 1, confidence 0.8.
+func TestLotteryRiskCollector_SingleAuthor(t *testing.T) {
+	// All files by one author should yield lottery risk 1, confidence 0.8.
 	_, dir := initGoGitRepo(t, map[string]string{
 		"main.go":     "package main\n\nfunc main() {}\n",
 		"lib/util.go": "package lib\n\nfunc Util() {}\n",
 	})
 
-	c := &BusFactorCollector{}
+	c := &LotteryRiskCollector{}
 	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
 	require.NoError(t, err)
 
-	busfactor := filterByKind(signals, "low-bus-factor")
-	require.NotEmpty(t, busfactor, "single-author repo should produce low-bus-factor signals")
+	lotteryrisk := filterByKind(signals, "low-lottery-risk")
+	require.NotEmpty(t, lotteryrisk, "single-author repo should produce low-lottery-risk signals")
 
-	for _, sig := range busfactor {
-		assert.Equal(t, "busfactor", sig.Source)
-		assert.Equal(t, "low-bus-factor", sig.Kind)
-		assert.Equal(t, 0.8, sig.Confidence, "bus factor 1 should have confidence 0.8")
-		assert.Contains(t, sig.Tags, "low-bus-factor")
+	for _, sig := range lotteryrisk {
+		assert.Equal(t, "lotteryrisk", sig.Source)
+		assert.Equal(t, "low-lottery-risk", sig.Kind)
+		assert.Equal(t, 0.8, sig.Confidence, "lottery risk 1 should have confidence 0.8")
+		assert.Contains(t, sig.Tags, "low-lottery-risk")
 		assert.Contains(t, sig.Tags, "stringer-generated")
-		assert.Contains(t, sig.Title, "bus factor 1")
+		assert.Contains(t, sig.Title, "lottery risk 1")
 		assert.Contains(t, sig.Title, "Test Author")
 	}
 }
 
-func TestBusFactorCollector_TwoAuthorsEqual(t *testing.T) {
-	// Two authors with equal contributions should give bus factor 2.
+func TestLotteryRiskCollector_TwoAuthorsEqual(t *testing.T) {
+	// Two authors with equal contributions should give lottery risk 2.
 	repo, dir := initGoGitRepo(t, map[string]string{
 		"main.go": "package main\n",
 	})
@@ -60,26 +60,26 @@ func TestBusFactorCollector_TwoAuthorsEqual(t *testing.T) {
 		"package main\n\nfunc B1() {}\nfunc B2() {}\nfunc B3() {}\n",
 		"feat: add file2", now, "Bob", "bob@example.com")
 
-	c := &BusFactorCollector{}
+	c := &LotteryRiskCollector{}
 	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
 	require.NoError(t, err)
 
-	busfactor := filterByKind(signals, "low-bus-factor")
+	lotteryrisk := filterByKind(signals, "low-lottery-risk")
 
-	// With two equal authors, bus factor is 2 at root level.
-	// With threshold=1, bus factor 2 should NOT emit a signal
-	// (bus factor 2 > threshold 1).
+	// With two equal authors, lottery risk is 2 at root level.
+	// With threshold=1, lottery risk 2 should NOT emit a signal
+	// (lottery risk 2 > threshold 1).
 	// But sub-directories with single author may still emit signals.
-	for _, sig := range busfactor {
-		// Root "." should not be flagged if bus factor is 2.
+	for _, sig := range lotteryrisk {
+		// Root "." should not be flagged if lottery risk is 2.
 		if sig.FilePath == "./" || sig.FilePath == "." {
-			t.Errorf("root directory should not be flagged with two equal authors, got bus factor signal: %s", sig.Title)
+			t.Errorf("root directory should not be flagged with two equal authors, got lottery risk signal: %s", sig.Title)
 		}
 	}
 }
 
-func TestBusFactorCollector_OneDominant(t *testing.T) {
-	// One author writes 90% of code, bus factor should be 1.
+func TestLotteryRiskCollector_OneDominant(t *testing.T) {
+	// One author writes 90% of code, lottery risk should be 1.
 	repo, dir := initGoGitRepo(t, map[string]string{
 		"main.go": "package main\n",
 	})
@@ -98,17 +98,17 @@ func TestBusFactorCollector_OneDominant(t *testing.T) {
 		"package main\n\nfunc X() {}\n",
 		"feat: add b1", now, "Bob", "bob@example.com")
 
-	c := &BusFactorCollector{}
+	c := &LotteryRiskCollector{}
 	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
 	require.NoError(t, err)
 
-	busfactor := filterByKind(signals, "low-bus-factor")
+	lotteryrisk := filterByKind(signals, "low-lottery-risk")
 
-	// Root should have bus factor 1 because Alice dominates.
+	// Root should have lottery risk 1 because Alice dominates.
 	var rootSignal *signal.RawSignal
-	for i, sig := range busfactor {
+	for i, sig := range lotteryrisk {
 		if sig.FilePath == "./" || sig.FilePath == "." {
-			rootSignal = &busfactor[i]
+			rootSignal = &lotteryrisk[i]
 			break
 		}
 	}
@@ -117,26 +117,26 @@ func TestBusFactorCollector_OneDominant(t *testing.T) {
 	assert.Contains(t, rootSignal.Title, "Alice")
 }
 
-func TestBusFactorCollector_EmptyRepo(t *testing.T) {
+func TestLotteryRiskCollector_EmptyRepo(t *testing.T) {
 	dir := t.TempDir()
 	_, err := gogit.PlainInit(dir, false)
 	require.NoError(t, err)
 
-	c := &BusFactorCollector{}
+	c := &LotteryRiskCollector{}
 	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
 	require.NoError(t, err)
 	assert.Empty(t, signals, "empty repo should produce no signals")
 }
 
-func TestBusFactorCollector_NotAGitRepo(t *testing.T) {
+func TestLotteryRiskCollector_NotAGitRepo(t *testing.T) {
 	dir := t.TempDir()
 
-	c := &BusFactorCollector{}
+	c := &LotteryRiskCollector{}
 	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
 	assert.Error(t, err, "non-git directory should return an error")
 }
 
-func TestBusFactorCollector_ContextCancellation(t *testing.T) {
+func TestLotteryRiskCollector_ContextCancellation(t *testing.T) {
 	_, dir := initGoGitRepo(t, map[string]string{
 		"main.go": "package main\n",
 	})
@@ -144,19 +144,19 @@ func TestBusFactorCollector_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	c := &BusFactorCollector{}
+	c := &LotteryRiskCollector{}
 	_, err := c.Collect(ctx, dir, signal.CollectorOpts{})
 	assert.Error(t, err, "cancelled context should return an error")
 }
 
-func TestBusFactorCollector_DeterministicOutput(t *testing.T) {
+func TestLotteryRiskCollector_DeterministicOutput(t *testing.T) {
 	// Same repo should always produce the same signals.
 	_, dir := initGoGitRepo(t, map[string]string{
 		"main.go":     "package main\n\nfunc main() {}\n",
 		"lib/util.go": "package lib\n\nfunc Util() {}\n",
 	})
 
-	c := &BusFactorCollector{}
+	c := &LotteryRiskCollector{}
 
 	signals1, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
 	require.NoError(t, err)
@@ -174,30 +174,30 @@ func TestBusFactorCollector_DeterministicOutput(t *testing.T) {
 	}
 }
 
-func TestBusFactorCollector_SignalFields(t *testing.T) {
+func TestLotteryRiskCollector_SignalFields(t *testing.T) {
 	// Verify all signal fields are populated correctly.
 	_, dir := initGoGitRepo(t, map[string]string{
 		"main.go": "package main\n\nfunc main() {}\n",
 	})
 
-	c := &BusFactorCollector{}
+	c := &LotteryRiskCollector{}
 	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
 	require.NoError(t, err)
 
-	busfactor := filterByKind(signals, "low-bus-factor")
-	require.NotEmpty(t, busfactor)
+	lotteryrisk := filterByKind(signals, "low-lottery-risk")
+	require.NotEmpty(t, lotteryrisk)
 
-	sig := busfactor[0]
-	assert.Equal(t, "busfactor", sig.Source)
-	assert.Equal(t, "low-bus-factor", sig.Kind)
+	sig := lotteryrisk[0]
+	assert.Equal(t, "lotteryrisk", sig.Source)
+	assert.Equal(t, "low-lottery-risk", sig.Kind)
 	assert.NotEmpty(t, sig.FilePath)
-	assert.Equal(t, 0, sig.Line, "bus factor signals use directory paths, not line numbers")
+	assert.Equal(t, 0, sig.Line, "lottery risk signals use directory paths, not line numbers")
 	assert.NotEmpty(t, sig.Title)
 	assert.NotEmpty(t, sig.Description)
-	assert.Contains(t, sig.Description, "Bus factor:")
+	assert.Contains(t, sig.Description, "Lottery risk:")
 	assert.Contains(t, sig.Description, "Top authors:")
 	assert.InDelta(t, 0.8, sig.Confidence, 0.001)
-	assert.Contains(t, sig.Tags, "low-bus-factor")
+	assert.Contains(t, sig.Tags, "low-lottery-risk")
 	assert.Contains(t, sig.Tags, "stringer-generated")
 }
 
@@ -233,9 +233,9 @@ func TestRecencyDecay_Negative(t *testing.T) {
 	assert.InDelta(t, 1.0, weight, 0.001)
 }
 
-// --- Bus factor calculation tests ---
+// --- Lottery risk calculation tests ---
 
-func TestComputeBusFactor_SingleAuthor(t *testing.T) {
+func TestComputeLotteryRisk_SingleAuthor(t *testing.T) {
 	own := &dirOwnership{
 		Path: ".",
 		Authors: map[string]*authorStats{
@@ -243,11 +243,11 @@ func TestComputeBusFactor_SingleAuthor(t *testing.T) {
 		},
 		TotalLines: 100,
 	}
-	bf := computeBusFactor(own)
-	assert.Equal(t, 1, bf, "single author should have bus factor 1")
+	bf := computeLotteryRisk(own)
+	assert.Equal(t, 1, bf, "single author should have lottery risk 1")
 }
 
-func TestComputeBusFactor_TwoEqualAuthors(t *testing.T) {
+func TestComputeLotteryRisk_TwoEqualAuthors(t *testing.T) {
 	own := &dirOwnership{
 		Path: ".",
 		Authors: map[string]*authorStats{
@@ -256,11 +256,11 @@ func TestComputeBusFactor_TwoEqualAuthors(t *testing.T) {
 		},
 		TotalLines: 100,
 	}
-	bf := computeBusFactor(own)
+	bf := computeLotteryRisk(own)
 	assert.Equal(t, 2, bf, "two equal authors need both to exceed 50%")
 }
 
-func TestComputeBusFactor_OneDominant(t *testing.T) {
+func TestComputeLotteryRisk_OneDominant(t *testing.T) {
 	own := &dirOwnership{
 		Path: ".",
 		Authors: map[string]*authorStats{
@@ -269,11 +269,11 @@ func TestComputeBusFactor_OneDominant(t *testing.T) {
 		},
 		TotalLines: 100,
 	}
-	bf := computeBusFactor(own)
-	assert.Equal(t, 1, bf, "dominant author alone exceeds 50%, bus factor 1")
+	bf := computeLotteryRisk(own)
+	assert.Equal(t, 1, bf, "dominant author alone exceeds 50%, lottery risk 1")
 }
 
-func TestComputeBusFactor_ThreeAuthors(t *testing.T) {
+func TestComputeLotteryRisk_ThreeAuthors(t *testing.T) {
 	own := &dirOwnership{
 		Path: ".",
 		Authors: map[string]*authorStats{
@@ -283,39 +283,39 @@ func TestComputeBusFactor_ThreeAuthors(t *testing.T) {
 		},
 		TotalLines: 100,
 	}
-	bf := computeBusFactor(own)
+	bf := computeLotteryRisk(own)
 	// Alice has ~40% ownership, needs Bob too to exceed 50%.
 	assert.Equal(t, 2, bf, "two authors needed to exceed 50%")
 }
 
-func TestComputeBusFactor_NoAuthors(t *testing.T) {
+func TestComputeLotteryRisk_NoAuthors(t *testing.T) {
 	own := &dirOwnership{
 		Path:       ".",
 		Authors:    map[string]*authorStats{},
 		TotalLines: 0,
 	}
-	bf := computeBusFactor(own)
-	assert.Equal(t, 0, bf, "no authors should return bus factor 0")
+	bf := computeLotteryRisk(own)
+	assert.Equal(t, 0, bf, "no authors should return lottery risk 0")
 }
 
 // --- Confidence mapping tests ---
 
-func TestBusFactorConfidence_BusFactor1(t *testing.T) {
-	assert.InDelta(t, 0.8, busFactorConfidence(1), 0.001)
+func TestLotteryRiskConfidence_LotteryRisk1(t *testing.T) {
+	assert.InDelta(t, 0.8, lotteryRiskConfidence(1), 0.001)
 }
 
-func TestBusFactorConfidence_BusFactor0(t *testing.T) {
-	assert.InDelta(t, 0.8, busFactorConfidence(0), 0.001)
+func TestLotteryRiskConfidence_LotteryRisk0(t *testing.T) {
+	assert.InDelta(t, 0.8, lotteryRiskConfidence(0), 0.001)
 }
 
-func TestBusFactorConfidence_BusFactor2(t *testing.T) {
-	assert.InDelta(t, 0.5, busFactorConfidence(2), 0.001)
+func TestLotteryRiskConfidence_LotteryRisk2(t *testing.T) {
+	assert.InDelta(t, 0.5, lotteryRiskConfidence(2), 0.001)
 }
 
-func TestBusFactorConfidence_BusFactor3(t *testing.T) {
-	assert.InDelta(t, 0.3, busFactorConfidence(3), 0.001)
+func TestLotteryRiskConfidence_LotteryRisk3(t *testing.T) {
+	assert.InDelta(t, 0.3, lotteryRiskConfidence(3), 0.001)
 }
 
-func TestBusFactorConfidence_BusFactor10(t *testing.T) {
-	assert.InDelta(t, 0.3, busFactorConfidence(10), 0.001)
+func TestLotteryRiskConfidence_LotteryRisk10(t *testing.T) {
+	assert.InDelta(t, 0.3, lotteryRiskConfidence(10), 0.001)
 }
