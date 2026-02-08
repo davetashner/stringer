@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -286,4 +287,45 @@ func TestMerge_GitDepthAndSinceBothFromFile(t *testing.T) {
 	opts := result.CollectorOpts["lotteryrisk"]
 	assert.Equal(t, 300, opts.GitDepth)
 	assert.Equal(t, "6m", opts.GitSince)
+}
+
+func TestMerge_TimeoutFromFile(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"todos": {Timeout: "60s"},
+		},
+	}
+	cliCfg := signal.ScanConfig{}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.Equal(t, 60*time.Second, result.CollectorOpts["todos"].Timeout)
+}
+
+func TestMerge_TimeoutCLIOverridesFile(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"todos": {Timeout: "60s"},
+		},
+	}
+	cliCfg := signal.ScanConfig{
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"todos": {Timeout: 30 * time.Second},
+		},
+	}
+
+	result := Merge(fileCfg, cliCfg)
+	// CLI value should win.
+	assert.Equal(t, 30*time.Second, result.CollectorOpts["todos"].Timeout)
+}
+
+func TestMerge_TimeoutInvalidDurationIgnored(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"todos": {Timeout: "not-a-duration"},
+		},
+	}
+	cliCfg := signal.ScanConfig{}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.Equal(t, time.Duration(0), result.CollectorOpts["todos"].Timeout)
 }

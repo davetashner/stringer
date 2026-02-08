@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -23,23 +24,24 @@ import (
 
 // Scan-specific flag values.
 var (
-	scanCollectors    string
-	scanFormat        string
-	scanOutput        string
-	scanDryRun        bool
-	scanDelta         bool
-	scanNoLLM         bool
-	scanJSON          bool
-	scanMaxIssues     int
-	scanMinConfidence float64
-	scanKind          string
-	scanStrict        bool
-	scanGitDepth      int
-	scanGitSince      string
-	scanExclude       []string
-	scanIncludeClosed bool
-	scanAnonymize     string
-	scanHistoryDepth  string
+	scanCollectors       string
+	scanFormat           string
+	scanOutput           string
+	scanDryRun           bool
+	scanDelta            bool
+	scanNoLLM            bool
+	scanJSON             bool
+	scanMaxIssues        int
+	scanMinConfidence    float64
+	scanKind             string
+	scanStrict           bool
+	scanGitDepth         int
+	scanGitSince         string
+	scanExclude          []string
+	scanIncludeClosed    bool
+	scanAnonymize        string
+	scanHistoryDepth     string
+	scanCollectorTimeout string
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -71,6 +73,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanIncludeClosed, "include-closed", false, "include closed/merged issues and PRs from GitHub")
 	scanCmd.Flags().StringVar(&scanHistoryDepth, "history-depth", "", "filter closed items older than this duration (e.g., 90d, 6m, 1y)")
 	scanCmd.Flags().StringVar(&scanAnonymize, "anonymize", "auto", "anonymize author names: auto, always, or never")
+	scanCmd.Flags().StringVar(&scanCollectorTimeout, "collector-timeout", "", "per-collector timeout (e.g. 60s, 2m); 0 or empty = no timeout")
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
@@ -247,6 +250,19 @@ func runScan(cmd *cobra.Command, args []string) error {
 		co := scanCfg.CollectorOpts[name]
 		co.ProgressFunc = progressFn
 		scanCfg.CollectorOpts[name] = co
+	}
+
+	// Apply --collector-timeout as global default for collectors without a per-collector timeout.
+	if scanCollectorTimeout != "" {
+		if d, err := time.ParseDuration(scanCollectorTimeout); err == nil && d > 0 {
+			for _, name := range collector.List() {
+				co := scanCfg.CollectorOpts[name]
+				if co.Timeout == 0 {
+					co.Timeout = d
+				}
+				scanCfg.CollectorOpts[name] = co
+			}
+		}
 	}
 
 	// 6. Create pipeline.

@@ -1030,6 +1030,94 @@ func TestPipeline_MixedMetricsAndNonMetrics(t *testing.T) {
 	assert.NotContains(t, result.Metrics, "without-metrics")
 }
 
+// --- Timeout Tests ---
+
+func TestRunCollector_Timeout(t *testing.T) {
+	// A slow collector with a short timeout should return context.DeadlineExceeded.
+	slowCollector := &funcCollector{
+		name: "slow",
+		fn: func(ctx context.Context) ([]signal.RawSignal, error) {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(500 * time.Millisecond):
+				return []signal.RawSignal{
+					{Source: "slow", Title: "Should not appear", FilePath: "x.go", Confidence: 0.5},
+				}, nil
+			}
+		},
+	}
+
+	config := signal.ScanConfig{
+		RepoPath: "/tmp/repo",
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"slow": {Timeout: 50 * time.Millisecond},
+		},
+	}
+
+	p := NewWithCollectors(config, []collector.Collector{slowCollector})
+	result, err := p.Run(context.Background())
+
+	require.NoError(t, err) // warn mode — pipeline itself doesn't fail
+	require.Len(t, result.Results, 1)
+	assert.ErrorIs(t, result.Results[0].Err, context.DeadlineExceeded)
+	assert.Empty(t, result.Signals, "timed-out collector should produce no valid signals")
+}
+
+func TestRunCollector_NoTimeout(t *testing.T) {
+	// Timeout: 0 should not apply any deadline — collector completes normally.
+	quickCollector := &funcCollector{
+		name: "quick",
+		fn: func(_ context.Context) ([]signal.RawSignal, error) {
+			return []signal.RawSignal{
+				{Source: "quick", Title: "OK", FilePath: "f.go", Confidence: 0.5},
+			}, nil
+		},
+	}
+
+	config := signal.ScanConfig{
+		RepoPath: "/tmp/repo",
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"quick": {Timeout: 0},
+		},
+	}
+
+	p := NewWithCollectors(config, []collector.Collector{quickCollector})
+	result, err := p.Run(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, result.Results, 1)
+	assert.NoError(t, result.Results[0].Err)
+	assert.Len(t, result.Signals, 1)
+}
+
+func TestRunCollector_TimeoutDoesNotAffectFastCollector(t *testing.T) {
+	// A collector that completes well within the timeout should succeed.
+	fastCollector := &funcCollector{
+		name: "fast",
+		fn: func(_ context.Context) ([]signal.RawSignal, error) {
+			return []signal.RawSignal{
+				{Source: "fast", Title: "Fast", FilePath: "f.go", Confidence: 0.8},
+			}, nil
+		},
+	}
+
+	config := signal.ScanConfig{
+		RepoPath: "/tmp/repo",
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"fast": {Timeout: 5 * time.Second},
+		},
+	}
+
+	p := NewWithCollectors(config, []collector.Collector{fastCollector})
+	result, err := p.Run(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, result.Results, 1)
+	assert.NoError(t, result.Results[0].Err)
+	assert.Len(t, result.Signals, 1)
+}
+
 func TestPipeline_MetricsEmptyWhenNoProviders(t *testing.T) {
 	stub := &stubCollector{
 		name: "plain",

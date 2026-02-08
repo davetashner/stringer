@@ -1,6 +1,10 @@
 package config
 
-import "github.com/davetashner/stringer/internal/signal"
+import (
+	"time"
+
+	"github.com/davetashner/stringer/internal/signal"
+)
 
 // Merge combines file-based config with CLI-provided ScanConfig.
 // CLI values take precedence; zero-value CLI fields fall through to file config.
@@ -58,6 +62,11 @@ func Merge(fileCfg *Config, cliCfg signal.ScanConfig) signal.ScanConfig {
 			}
 			if co.HistoryDepth == "" && fc.HistoryDepth != "" {
 				co.HistoryDepth = fc.HistoryDepth
+			}
+			if co.Timeout == 0 && fc.Timeout != "" {
+				if d, err := time.ParseDuration(fc.Timeout); err == nil {
+					co.Timeout = d
+				}
 			}
 			result.CollectorOpts[name] = co
 		}

@@ -39,6 +39,9 @@ type CollectorConfig struct {
 
 	// Anonymization settings.
 	Anonymize string `yaml:"anonymize,omitempty"`
+
+	// Timeout is the per-collector timeout (e.g. "60s", "2m").
+	Timeout string `yaml:"timeout,omitempty"`
 }
 
 // FileName is the expected config file name in a repository root.

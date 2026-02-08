@@ -72,6 +72,9 @@ type CollectorOpts struct {
 
 	// Anonymize controls author name anonymization: "auto", "always", or "never".
 	Anonymize string
+
+	// Timeout is the per-collector timeout. 0 means no timeout.
+	Timeout time.Duration
 }
 
 // ScanConfig holds the overall configuration for a scan operation.
