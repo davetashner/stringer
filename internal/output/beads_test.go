@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/davetashner/stringer/internal/beads"
 	"github.com/davetashner/stringer/internal/signal"
 )
 
@@ -38,7 +39,7 @@ func testSignal() signal.RawSignal {
 
 func TestFieldMapping(t *testing.T) {
 	sig := testSignal()
-	rec := signalToBead(sig)
+	rec := NewBeadsFormatter().signalToBead(sig)
 
 	t.Run("title", func(t *testing.T) {
 		if rec.Title != "Add rate limiting" {
@@ -163,8 +164,9 @@ func TestConfidenceToPriority(t *testing.T) {
 func TestIDDeterminism(t *testing.T) {
 	sig := testSignal()
 
-	id1 := generateID(sig)
-	id2 := generateID(sig)
+	bf := NewBeadsFormatter()
+	id1 := bf.generateID(sig)
+	id2 := bf.generateID(sig)
 
 	if id1 != id2 {
 		t.Errorf("same input produced different IDs: %q vs %q", id1, id2)
@@ -173,7 +175,7 @@ func TestIDDeterminism(t *testing.T) {
 
 func TestIDFormat(t *testing.T) {
 	sig := testSignal()
-	id := generateID(sig)
+	id := NewBeadsFormatter().generateID(sig)
 
 	if !strings.HasPrefix(id, "str-") {
 		t.Errorf("ID %q does not start with 'str-'", id)
@@ -186,12 +188,13 @@ func TestIDFormat(t *testing.T) {
 }
 
 func TestIDUniqueness(t *testing.T) {
+	bf := NewBeadsFormatter()
 	sig1 := testSignal()
 	sig2 := testSignal()
 	sig2.Title = "Different title"
 
-	id1 := generateID(sig1)
-	id2 := generateID(sig2)
+	id1 := bf.generateID(sig1)
+	id2 := bf.generateID(sig2)
 
 	if id1 == id2 {
 		t.Errorf("different signals produced same ID: %q", id1)
@@ -199,13 +202,14 @@ func TestIDUniqueness(t *testing.T) {
 }
 
 func TestIDDiffersByField(t *testing.T) {
+	bf := NewBeadsFormatter()
 	base := testSignal()
-	baseID := generateID(base)
+	baseID := bf.generateID(base)
 
 	t.Run("source", func(t *testing.T) {
 		s := base
 		s.Source = "gitlog"
-		if generateID(s) == baseID {
+		if bf.generateID(s) == baseID {
 			t.Error("changing Source did not change ID")
 		}
 	})
@@ -213,7 +217,7 @@ func TestIDDiffersByField(t *testing.T) {
 	t.Run("kind", func(t *testing.T) {
 		s := base
 		s.Kind = "fixme"
-		if generateID(s) == baseID {
+		if bf.generateID(s) == baseID {
 			t.Error("changing Kind did not change ID")
 		}
 	})
@@ -221,7 +225,7 @@ func TestIDDiffersByField(t *testing.T) {
 	t.Run("filepath", func(t *testing.T) {
 		s := base
 		s.FilePath = "other/file.go"
-		if generateID(s) == baseID {
+		if bf.generateID(s) == baseID {
 			t.Error("changing FilePath did not change ID")
 		}
 	})
@@ -229,7 +233,7 @@ func TestIDDiffersByField(t *testing.T) {
 	t.Run("line", func(t *testing.T) {
 		s := base
 		s.Line = 99
-		if generateID(s) == baseID {
+		if bf.generateID(s) == baseID {
 			t.Error("changing Line did not change ID")
 		}
 	})
@@ -237,7 +241,7 @@ func TestIDDiffersByField(t *testing.T) {
 	t.Run("title", func(t *testing.T) {
 		s := base
 		s.Title = "Something else"
-		if generateID(s) == baseID {
+		if bf.generateID(s) == baseID {
 			t.Error("changing Title did not change ID")
 		}
 	})
@@ -325,7 +329,7 @@ func TestMissingOptionalFields(t *testing.T) {
 		Title: "Minimal signal",
 	}
 
-	rec := signalToBead(sig)
+	rec := NewBeadsFormatter().signalToBead(sig)
 
 	t.Run("author_defaults_to_stringer", func(t *testing.T) {
 		if rec.CreatedBy != "stringer" {
@@ -364,7 +368,7 @@ func TestDescriptionVariants(t *testing.T) {
 		sig := signal.RawSignal{
 			Description: "Some context",
 		}
-		rec := signalToBead(sig)
+		rec := NewBeadsFormatter().signalToBead(sig)
 		if rec.Description != "Some context" {
 			t.Errorf("Description = %q, want %q", rec.Description, "Some context")
 		}
@@ -374,7 +378,7 @@ func TestDescriptionVariants(t *testing.T) {
 		sig := signal.RawSignal{
 			FilePath: "main.go",
 		}
-		rec := signalToBead(sig)
+		rec := NewBeadsFormatter().signalToBead(sig)
 		if rec.Description != "Location: main.go" {
 			t.Errorf("Description = %q, want %q", rec.Description, "Location: main.go")
 		}
@@ -385,7 +389,7 @@ func TestDescriptionVariants(t *testing.T) {
 			FilePath: "main.go",
 			Line:     5,
 		}
-		rec := signalToBead(sig)
+		rec := NewBeadsFormatter().signalToBead(sig)
 		if rec.Description != "Location: main.go:5" {
 			t.Errorf("Description = %q, want %q", rec.Description, "Location: main.go:5")
 		}
@@ -396,7 +400,7 @@ func TestDescriptionVariants(t *testing.T) {
 			FilePath: "main.go",
 			Line:     0,
 		}
-		rec := signalToBead(sig)
+		rec := NewBeadsFormatter().signalToBead(sig)
 		if rec.Description != "Location: main.go" {
 			t.Errorf("Description = %q, want %q", rec.Description, "Location: main.go")
 		}
@@ -408,7 +412,7 @@ func TestDescriptionVariants(t *testing.T) {
 			FilePath:    "api.go",
 			Line:        100,
 		}
-		rec := signalToBead(sig)
+		rec := NewBeadsFormatter().signalToBead(sig)
 		want := "Needs work\n\nLocation: api.go:100"
 		if rec.Description != want {
 			t.Errorf("Description = %q, want %q", rec.Description, want)
@@ -422,7 +426,7 @@ func TestLabelsWithNoSource(t *testing.T) {
 		Title: "Test",
 		Tags:  []string{"tag1"},
 	}
-	rec := signalToBead(sig)
+	rec := NewBeadsFormatter().signalToBead(sig)
 	want := []string{"tag1", "stringer-generated"}
 	if len(rec.Labels) != len(want) {
 		t.Fatalf("Labels = %v, want %v", rec.Labels, want)
@@ -440,7 +444,7 @@ func TestLabelsWithNoTags(t *testing.T) {
 		Kind:   "todo",
 		Title:  "Test",
 	}
-	rec := signalToBead(sig)
+	rec := NewBeadsFormatter().signalToBead(sig)
 	want := []string{"stringer-generated", "todos"}
 	if len(rec.Labels) != len(want) {
 		t.Fatalf("Labels = %v, want %v", rec.Labels, want)
@@ -582,9 +586,175 @@ func TestTimestampUTCConversion(t *testing.T) {
 	sig := signal.RawSignal{
 		Timestamp: time.Date(2026, 3, 15, 17, 0, 0, 0, eastern),
 	}
-	rec := signalToBead(sig)
+	rec := NewBeadsFormatter().signalToBead(sig)
 	want := "2026-03-15T22:00:00Z"
 	if rec.CreatedAt != want {
 		t.Errorf("CreatedAt = %q, want %q", rec.CreatedAt, want)
+	}
+}
+
+// -----------------------------------------------------------------------
+// Conventions tests
+// -----------------------------------------------------------------------
+
+func TestSetConventions_CustomPrefix(t *testing.T) {
+	bf := NewBeadsFormatter()
+	bf.SetConventions(&beads.Conventions{
+		IDPrefix: "myapp-",
+	})
+
+	sig := testSignal()
+	rec := bf.signalToBead(sig)
+
+	if !strings.HasPrefix(rec.ID, "myapp-") {
+		t.Errorf("ID %q should start with 'myapp-'", rec.ID)
+	}
+}
+
+func TestSetConventions_SnakeCaseLabels(t *testing.T) {
+	bf := NewBeadsFormatter()
+	bf.SetConventions(&beads.Conventions{
+		LabelStyle: "snake_case",
+	})
+
+	sig := testSignal()
+	rec := bf.signalToBead(sig)
+
+	found := false
+	for _, label := range rec.Labels {
+		if label == "stringer_generated" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Labels %v should contain 'stringer_generated' with snake_case convention", rec.Labels)
+	}
+
+	// Verify "stringer-generated" is NOT present.
+	for _, label := range rec.Labels {
+		if label == "stringer-generated" {
+			t.Errorf("Labels %v should NOT contain 'stringer-generated' with snake_case convention", rec.Labels)
+		}
+	}
+}
+
+func TestSetConventions_NilConventionsDefaultBehavior(t *testing.T) {
+	bf := NewBeadsFormatter()
+	// Do not call SetConventions — nil conventions.
+
+	sig := testSignal()
+	rec := bf.signalToBead(sig)
+
+	if !strings.HasPrefix(rec.ID, "str-") {
+		t.Errorf("ID %q should start with 'str-' by default", rec.ID)
+	}
+
+	found := false
+	for _, label := range rec.Labels {
+		if label == "stringer-generated" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Labels %v should contain 'stringer-generated' by default", rec.Labels)
+	}
+}
+
+func TestSetConventions_ResetToNil(t *testing.T) {
+	bf := NewBeadsFormatter()
+
+	// Set conventions.
+	bf.SetConventions(&beads.Conventions{
+		IDPrefix:   "custom-",
+		LabelStyle: "snake_case",
+	})
+
+	// Reset to nil.
+	bf.SetConventions(nil)
+
+	sig := testSignal()
+	rec := bf.signalToBead(sig)
+
+	if !strings.HasPrefix(rec.ID, "str-") {
+		t.Errorf("ID %q should start with 'str-' after reset", rec.ID)
+	}
+}
+
+func TestSetConventions_KebabCaseLabelsExplicit(t *testing.T) {
+	bf := NewBeadsFormatter()
+	bf.SetConventions(&beads.Conventions{
+		LabelStyle: "kebab-case",
+	})
+
+	sig := testSignal()
+	rec := bf.signalToBead(sig)
+
+	found := false
+	for _, label := range rec.Labels {
+		if label == "stringer-generated" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Labels %v should contain 'stringer-generated' with explicit kebab-case convention", rec.Labels)
+	}
+}
+
+func TestSetConventions_EmptyPrefix(t *testing.T) {
+	bf := NewBeadsFormatter()
+	bf.SetConventions(&beads.Conventions{
+		IDPrefix: "",
+	})
+
+	sig := testSignal()
+	rec := bf.signalToBead(sig)
+
+	// Empty prefix should fall back to default "str-".
+	if !strings.HasPrefix(rec.ID, "str-") {
+		t.Errorf("ID %q should start with 'str-' when conventions IDPrefix is empty", rec.ID)
+	}
+}
+
+func TestFormat_WithConventions(t *testing.T) {
+	bf := NewBeadsFormatter()
+	bf.SetConventions(&beads.Conventions{
+		IDPrefix:   "proj-",
+		LabelStyle: "snake_case",
+	})
+
+	signals := []signal.RawSignal{testSignal()}
+	var buf bytes.Buffer
+	if err := bf.Format(signals, &buf); err != nil {
+		t.Fatalf("Format() error: %v", err)
+	}
+
+	var rec map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
+		t.Fatalf("Unmarshal error: %v", err)
+	}
+
+	id, ok := rec["id"].(string)
+	if !ok {
+		t.Fatal("id field not a string")
+	}
+	if !strings.HasPrefix(id, "proj-") {
+		t.Errorf("ID %q should start with 'proj-'", id)
+	}
+
+	labels, ok := rec["labels"].([]interface{})
+	if !ok {
+		t.Fatal("labels field not an array")
+	}
+	found := false
+	for _, l := range labels {
+		if l == "stringer_generated" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("labels %v should contain 'stringer_generated'", labels)
 	}
 }
