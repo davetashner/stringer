@@ -111,6 +111,10 @@ type CollectorResult struct {
 
 	// Err is any error encountered during collection.
 	Err error
+
+	// Metrics holds optional structured data from collectors that implement
+	// the MetricsProvider interface. Nil if the collector does not provide metrics.
+	Metrics any
 }
 
 // ScanResult holds the aggregate output of a scan operation.
@@ -123,4 +127,8 @@ type ScanResult struct {
 
 	// Duration is the total scan duration.
 	Duration time.Duration
+
+	// Metrics maps collector names to their structured metrics. Only populated
+	// for collectors that implement the MetricsProvider interface.
+	Metrics map[string]any
 }
