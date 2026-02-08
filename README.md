@@ -17,7 +17,10 @@
 **Codebase archaeology for [Beads](https://github.com/steveyegge/beads).** Mine your repo for actionable work items, output them as Beads-formatted issues, and give your AI agents instant situational awareness.
 
 ```bash
-# Install
+# Install via Homebrew
+brew install davetashner/tap/stringer
+
+# Or install via Go
 go install github.com/davetashner/stringer/cmd/stringer@latest
 
 # Scan a repo and seed beads
