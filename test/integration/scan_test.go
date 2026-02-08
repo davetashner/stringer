@@ -73,8 +73,28 @@ func TestScan_GoldenFile(t *testing.T) {
 	require.Equal(t, len(wantLines), len(gotLines), "line count mismatch")
 
 	for i := range wantLines {
-		assert.JSONEq(t, wantLines[i], gotLines[i], "line %d mismatch", i)
+		// Normalize environment-specific fields before comparing.
+		// created_at and created_by depend on git blame results which vary
+		// by machine (author name) and time (commit timestamp). The fixture
+		// directory has no .git of its own, so blame walks up to the stringer
+		// repo's .git and returns the actual committer info.
+		got := normalizeGoldenJSON(t, gotLines[i])
+		want := normalizeGoldenJSON(t, wantLines[i])
+		assert.JSONEq(t, want, got, "line %d mismatch", i)
 	}
+}
+
+// normalizeGoldenJSON removes environment-specific fields from a JSON line
+// so golden file comparisons are deterministic across machines and times.
+func normalizeGoldenJSON(t *testing.T, line string) string {
+	t.Helper()
+	var rec map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(line), &rec), "invalid JSON: %s", line)
+	delete(rec, "created_at")
+	delete(rec, "created_by")
+	out, err := json.Marshal(rec)
+	require.NoError(t, err)
+	return string(out)
 }
 
 func TestScan_Idempotent(t *testing.T) {
