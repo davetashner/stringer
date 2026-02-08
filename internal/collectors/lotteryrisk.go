@@ -623,11 +623,11 @@ func buildLotteryRiskSignal(own *dirOwnership, anon *nameAnonymizer) signal.RawS
 }
 
 // lotteryRiskConfidence maps lottery risk to confidence score per DR-006.
-func lotteryRiskConfidence(busFactor int) float64 {
+func lotteryRiskConfidence(riskScore int) float64 {
 	switch {
-	case busFactor <= 1:
+	case riskScore <= 1:
 		return 0.8
-	case busFactor == 2:
+	case riskScore == 2:
 		return 0.5
 	default:
 		return 0.3

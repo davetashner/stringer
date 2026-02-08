@@ -320,7 +320,7 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 
 Planned for future releases:
 
-- **`stringer report`** — Summary reports with bus factor, churn/stability, TODO age distribution, and coverage gap sections
+- **`stringer report`** — Summary reports with lottery risk, churn/stability, TODO age distribution, and coverage gap sections
 - **LLM clustering pass** — Group related signals, infer dependencies, prioritize
 - **Monorepo support** — Per-workspace scanning and scoped output
 
