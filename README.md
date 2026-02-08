@@ -12,7 +12,7 @@
 [![Release](https://img.shields.io/github/v/release/davetashner/stringer)](https://github.com/davetashner/stringer/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **Status: v0.2.0.** Three collectors, three output formats, parallel pipeline with signal deduplication. See [Current Limitations](#current-limitations) for what's not here yet.
+> **Status: v0.3.0.** Five collectors, three output formats, parallel pipeline with signal deduplication, delta scanning. See [Current Limitations](#current-limitations) for what's not here yet.
 
 **Codebase archaeology for [Beads](https://github.com/steveyegge/beads).** Mine your repo for actionable work items, output them as Beads-formatted issues, and give your AI agents instant situational awareness.
 
@@ -63,28 +63,29 @@ Stringer solves the cold-start problem. It mines signals already present in your
 - **Dry-run mode** — Preview signal counts without producing output
 
 ```
-┌─────────────────────────────────┐
-│       Target Repository         │
-└────────────────┬────────────────┘
-                 │
-    ┌────────────┼─────────────┐
-    ▼            ▼             ▼
-┌────────┐  ┌─────────┐  ┌──────────┐
-│ TODOs  │  │ Git Log │  │ Patterns │  (parallel)
-└───┬────┘  └────┬────┘  └─────┬────┘
-    └────────────┼─────────────┘
-                 ▼
-          ┌──────────────┐
-          │    Dedup +   │
-          │  Validation  │
-          └──────┬───────┘
-                 │
-    ┌────────────┼────────────┐
-    ▼            ▼            ▼
-┌────────┐ ┌─────────┐ ┌──────────┐
-│ Beads  │ │  JSON   │ │ Markdown │
-│ JSONL  │ │         │ │          │
-└────────┘ └─────────┘ └──────────┘
+ ┌────────────────────────────────────────────────────┐
+ │                 Target Repository                  │
+ └─────────────────────────┬──────────────────────────┘
+                           │
+     ┌──────────┬──────────┼──────────┬──────────┐
+     ▼          ▼          ▼          ▼          ▼
+ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
+ │ TODOs  │ │ GitLog │ │Patterns│ │Lottery │ │ GitHub │  (parallel)
+ │        │ │        │ │        │ │  Risk  │ │        │
+ └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘
+     └──────────┴──────────┼──────────┴──────────┘
+                           ▼
+                    ┌────────────┐
+                    │  Dedup +   │
+                    │ Validation │
+                    └──────┬─────┘
+                           │
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+         ┌─────────┐ ┌─────────┐ ┌─────────┐
+         │  Beads  │ │  JSON   │ │Markdown │
+         │  JSONL  │ │         │ │         │
+         └─────────┘ └─────────┘ └─────────┘
 ```
 
 ## What to Expect
@@ -288,6 +289,8 @@ Planned for future releases:
 - **Monorepo support** — Per-workspace scanning and scoped output
 - **`--min-confidence` flag** — Filter by confidence threshold with named presets
 - **`stringer docs`** — Auto-generate AGENTS.md scaffolds from repo structure
+- **Beads-aware output** — Deduplicate against existing beads, adopt conventions
+- **Pre-closed beads** — Generate closed beads from merged PRs and resolved TODOs
 
 ## Design Principles
 
