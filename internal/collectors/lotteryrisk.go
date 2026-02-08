@@ -16,6 +16,7 @@ import (
 	"github.com/google/go-github/v68/github"
 
 	"github.com/davetashner/stringer/internal/collector"
+	"github.com/davetashner/stringer/internal/gitcli"
 	"github.com/davetashner/stringer/internal/signal"
 )
 
@@ -139,7 +140,7 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 	}
 
 	// Blame source files and attribute lines to directories.
-	if err := blameDirectories(ctx, repo, repoPath, ownership, defaultMaxBlameFiles, opts); err != nil {
+	if err := blameDirectories(ctx, gitRoot, repoPath, ownership, defaultMaxBlameFiles, opts); err != nil {
 		return nil, fmt.Errorf("blaming files: %w", err)
 	}
 
@@ -263,22 +264,13 @@ func discoverDirectories(ctx context.Context, repoPath string, maxDepth int) ([]
 
 // blameDirectories blames source files and attributes line counts to their
 // containing directories. It caps blame at maxFiles per directory.
-func blameDirectories(ctx context.Context, repo *git.Repository, repoPath string, ownership map[string]*dirOwnership, maxFiles int, opts signal.CollectorOpts) error {
-	head, err := repo.Head()
-	if err != nil {
-		return nil // empty repo, no blame data
-	}
-
-	commit, err := repo.CommitObject(head.Hash())
-	if err != nil {
-		return nil
-	}
-
+// Uses native git CLI for blame (DR-011) for performance.
+func blameDirectories(ctx context.Context, gitDir string, repoPath string, ownership map[string]*dirOwnership, maxFiles int, opts signal.CollectorOpts) error {
 	// Count files per directory to respect the cap.
 	dirFileCount := make(map[string]int)
 	totalFiles := 0
 
-	err = filepath.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil
 		}
@@ -332,18 +324,17 @@ func blameDirectories(ctx context.Context, repo *git.Repository, repoPath string
 			opts.ProgressFunc(fmt.Sprintf("lotteryrisk: blamed %d files", totalFiles))
 		}
 
-		// Blame the file.
-		blameResult, blameErr := git.Blame(commit, filepath.ToSlash(relPath))
+		// Blame the file via native git.
+		blameCtx, cancel := context.WithTimeout(ctx, gitcli.DefaultTimeout)
+		blameResult, blameErr := gitcli.BlameFile(blameCtx, gitDir, filepath.ToSlash(relPath))
+		cancel()
 		if blameErr != nil {
 			return nil // skip files that can't be blamed
 		}
 
 		own := ownership[dir]
-		for _, line := range blameResult.Lines {
-			author := line.AuthorName
-			if author == "" {
-				author = line.Author
-			}
+		for _, bl := range blameResult {
+			author := bl.AuthorName
 			if author == "" {
 				continue
 			}
