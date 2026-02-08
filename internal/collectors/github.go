@@ -259,7 +259,7 @@ func fetchIssues(ctx context.Context, api githubAPI, owner, repo string, maxIssu
 				desc = fmt.Sprintf("Closed at: %s, Reason: %s\n%s", closedAt, issue.GetStateReason(), desc)
 			}
 
-			signals = append(signals, signal.RawSignal{
+			sig := signal.RawSignal{
 				Source:      "github",
 				Kind:        kind,
 				FilePath:    fmt.Sprintf("github/issues/%d", issue.GetNumber()),
@@ -270,7 +270,11 @@ func fetchIssues(ctx context.Context, api githubAPI, owner, repo string, maxIssu
 				Timestamp:   issue.GetCreatedAt().Time,
 				Confidence:  confidence,
 				Tags:        tags,
-			})
+			}
+			if issue.GetState() == "closed" && issue.ClosedAt != nil {
+				sig.ClosedAt = issue.ClosedAt.Time
+			}
+			signals = append(signals, sig)
 
 			if len(signals) >= maxIssues {
 				return signals, nil
@@ -360,7 +364,7 @@ func fetchPullRequests(ctx context.Context, api githubAPI, owner, repo string, m
 				signals = append(signals, commentSigs...)
 			}
 
-			signals = append(signals, signal.RawSignal{
+			sig := signal.RawSignal{
 				Source:      "github",
 				Kind:        kind,
 				FilePath:    fmt.Sprintf("github/prs/%d", pr.GetNumber()),
@@ -371,7 +375,15 @@ func fetchPullRequests(ctx context.Context, api githubAPI, owner, repo string, m
 				Timestamp:   pr.GetCreatedAt().Time,
 				Confidence:  confidence,
 				Tags:        tags,
-			})
+			}
+			if pr.GetState() == "closed" {
+				if pr.GetMerged() && pr.MergedAt != nil {
+					sig.ClosedAt = pr.MergedAt.Time
+				} else if pr.ClosedAt != nil {
+					sig.ClosedAt = pr.ClosedAt.Time
+				}
+			}
+			signals = append(signals, sig)
 
 			if len(signals) >= maxIssues {
 				return signals, nil

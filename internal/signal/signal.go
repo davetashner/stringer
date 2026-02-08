@@ -29,6 +29,7 @@ type RawSignal struct {
 	Timestamp   time.Time // When this signal was created.
 	Confidence  float64   // 0.0-1.0, how certain we are this is real work.
 	Tags        []string  // Free-form tags for clustering hints.
+	ClosedAt    time.Time // When this signal was closed/resolved (zero if open).
 }
 
 // CollectorOpts holds per-collector configuration options.

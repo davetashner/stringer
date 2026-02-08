@@ -24,6 +24,8 @@ type beadRecord struct {
 	CreatedAt   string   `json:"created_at"`
 	CreatedBy   string   `json:"created_by"`
 	Labels      []string `json:"labels,omitempty"`
+	ClosedAt    string   `json:"closed_at,omitempty"`
+	CloseReason string   `json:"close_reason,omitempty"`
 }
 
 func init() {
@@ -75,7 +77,7 @@ func (b *BeadsFormatter) Format(signals []signal.RawSignal, w io.Writer) error {
 
 // signalToBead converts a RawSignal into a beadRecord.
 func (b *BeadsFormatter) signalToBead(sig signal.RawSignal) beadRecord {
-	return beadRecord{
+	rec := beadRecord{
 		ID:          b.generateID(sig),
 		Title:       sig.Title,
 		Description: buildDescription(sig),
@@ -85,6 +87,38 @@ func (b *BeadsFormatter) signalToBead(sig signal.RawSignal) beadRecord {
 		CreatedAt:   formatTimestamp(sig.Timestamp),
 		CreatedBy:   resolveAuthor(sig.Author),
 		Labels:      b.buildLabels(sig),
+	}
+
+	if hasTag(sig.Tags, "pre-closed") {
+		rec.Status = "closed"
+		rec.ClosedAt = formatTimestamp(sig.ClosedAt)
+		rec.CloseReason = deriveCloseReason(sig.Kind)
+	}
+
+	return rec
+}
+
+// hasTag returns true if tags contains the given tag.
+func hasTag(tags []string, tag string) bool {
+	for _, t := range tags {
+		if t == tag {
+			return true
+		}
+	}
+	return false
+}
+
+// deriveCloseReason maps a signal Kind to a human-readable close reason.
+func deriveCloseReason(kind string) string {
+	switch kind {
+	case "github-merged-pr":
+		return "merged"
+	case "github-closed-pr":
+		return "closed"
+	case "github-closed-issue":
+		return "completed"
+	default:
+		return "resolved"
 	}
 }
 
@@ -117,7 +151,8 @@ func mapKindToType(kind string) string {
 		return "task"
 	case "hack", "xxx", "optimize", "low-lottery-risk":
 		return "chore"
-	case "github-feature", "github-issue", "github-pr-changes", "github-pr-approved", "github-pr-pending", "github-review-todo":
+	case "github-feature", "github-issue", "github-pr-changes", "github-pr-approved", "github-pr-pending", "github-review-todo",
+		"github-closed-issue", "github-merged-pr", "github-closed-pr":
 		return "task"
 	default:
 		return "task"
