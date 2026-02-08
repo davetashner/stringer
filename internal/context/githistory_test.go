@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,6 +123,136 @@ func TestFirstLine(t *testing.T) {
 	assert.Equal(t, "", firstLine("\nrest"))
 }
 
+func TestSemverTagPattern(t *testing.T) {
+	tests := []struct {
+		input string
+		match bool
+	}{
+		{"v1.2.3", true},
+		{"v0.1.0", true},
+		{"1.0.0", true},
+		{"v10.20.30", true},
+		{"v1.2.3-rc1", true}, // prefix matches
+		{"latest", false},
+		{"release-1", false},
+		{"v1.2", false},
+		{"v1", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.match, semverTagPattern.MatchString(tt.input))
+		})
+	}
+}
+
+func TestAnalyzeHistory_WithTags(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	addCommitAt(t, dir, "initial commit", "alice", "2026-02-04T12:00:00Z")
+	run(t, dir, "git", "tag", "v1.0.0")
+
+	addCommitAt(t, dir, "second commit", "bob", "2026-02-05T12:00:00Z")
+	run(t, dir, "git", "tag", "v1.1.0")
+
+	history, err := analyzeHistoryWithNow(dir, 52, time.Date(2026, 2, 5, 12, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+
+	// Should have 2 milestones.
+	require.Len(t, history.Milestones, 2)
+	// Newest first.
+	assert.Equal(t, "v1.1.0", history.Milestones[0].Name)
+	assert.Equal(t, "v1.0.0", history.Milestones[1].Name)
+
+	// Tagged commits should have Tag field set.
+	require.NotEmpty(t, history.RecentWeeks)
+	var taggedCommits []CommitSummary
+	for _, week := range history.RecentWeeks {
+		for _, c := range week.Commits {
+			if c.Tag != "" {
+				taggedCommits = append(taggedCommits, c)
+			}
+		}
+	}
+	assert.Len(t, taggedCommits, 2)
+}
+
+func TestAnalyzeHistory_WeekTags(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	addCommit(t, dir, "initial commit", "alice")
+	run(t, dir, "git", "tag", "v1.0.0")
+
+	history, err := analyzeHistoryWithNow(dir, 52, time.Date(2026, 2, 5, 12, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+
+	// The week containing the tagged commit should have Tags populated.
+	require.NotEmpty(t, history.RecentWeeks)
+	found := false
+	for _, week := range history.RecentWeeks {
+		if len(week.Tags) > 0 {
+			assert.Equal(t, "v1.0.0", week.Tags[0].Name)
+			found = true
+		}
+	}
+	assert.True(t, found, "expected a week with tags")
+}
+
+func TestAnalyzeHistory_NonSemverTagsIgnored(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	addCommit(t, dir, "initial commit", "alice")
+	run(t, dir, "git", "tag", "latest")
+	run(t, dir, "git", "tag", "release-candidate")
+
+	history, err := analyzeHistoryWithNow(dir, 52, time.Date(2026, 2, 5, 12, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+
+	assert.Empty(t, history.Milestones)
+}
+
+func TestAnalyzeHistory_MergeCommit(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	// Create a commit on main.
+	addCommit(t, dir, "initial on main", "alice")
+
+	// Detect the default branch name (master or main depending on git config).
+	defaultBranch := getDefaultBranch(t, dir)
+
+	// Create a branch and add a commit.
+	run(t, dir, "git", "checkout", "-b", "feature")
+	addCommit(t, dir, "feature work", "bob")
+
+	// Switch back and create a merge commit.
+	run(t, dir, "git", "checkout", defaultBranch)
+	addCommit(t, dir, "main work", "alice")
+	run(t, dir, "git", "merge", "feature", "--no-ff", "-m", "Merge feature branch")
+
+	history, err := analyzeHistoryWithNow(dir, 52, time.Date(2026, 2, 5, 12, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+
+	// Find the merge commit.
+	var mergeFound bool
+	for _, week := range history.RecentWeeks {
+		for _, c := range week.Commits {
+			if c.Message == "Merge feature branch" {
+				assert.True(t, c.IsMerge, "merge commit should have IsMerge=true")
+				mergeFound = true
+			}
+		}
+	}
+	assert.True(t, mergeFound, "should have found merge commit")
+
+	// Non-merge commits should have IsMerge=false.
+	for _, week := range history.RecentWeeks {
+		for _, c := range week.Commits {
+			if c.Message == "initial on main" {
+				assert.False(t, c.IsMerge, "regular commit should have IsMerge=false")
+			}
+		}
+	}
+}
+
 // --- Test Helpers ---
 
 func setupTestRepo(t *testing.T) string {
@@ -143,6 +274,35 @@ func addCommit(t *testing.T, dir, message, author string) {
 		"-c", "user.name="+author,
 		"-c", "user.email="+author+"@test.com",
 		"commit", "-m", message)
+}
+
+func addCommitAt(t *testing.T, dir, message, author, dateISO string) {
+	t.Helper()
+	f := filepath.Join(dir, message+"-"+author+".txt")
+	require.NoError(t, os.WriteFile(f, []byte(message), 0o600))
+	runAt(t, dir, dateISO, "git", "add", "-A")
+	runAt(t, dir, dateISO, "git",
+		"-c", "user.name="+author,
+		"-c", "user.email="+author+"@test.com",
+		"commit", "-m", message)
+}
+
+func runAt(t *testing.T, dir, dateISO string, name string, args ...string) {
+	t.Helper()
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE="+dateISO, "GIT_COMMITTER_DATE="+dateISO)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "command %s %v failed: %s", name, args, string(out))
+}
+
+func getDefaultBranch(t *testing.T, dir string) string {
+	t.Helper()
+	cmd := exec.Command("git", "branch", "--show-current")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git branch failed: %s", string(out))
+	return strings.TrimSpace(string(out))
 }
 
 func run(t *testing.T, dir string, name string, args ...string) {
