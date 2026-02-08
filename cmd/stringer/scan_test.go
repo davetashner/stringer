@@ -264,6 +264,16 @@ func TestScan_MaxIssues(t *testing.T) {
 	}
 }
 
+func TestScan_HistoryDepthFlag(t *testing.T) {
+	flag := scanCmd.Flags().Lookup("history-depth")
+	if flag == nil {
+		t.Fatal("--history-depth flag not registered")
+	}
+	if flag.DefValue != "" {
+		t.Errorf("expected empty default, got %q", flag.DefValue)
+	}
+}
+
 func TestScan_DefaultPath(t *testing.T) {
 	binary := buildBinary(t)
 	root := repoRoot(t)

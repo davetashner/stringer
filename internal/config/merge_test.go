@@ -243,6 +243,34 @@ func TestMerge_GitSinceCLIOverridesFile(t *testing.T) {
 	assert.Equal(t, "30d", result.CollectorOpts["gitlog"].GitSince)
 }
 
+func TestMerge_HistoryDepthFromFile(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {HistoryDepth: "6m"},
+		},
+	}
+	cliCfg := signal.ScanConfig{}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.Equal(t, "6m", result.CollectorOpts["github"].HistoryDepth)
+}
+
+func TestMerge_HistoryDepthCLIOverridesFile(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {HistoryDepth: "6m"},
+		},
+	}
+	cliCfg := signal.ScanConfig{
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"github": {HistoryDepth: "90d"},
+		},
+	}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.Equal(t, "90d", result.CollectorOpts["github"].HistoryDepth)
+}
+
 func TestMerge_GitDepthAndSinceBothFromFile(t *testing.T) {
 	fileCfg := &Config{
 		Collectors: map[string]CollectorConfig{

@@ -31,10 +31,11 @@ type CollectorConfig struct {
 	GitSince string `yaml:"git_since,omitempty"`
 
 	// GitHub collector settings.
-	IncludePRs            *bool `yaml:"include_prs,omitempty"`
-	CommentDepth          int   `yaml:"comment_depth,omitempty"`
-	MaxIssuesPerCollector int   `yaml:"max_issues_per_collector,omitempty"`
-	IncludeClosed         *bool `yaml:"include_closed,omitempty"`
+	IncludePRs            *bool  `yaml:"include_prs,omitempty"`
+	CommentDepth          int    `yaml:"comment_depth,omitempty"`
+	MaxIssuesPerCollector int    `yaml:"max_issues_per_collector,omitempty"`
+	IncludeClosed         *bool  `yaml:"include_closed,omitempty"`
+	HistoryDepth          string `yaml:"history_depth,omitempty"`
 
 	// Anonymization settings.
 	Anonymize string `yaml:"anonymize,omitempty"`

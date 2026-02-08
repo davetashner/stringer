@@ -39,6 +39,7 @@ var (
 	scanExclude       []string
 	scanIncludeClosed bool
 	scanAnonymize     string
+	scanHistoryDepth  string
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -68,6 +69,7 @@ func init() {
 	scanCmd.Flags().StringVar(&scanGitSince, "git-since", "", "only examine commits after this duration (e.g., 90d, 6m, 1y)")
 	scanCmd.Flags().StringSliceVarP(&scanExclude, "exclude", "e", nil, "glob patterns to exclude from scanning (e.g. \"tests/**,docs/**\")")
 	scanCmd.Flags().BoolVar(&scanIncludeClosed, "include-closed", false, "include closed/merged issues and PRs from GitHub")
+	scanCmd.Flags().StringVar(&scanHistoryDepth, "history-depth", "", "filter closed items older than this duration (e.g., 90d, 6m, 1y)")
 	scanCmd.Flags().StringVar(&scanAnonymize, "anonymize", "auto", "anonymize author names: auto, always, or never")
 }
 
@@ -209,13 +211,18 @@ func runScan(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Apply --include-closed to the github collector.
-	if scanIncludeClosed {
+	// Apply --include-closed and --history-depth to the github collector.
+	if scanIncludeClosed || scanHistoryDepth != "" {
 		if scanCfg.CollectorOpts == nil {
 			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
 		}
 		co := scanCfg.CollectorOpts["github"]
-		co.IncludeClosed = true
+		if scanIncludeClosed {
+			co.IncludeClosed = true
+		}
+		if scanHistoryDepth != "" && co.HistoryDepth == "" {
+			co.HistoryDepth = scanHistoryDepth
+		}
 		scanCfg.CollectorOpts["github"] = co
 	}
 
