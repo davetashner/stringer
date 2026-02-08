@@ -1,6 +1,6 @@
 # 002: Git Interaction Method
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-02-07
 **Context:** F2 core types (stringer-0lx). Stringer reads git history (blame, log, diff) from target repositories. This decision determines how stringer interacts with git.
 
@@ -56,4 +56,4 @@ Stringer needs to read git data (blame output, commit logs, diffs) from target r
 
 ## Decision
 
-[Pending acceptance]
+Option A accepted. go-git is used throughout all three collectors (todos, gitlog, patterns) for blame, commit iteration, branch listing, and diff operations. The self-contained binary is a proven UX advantage.

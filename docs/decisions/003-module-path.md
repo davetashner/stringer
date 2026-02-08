@@ -1,6 +1,6 @@
 # 003: Go Module Path
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-02-07
 **Context:** F1 project scaffold (stringer-aks). The module path is set in go.mod and affects import paths throughout the codebase.
 
@@ -40,4 +40,4 @@ What module path should stringer use? This determines how the project is importe
 
 ## Decision
 
-[Pending acceptance]
+Option A accepted. The module path github.com/davetashner/stringer is established in go.mod, published on GitHub Releases, and installable via `go install`. Homebrew tap also uses this path.

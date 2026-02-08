@@ -1,6 +1,6 @@
 # 001: Minimum Go Version
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-02-07
 **Context:** F1 project scaffold (stringer-aks). Establishes the minimum Go version for building and testing stringer.
 
@@ -46,4 +46,4 @@ Which Go version should stringer require? This affects available language featur
 
 ## Decision
 
-[Pending acceptance]
+Option A accepted. Go 1.24 is the minimum version. The CI matrix tests 1.24 and 1.25, go.mod specifies 1.24, and the project has shipped multiple releases on this basis.
