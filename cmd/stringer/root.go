@@ -35,5 +35,6 @@ func init() {
 
 	rootCmd.AddCommand(scanCmd)
 	rootCmd.AddCommand(docsCmd)
+	rootCmd.AddCommand(contextCmd)
 	rootCmd.AddCommand(versionCmd)
 }
