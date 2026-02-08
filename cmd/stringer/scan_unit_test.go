@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -26,9 +27,23 @@ func resetScanFlags() {
 	scanFormat = "beads"
 	scanOutput = ""
 	scanDryRun = false
+	scanDelta = false
 	scanNoLLM = false
 	scanJSON = false
 	scanMaxIssues = 0
+	scanMinConfidence = 0
+	scanKind = ""
+	scanStrict = false
+
+	// Reset cobra flag "Changed" state and values to avoid test contamination.
+	scanCmd.Flags().VisitAll(func(f *pflag.Flag) {
+		f.Changed = false
+		_ = f.Value.Set(f.DefValue)
+	})
+	rootCmd.PersistentFlags().VisitAll(func(f *pflag.Flag) {
+		f.Changed = false
+		_ = f.Value.Set(f.DefValue)
+	})
 }
 
 // -----------------------------------------------------------------------
@@ -79,12 +94,12 @@ func TestExitCodeError_AsType(t *testing.T) {
 
 func TestComputeExitCode_NoResults(t *testing.T) {
 	result := &signal.ScanResult{Results: nil}
-	assert.Equal(t, ExitOK, computeExitCode(result))
+	assert.Equal(t, ExitOK, computeExitCode(result, false))
 }
 
 func TestComputeExitCode_EmptyResults(t *testing.T) {
 	result := &signal.ScanResult{Results: []signal.CollectorResult{}}
-	assert.Equal(t, ExitOK, computeExitCode(result))
+	assert.Equal(t, ExitOK, computeExitCode(result, false))
 }
 
 func TestComputeExitCode_AllSuccess(t *testing.T) {
@@ -94,7 +109,7 @@ func TestComputeExitCode_AllSuccess(t *testing.T) {
 			{Collector: "gitlog", Err: nil},
 		},
 	}
-	assert.Equal(t, ExitOK, computeExitCode(result))
+	assert.Equal(t, ExitOK, computeExitCode(result, false))
 }
 
 func TestComputeExitCode_PartialFailure(t *testing.T) {
@@ -104,7 +119,8 @@ func TestComputeExitCode_PartialFailure(t *testing.T) {
 			{Collector: "gitlog", Err: errors.New("git not found")},
 		},
 	}
-	assert.Equal(t, ExitPartialFailure, computeExitCode(result))
+	// Non-strict: partial failures are OK, exit 0.
+	assert.Equal(t, ExitOK, computeExitCode(result, false))
 }
 
 func TestComputeExitCode_TotalFailure(t *testing.T) {
@@ -114,7 +130,7 @@ func TestComputeExitCode_TotalFailure(t *testing.T) {
 			{Collector: "gitlog", Err: errors.New("also failed")},
 		},
 	}
-	assert.Equal(t, ExitTotalFailure, computeExitCode(result))
+	assert.Equal(t, ExitTotalFailure, computeExitCode(result, false))
 }
 
 func TestComputeExitCode_SingleCollectorSuccess(t *testing.T) {
@@ -123,7 +139,7 @@ func TestComputeExitCode_SingleCollectorSuccess(t *testing.T) {
 			{Collector: "todos", Err: nil},
 		},
 	}
-	assert.Equal(t, ExitOK, computeExitCode(result))
+	assert.Equal(t, ExitOK, computeExitCode(result, false))
 }
 
 func TestComputeExitCode_SingleCollectorFailure(t *testing.T) {
@@ -132,11 +148,11 @@ func TestComputeExitCode_SingleCollectorFailure(t *testing.T) {
 			{Collector: "todos", Err: errors.New("boom")},
 		},
 	}
-	assert.Equal(t, ExitTotalFailure, computeExitCode(result))
+	assert.Equal(t, ExitTotalFailure, computeExitCode(result, false))
 }
 
 func TestComputeExitCode_MostFailed(t *testing.T) {
-	// 2 of 3 failed = partial (not all)
+	// 2 of 3 failed = partial (not all); non-strict returns OK.
 	result := &signal.ScanResult{
 		Results: []signal.CollectorResult{
 			{Collector: "a", Err: errors.New("fail")},
@@ -144,7 +160,7 @@ func TestComputeExitCode_MostFailed(t *testing.T) {
 			{Collector: "c", Err: nil},
 		},
 	}
-	assert.Equal(t, ExitPartialFailure, computeExitCode(result))
+	assert.Equal(t, ExitOK, computeExitCode(result, false))
 }
 
 // -----------------------------------------------------------------------
@@ -719,6 +735,9 @@ func TestScanCmd_FlagsRegistered(t *testing.T) {
 		{"no-llm", ""},
 		{"json", ""},
 		{"max-issues", ""},
+		{"min-confidence", ""},
+		{"kind", ""},
+		{"strict", ""},
 	}
 
 	for _, ff := range flags {
@@ -780,7 +799,7 @@ func TestExitCodeConstants(t *testing.T) {
 // -----------------------------------------------------------------------
 
 func TestComputeExitCode_LargeResultSet(t *testing.T) {
-	// Many collectors, only last one fails.
+	// Many collectors, only last one fails; non-strict returns OK.
 	results := make([]signal.CollectorResult, 10)
 	for i := range results {
 		results[i] = signal.CollectorResult{
@@ -790,7 +809,7 @@ func TestComputeExitCode_LargeResultSet(t *testing.T) {
 	results[9].Err = errors.New("last one failed")
 
 	result := &signal.ScanResult{Results: results}
-	assert.Equal(t, ExitPartialFailure, computeExitCode(result))
+	assert.Equal(t, ExitOK, computeExitCode(result, false))
 }
 
 func TestComputeExitCode_AllFailedMany(t *testing.T) {
@@ -803,5 +822,120 @@ func TestComputeExitCode_AllFailedMany(t *testing.T) {
 	}
 
 	result := &signal.ScanResult{Results: results}
-	assert.Equal(t, ExitTotalFailure, computeExitCode(result))
+	assert.Equal(t, ExitTotalFailure, computeExitCode(result, false))
+}
+
+// -----------------------------------------------------------------------
+// --strict flag tests for computeExitCode
+// -----------------------------------------------------------------------
+
+func TestComputeExitCode_PartialFailure_NotStrict(t *testing.T) {
+	result := &signal.ScanResult{
+		Results: []signal.CollectorResult{
+			{Collector: "todos", Err: nil},
+			{Collector: "gitlog", Err: errors.New("failed")},
+		},
+	}
+	assert.Equal(t, ExitOK, computeExitCode(result, false))
+}
+
+func TestComputeExitCode_PartialFailure_Strict(t *testing.T) {
+	result := &signal.ScanResult{
+		Results: []signal.CollectorResult{
+			{Collector: "todos", Err: nil},
+			{Collector: "gitlog", Err: errors.New("failed")},
+		},
+	}
+	assert.Equal(t, ExitPartialFailure, computeExitCode(result, true))
+}
+
+func TestComputeExitCode_TotalFailure_Strict(t *testing.T) {
+	result := &signal.ScanResult{
+		Results: []signal.CollectorResult{
+			{Collector: "todos", Err: errors.New("failed")},
+			{Collector: "gitlog", Err: errors.New("also failed")},
+		},
+	}
+	// Total failure is always exit 3, regardless of strict.
+	assert.Equal(t, ExitTotalFailure, computeExitCode(result, true))
+}
+
+func TestComputeExitCode_AllSuccess_Strict(t *testing.T) {
+	result := &signal.ScanResult{
+		Results: []signal.CollectorResult{
+			{Collector: "todos", Err: nil},
+			{Collector: "gitlog", Err: nil},
+		},
+	}
+	// All success is always exit 0, regardless of strict.
+	assert.Equal(t, ExitOK, computeExitCode(result, true))
+}
+
+func TestComputeExitCode_NoResults_Strict(t *testing.T) {
+	result := &signal.ScanResult{Results: nil}
+	assert.Equal(t, ExitOK, computeExitCode(result, true))
+}
+
+// -----------------------------------------------------------------------
+// --min-confidence flag tests
+// -----------------------------------------------------------------------
+
+func TestRunScan_MinConfidenceFilter(t *testing.T) {
+	resetScanFlags()
+	root := repoRoot(t)
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", root, "--min-confidence=0.9", "--dry-run", "--quiet", "--collectors=todos"})
+	err := cmd.Execute()
+	require.NoError(t, err)
+	// With very high confidence filter, most/all signals should be filtered out.
+	out := stdout.String()
+	assert.Contains(t, out, "signal(s) found")
+}
+
+// -----------------------------------------------------------------------
+// --kind flag tests
+// -----------------------------------------------------------------------
+
+func TestRunScan_KindFilter(t *testing.T) {
+	resetScanFlags()
+	root := repoRoot(t)
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", root, "--kind=todo", "--dry-run", "--quiet", "--collectors=todos"})
+	err := cmd.Execute()
+	require.NoError(t, err)
+	out := stdout.String()
+	assert.Contains(t, out, "signal(s) found")
+}
+
+func TestRunScan_KindFilterNoMatch(t *testing.T) {
+	resetScanFlags()
+	root := repoRoot(t)
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", root, "--kind=nonexistentkind", "--dry-run", "--quiet", "--collectors=todos"})
+	err := cmd.Execute()
+	require.NoError(t, err)
+	out := stdout.String()
+	assert.Contains(t, out, "0 signal(s) found")
+}
+
+// -----------------------------------------------------------------------
+// New flag registration tests
+// -----------------------------------------------------------------------
+
+func TestScanCmd_MinConfidenceFlagRegistered(t *testing.T) {
+	f := scanCmd.Flags().Lookup("min-confidence")
+	require.NotNil(t, f, "flag --min-confidence not registered")
+	assert.Equal(t, "0", f.DefValue)
+}
+
+func TestScanCmd_KindFlagRegistered(t *testing.T) {
+	f := scanCmd.Flags().Lookup("kind")
+	require.NotNil(t, f, "flag --kind not registered")
+	assert.Equal(t, "", f.DefValue)
+}
+
+func TestScanCmd_StrictFlagRegistered(t *testing.T) {
+	f := scanCmd.Flags().Lookup("strict")
+	require.NotNil(t, f, "flag --strict not registered")
+	assert.Equal(t, "false", f.DefValue)
 }
