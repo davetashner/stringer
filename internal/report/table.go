@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/fatih/color"
 )
 
 // Alignment controls how a column's content is justified.
@@ -16,10 +18,14 @@ const (
 	AlignRight
 )
 
+// ColorFunc maps a cell value to a colored string. If nil, no color is applied.
+type ColorFunc func(value string) string
+
 // Column describes a single table column.
 type Column struct {
 	Header string
 	Align  Alignment
+	Color  ColorFunc // optional per-cell color function
 }
 
 // Table renders aligned text tables to an io.Writer.
@@ -64,8 +70,8 @@ func (t *Table) Render(w io.Writer) error {
 		}
 	}
 
-	// Render header.
-	if err := t.renderRow(w, t.headerValues(), widths); err != nil {
+	// Render header (bold).
+	if err := t.renderHeader(w, widths); err != nil {
 		return err
 	}
 
@@ -88,12 +94,18 @@ func (t *Table) Render(w io.Writer) error {
 	return nil
 }
 
-func (t *Table) headerValues() []string {
-	headers := make([]string, len(t.columns))
+func (t *Table) renderHeader(w io.Writer, widths []int) error {
+	bold := color.New(color.Bold)
+	parts := make([]string, len(t.columns))
 	for i, col := range t.columns {
-		headers[i] = col.Header
+		if col.Align == AlignRight {
+			parts[i] = bold.Sprintf("%*s", widths[i], col.Header)
+		} else {
+			parts[i] = bold.Sprintf("%-*s", widths[i], col.Header)
+		}
 	}
-	return headers
+	_, err := fmt.Fprintf(w, "  %s\n", strings.Join(parts, "  "))
+	return err
 }
 
 func (t *Table) renderRow(w io.Writer, values []string, widths []int) error {
@@ -103,10 +115,20 @@ func (t *Table) renderRow(w io.Writer, values []string, widths []int) error {
 		if i < len(values) {
 			val = values[i]
 		}
+		// Apply color function if set, then pad.
+		display := val
+		if col.Color != nil {
+			display = col.Color(val)
+		}
+		// Padding is based on raw value length, not ANSI-colored length.
+		pad := widths[i] - len(val)
+		if pad < 0 {
+			pad = 0
+		}
 		if col.Align == AlignRight {
-			parts[i] = fmt.Sprintf("%*s", widths[i], val)
+			parts[i] = strings.Repeat(" ", pad) + display
 		} else {
-			parts[i] = fmt.Sprintf("%-*s", widths[i], val)
+			parts[i] = display + strings.Repeat(" ", pad)
 		}
 	}
 	_, err := fmt.Fprintf(w, "  %s\n", strings.Join(parts, "  "))

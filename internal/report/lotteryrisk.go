@@ -45,7 +45,7 @@ func (s *lotteryRiskSection) Analyze(result *signal.ScanResult) error {
 }
 
 func (s *lotteryRiskSection) Render(w io.Writer) error {
-	_, _ = fmt.Fprintf(w, "Lottery Risk\n")
+	_, _ = fmt.Fprintf(w, "%s\n", SectionTitle("Lottery Risk"))
 	_, _ = fmt.Fprintf(w, "------------\n")
 
 	if len(s.dirs) == 0 {
@@ -57,7 +57,7 @@ func (s *lotteryRiskSection) Render(w io.Writer) error {
 		Column{Header: "Directory"},
 		Column{Header: "Risk", Align: AlignRight},
 		Column{Header: "Top Contributors"},
-		Column{Header: "Level"},
+		Column{Header: "Level", Color: ColorRiskLevel},
 	)
 
 	for _, d := range s.dirs {
