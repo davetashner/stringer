@@ -196,6 +196,87 @@ func TestScan_DryRunNoOutput(t *testing.T) {
 	}
 }
 
+func TestScan_DeltaFirstRun(t *testing.T) {
+	binary := buildBinary(t)
+	dir := t.TempDir()
+
+	// Create a file with TODOs.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n// TODO: first\n// TODO: second\n"), 0o600))
+
+	// First delta run — no state exists, all signals are new.
+	cmd := exec.Command(binary, "scan", dir, "--collectors=todos", "--delta", "--quiet") //nolint:gosec // test helper
+	stdout, err := cmd.Output()
+	require.NoError(t, err, "first delta scan failed")
+
+	lines := strings.Split(strings.TrimSpace(string(stdout)), "\n")
+	assert.Equal(t, 2, len(lines), "first delta run should output all signals")
+
+	// State file should exist.
+	stateFile := filepath.Join(dir, ".stringer", "last-scan.json")
+	_, err = os.Stat(stateFile)
+	assert.NoError(t, err, "state file should be created after first delta scan")
+}
+
+func TestScan_DeltaIncremental(t *testing.T) {
+	binary := buildBinary(t)
+	dir := t.TempDir()
+
+	// Create initial file with one TODO.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n// TODO: original\n"), 0o600))
+
+	// First delta run.
+	cmd1 := exec.Command(binary, "scan", dir, "--collectors=todos", "--delta", "--quiet") //nolint:gosec // test helper
+	out1, err := cmd1.Output()
+	require.NoError(t, err, "first delta scan failed")
+	lines1 := strings.Split(strings.TrimSpace(string(out1)), "\n")
+	assert.Equal(t, 1, len(lines1), "first run should output 1 signal")
+
+	// Add a new TODO.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n// TODO: original\n// TODO: brand new\n"), 0o600))
+
+	// Second delta run — only new signal.
+	cmd2 := exec.Command(binary, "scan", dir, "--collectors=todos", "--delta", "--quiet") //nolint:gosec // test helper
+	out2, err := cmd2.Output()
+	require.NoError(t, err, "second delta scan failed")
+	lines2 := strings.Split(strings.TrimSpace(string(out2)), "\n")
+	assert.Equal(t, 1, len(lines2), "second delta run should output only the new signal")
+
+	// Verify the new signal is the new TODO.
+	assert.Contains(t, lines2[0], "brand new", "new signal should be the added TODO")
+}
+
+func TestScan_DeltaDryRun(t *testing.T) {
+	binary := buildBinary(t)
+	dir := t.TempDir()
+
+	// Create a file with TODOs.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n// TODO: test\n"), 0o600))
+
+	// First delta run to create state.
+	cmd1 := exec.Command(binary, "scan", dir, "--collectors=todos", "--delta", "--quiet") //nolint:gosec // test helper
+	_, err := cmd1.Output()
+	require.NoError(t, err, "first delta scan failed")
+
+	// Read state file.
+	stateFile := filepath.Join(dir, ".stringer", "last-scan.json")
+	before, err := os.ReadFile(stateFile) //nolint:gosec // test
+	require.NoError(t, err)
+
+	// Add a new TODO.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main\n// TODO: test\n// TODO: dry-run test\n"), 0o600))
+
+	// Delta dry-run — should NOT update state.
+	cmd2 := exec.Command(binary, "scan", dir, "--collectors=todos", "--delta", "--dry-run", "--quiet") //nolint:gosec // test helper
+	out2, err := cmd2.Output()
+	require.NoError(t, err, "delta dry-run failed")
+	assert.Contains(t, string(out2), "signal(s) found")
+
+	// State file should be unchanged.
+	after, err := os.ReadFile(stateFile) //nolint:gosec // test
+	require.NoError(t, err)
+	assert.Equal(t, string(before), string(after), "dry-run should not modify state file")
+}
+
 func TestScan_ErrorMessages(t *testing.T) {
 	binary := buildBinary(t)
 

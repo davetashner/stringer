@@ -17,6 +17,7 @@ import (
 	"github.com/davetashner/stringer/internal/output"
 	"github.com/davetashner/stringer/internal/pipeline"
 	"github.com/davetashner/stringer/internal/signal"
+	"github.com/davetashner/stringer/internal/state"
 )
 
 // Scan-specific flag values.
@@ -25,6 +26,7 @@ var (
 	scanFormat     string
 	scanOutput     string
 	scanDryRun     bool
+	scanDelta      bool
 	scanNoLLM      bool
 	scanJSON       bool
 	scanMaxIssues  int
@@ -46,6 +48,7 @@ func init() {
 	scanCmd.Flags().StringVarP(&scanFormat, "format", "f", "beads", "output format (beads, json)")
 	scanCmd.Flags().StringVarP(&scanOutput, "output", "o", "", "output file path (default: stdout)")
 	scanCmd.Flags().BoolVar(&scanDryRun, "dry-run", false, "show signal count without producing output")
+	scanCmd.Flags().BoolVar(&scanDelta, "delta", false, "only output new signals since last scan")
 	scanCmd.Flags().BoolVar(&scanNoLLM, "no-llm", false, "skip LLM clustering pass (noop for MVP)")
 	scanCmd.Flags().BoolVar(&scanJSON, "json", false, "machine-readable output for --dry-run")
 	scanCmd.Flags().IntVar(&scanMaxIssues, "max-issues", 0, "cap output count (0 = unlimited)")
@@ -175,15 +178,31 @@ func runScan(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 10. Determine exit code based on collector results.
+	// 10. Delta filtering: load previous state, filter to new signals.
+	allSignals := result.Signals // keep full list for state saving
+	if scanDelta {
+		prevState, err := state.Load(absPath)
+		if err != nil {
+			return exitError(ExitTotalFailure, "stringer: failed to load delta state (%v)", err)
+		}
+		if prevState != nil && !state.CollectorsMatch(prevState, collectorNames) {
+			slog.Warn("collector mismatch from previous scan, treating all signals as new")
+			prevState = nil
+		}
+		newSignals := state.FilterNew(allSignals, prevState)
+		slog.Info("delta filter", "total", len(allSignals), "new", len(newSignals))
+		result.Signals = newSignals
+	}
+
+	// 11. Determine exit code based on collector results.
 	exitCode := computeExitCode(result)
 
-	// 11. Handle dry-run.
+	// 12. Handle dry-run.
 	if scanDryRun {
 		return printDryRun(cmd, result, exitCode)
 	}
 
-	// 12. Format and write output.
+	// 13. Format and write output.
 	formatter, _ := output.GetFormatter(scanCfg.OutputFormat) // already validated above
 
 	w := cmd.OutOrStdout()
@@ -201,6 +220,15 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 
 	slog.Info("scan complete", "issues", len(result.Signals), "duration", result.Duration)
+
+	// 14. Save delta state from ALL signals (pre-filter), not just new ones.
+	if scanDelta {
+		newState := state.Build(absPath, collectorNames, allSignals)
+		if err := state.Save(absPath, newState); err != nil {
+			return exitError(ExitTotalFailure, "stringer: failed to save delta state (%v)", err)
+		}
+		slog.Info("delta state saved", "hashes", newState.SignalCount)
+	}
 
 	if exitCode != ExitOK {
 		return exitError(exitCode, "")

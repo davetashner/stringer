@@ -39,8 +39,10 @@ stringer/
 │   │   └── validate.go         # ScanConfig validation
 │   ├── redact/             # Secret redaction
 │   │   └── redact.go           # Scrub sensitive patterns from signal content
-│   └── signal/             # Domain types
-│       └── signal.go           # RawSignal, ScanConfig, ScanResult, CollectorOpts
+│   ├── signal/             # Domain types
+│   │   └── signal.go           # RawSignal, ScanConfig, ScanResult, CollectorOpts
+│   └── state/              # Delta scan state persistence
+│       └── state.go            # Load/Save/FilterNew/Build for .stringer/last-scan.json
 ├── test/
 │   └── integration/        # Integration tests
 ├── testdata/

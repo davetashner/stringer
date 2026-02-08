@@ -166,6 +166,7 @@ stringer scan [path] [flags]
 | `--format`     | `-f`  | `beads` | Output format                                             |
 | `--output`     | `-o`  | stdout  | Output file path                                          |
 | `--dry-run`    |       |         | Show signal count without producing output                |
+| `--delta`      |       |         | Only output new signals since last scan                   |
 | `--json`       |       |         | Machine-readable output for `--dry-run`                   |
 | `--max-issues` |       | `0`     | Cap output count (0 = unlimited)                          |
 | `--no-llm`     |       |         | Skip LLM clustering pass (noop — reserved for future use) |
@@ -273,7 +274,6 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 
 ## Current Limitations
 
-- **No delta scanning.** Every run scans the full repo. No way to find only new signals since the last scan.
 - **No LLM clustering.** The `--no-llm` flag exists but is a noop. There is no LLM pass to cluster related signals or infer dependencies.
 - **No global config.** Per-repo `.stringer.yaml` is supported, but there is no global `~/.stringer.yaml`.
 - **Line-sensitive hashing.** Moving a TODO to a different line changes its ID, which means `bd import` sees it as a new issue.
@@ -284,9 +284,6 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 
 Planned for future releases:
 
-- **GitHub issues collector** — Import open issues, PRs, and review comments as beads
-- **Lottery risk analyzer** — Flag modules with single-author ownership risk
-- **Delta scanning** — Only find signals added since last scan
 - **LLM clustering pass** — Group related signals, infer dependencies, prioritize
 - **Monorepo support** — Per-workspace scanning and scoped output
 - **`--min-confidence` flag** — Filter by confidence threshold with named presets
