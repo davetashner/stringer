@@ -92,6 +92,19 @@ func normalizeGoldenJSON(t *testing.T, line string) string {
 	require.NoError(t, json.Unmarshal([]byte(line), &rec), "invalid JSON: %s", line)
 	delete(rec, "created_at")
 	delete(rec, "created_by")
+
+	// Strip "estimated-timestamp" from labels — it only appears when blame
+	// fails and we fall back to mtime, which is environment-dependent.
+	if labels, ok := rec["labels"].([]interface{}); ok {
+		filtered := make([]interface{}, 0, len(labels))
+		for _, l := range labels {
+			if l != "estimated-timestamp" {
+				filtered = append(filtered, l)
+			}
+		}
+		rec["labels"] = filtered
+	}
+
 	out, err := json.Marshal(rec)
 	require.NoError(t, err)
 	return string(out)

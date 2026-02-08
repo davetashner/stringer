@@ -275,7 +275,7 @@ func detectRevert(commit *object.Commit) (signal.RawSignal, bool) {
 		Author:      commit.Author.Name,
 		Timestamp:   commit.Author.When,
 		Confidence:  0.7,
-		Tags:        []string{"revert"},
+		Tags:        []string{"revert", "historical-path"},
 	}, true
 }
 

@@ -61,7 +61,11 @@ func (s *churnSection) Render(w io.Writer) error {
 	_, _ = fmt.Fprintf(w, "  Stale branches:   %d\n", s.staleBranches)
 
 	if len(s.churns) == 0 {
-		_, _ = fmt.Fprintf(w, "  No file churn data available.\n\n")
+		if s.revertCount > 0 {
+			_, _ = fmt.Fprintf(w, "  File churn requires full git history (try cloning without --depth).\n\n")
+		} else {
+			_, _ = fmt.Fprintf(w, "  No file churn data available.\n\n")
+		}
 		return nil
 	}
 

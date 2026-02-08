@@ -122,7 +122,9 @@ func (s *todoAgeSection) Render(w io.Writer) error {
 	}
 
 	barWidth := 30
+	bucketTotal := 0
 	for _, b := range s.buckets {
+		bucketTotal += b.Count
 		bar := ""
 		if maxCount > 0 {
 			n := (b.Count * barWidth) / maxCount
@@ -131,6 +133,11 @@ func (s *todoAgeSection) Render(w io.Writer) error {
 			}
 		}
 		_, _ = fmt.Fprintf(w, "  %-12s %3d  %s\n", b.Label, b.Count, bar)
+	}
+
+	// Show unknown-age count when some TODOs couldn't be bucketed.
+	if unknown := s.total - bucketTotal; unknown > 0 {
+		_, _ = fmt.Fprintf(w, "  %-12s %3d\n", "Unknown age", unknown)
 	}
 
 	// Stale TODOs.

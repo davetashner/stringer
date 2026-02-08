@@ -604,18 +604,12 @@ func buildLotteryRiskSignal(own *dirOwnership, anon *nameAnonymizer) signal.RawS
 
 	confidence := lotteryRiskConfidence(own.LotteryRisk)
 
-	// Ensure directory path ends with / for clarity.
-	dirPath := own.Path
-	if !strings.HasSuffix(dirPath, "/") && dirPath != "." {
-		dirPath += "/"
-	}
-
 	return signal.RawSignal{
 		Source:      "lotteryrisk",
 		Kind:        "low-lottery-risk",
-		FilePath:    dirPath,
+		FilePath:    own.Path,
 		Line:        0,
-		Title:       fmt.Sprintf("Low lottery risk: %s (lottery risk %d, primary: %s %.0f%%)", dirPath, own.LotteryRisk, primary.Name, primary.Pct),
+		Title:       fmt.Sprintf("Low lottery risk: %s (lottery risk %d, primary: %s %.0f%%)", own.Path, own.LotteryRisk, primary.Name, primary.Pct),
 		Description: strings.Join(descParts, "\n"),
 		Confidence:  confidence,
 		Tags:        []string{"low-lottery-risk"},
@@ -836,11 +830,6 @@ func buildReviewConcentrationSignals(reviewData map[string]*reviewParticipation,
 		for reviewer, count := range rp.Reviewers {
 			fraction := float64(count) / float64(totalReviews)
 			if fraction > reviewConcentrationThreshold {
-				dirPath := dir
-				if !strings.HasSuffix(dirPath, "/") && dirPath != "." {
-					dirPath += "/"
-				}
-
 				displayName := reviewer
 				if anon != nil {
 					displayName = anon.anonymize(reviewer)
@@ -849,10 +838,10 @@ func buildReviewConcentrationSignals(reviewData map[string]*reviewParticipation,
 				signals = append(signals, signal.RawSignal{
 					Source:      "lotteryrisk",
 					Kind:        "review-concentration",
-					FilePath:    dirPath,
+					FilePath:    dir,
 					Line:        0,
-					Title:       fmt.Sprintf("Review bottleneck: %s reviews %.0f%% of PRs in %s", displayName, fraction*100, dirPath),
-					Description: fmt.Sprintf("Reviewer %s handled %d of %d reviews (%.0f%%) in %s. Consider distributing review responsibility to reduce knowledge silos.", displayName, count, totalReviews, fraction*100, dirPath),
+					Title:       fmt.Sprintf("Review bottleneck: %s reviews %.0f%% of PRs in %s", displayName, fraction*100, dir),
+					Description: fmt.Sprintf("Reviewer %s handled %d of %d reviews (%.0f%%) in %s. Consider distributing review responsibility to reduce knowledge silos.", displayName, count, totalReviews, fraction*100, dir),
 					Confidence:  0.6,
 					Tags:        []string{"review-concentration"},
 				})

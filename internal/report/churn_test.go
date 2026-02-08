@@ -106,6 +106,19 @@ func TestChurn_Render_EmptyChurns(t *testing.T) {
 	assert.Contains(t, buf.String(), "No file churn data available")
 }
 
+func TestChurn_Render_EmptyChurnsWithReverts(t *testing.T) {
+	s := &churnSection{revertCount: 3}
+	s.churns = nil
+
+	var buf bytes.Buffer
+	require.NoError(t, s.Render(&buf))
+
+	out := buf.String()
+	assert.Contains(t, out, "File churn requires full git history")
+	assert.Contains(t, out, "--depth")
+	assert.NotContains(t, out, "No file churn data available")
+}
+
 func TestChurn_StabilityLevel(t *testing.T) {
 	assert.Equal(t, "stable", stabilityLevel(0))
 	assert.Equal(t, "stable", stabilityLevel(9))

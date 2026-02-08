@@ -156,7 +156,7 @@ func (c *TodoCollector) Collect(ctx context.Context, repoPath string, opts signa
 		}
 
 		for i := range found {
-			enrichWithBlame(repo, blameRelPath, &found[i])
+			enrichWithBlame(repo, blameRelPath, &found[i], path)
 			found[i].Confidence = computeConfidence(found[i])
 		}
 
@@ -243,13 +243,20 @@ func scanFile(absPath, relPath string) ([]signal.RawSignal, error) {
 }
 
 // enrichWithBlame populates Author and Timestamp from git blame if available.
-func enrichWithBlame(repo *git.Repository, relPath string, sig *signal.RawSignal) {
+// When blame fails (e.g. shallow clones), falls back to the file's mtime
+// and tags the signal with "estimated-timestamp".
+func enrichWithBlame(repo *git.Repository, relPath string, sig *signal.RawSignal, absPath string) {
 	if repo == nil {
 		return
 	}
 
 	result, err := blameFile(repo, relPath)
 	if err != nil || result == nil {
+		// Blame failed — fall back to file mtime.
+		if info, statErr := os.Stat(absPath); statErr == nil {
+			sig.Timestamp = info.ModTime()
+			sig.Tags = append(sig.Tags, "estimated-timestamp")
+		}
 		return
 	}
 
