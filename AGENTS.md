@@ -103,6 +103,21 @@ golangci-lint run ./...
 
 5. **Idempotency matters.** Running stringer twice on the same repo should produce the same output (modulo LLM non-determinism in clustering mode). Use deterministic hashing for signal deduplication.
 
+## Semver & Breaking Changes
+
+Stringer follows **strict semver at all versions** — breaking changes always require a major version bump, even pre-1.0. The `Breaking Change Guard` CI job enforces this by failing PRs that contain conventional commit breaking markers (`feat!:` or `BREAKING CHANGE:` in commit body).
+
+**Breaking change surfaces:**
+
+- **CLI:** Flag names, flag defaults, exit codes, subcommand names
+- **Output formats:** Beads JSONL schema, JSON envelope schema, markdown structure
+- **Interfaces:** `collector.Collector`, `output.Formatter` — method signatures and behavior contracts
+- **Domain types:** `signal.RawSignal` struct fields, `signal.ScanConfig` fields, `signal.CollectorOpts` fields
+- **Algorithms:** Signal dedup hash (SHA-256 of source+kind+filepath+line+title), confidence scoring formula, priority mapping thresholds
+- **Beads output:** ID format (`str-` prefix + 8 hex chars), field mapping, label conventions
+
+If you need to make a breaking change, bump the major version. Use the `!` marker in commit messages (e.g., `feat!: rename --format to --output-format`) and document the migration path in the release notes.
+
 ## Decision Records
 
 When you encounter a design decision with multiple valid approaches, **create a decision record before implementing**. Decision records ensure developers can review trade-offs and make informed choices rather than discovering baked-in assumptions after the fact.
@@ -243,6 +258,7 @@ Optional but valuable:
 | `Vulncheck` | No known vulnerabilities in dependencies |
 | `Binary Size` | Binary does not exceed 2x baseline (`.github/binary-size-baseline`) |
 | `Commit Lint` | PR commits follow conventional commits format (PRs only) |
+| `Breaking Change Guard` | No breaking changes without major version bump (PRs only) |
 | `Go Generate` | Generated files are up to date |
 | `License Check` | All dependency licenses are OSS-compatible |
 

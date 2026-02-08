@@ -65,16 +65,16 @@ Stringer solves the cold-start problem. It mines signals already present in your
 │       Target Repository         │
 └────────────────┬────────────────┘
                  │
-    ┌────────────┼────────────┐
-    ▼            ▼            ▼
-┌────────┐ ┌─────────┐ ┌──────────┐
-│ TODOs  │ │ Git Log │ │ Patterns │  (parallel)
-└───┬────┘ └────┬────┘ └────┬─────┘
-    └────────────┼───────────┘
+    ┌────────────┼─────────────┐
+    ▼            ▼             ▼
+┌────────┐  ┌─────────┐  ┌──────────┐
+│ TODOs  │  │ Git Log │  │ Patterns │  (parallel)
+└───┬────┘  └────┬────┘  └─────┬────┘
+    └────────────┼─────────────┘
                  ▼
           ┌──────────────┐
-          │    Dedup +    │
-          │  Validation   │
+          │    Dedup +   │
+          │  Validation  │
           └──────┬───────┘
                  │
     ┌────────────┼────────────┐
@@ -89,11 +89,11 @@ Stringer solves the cold-start problem. It mines signals already present in your
 
 Output volume depends on codebase size and coding style:
 
-| Codebase | Approximate signals |
-|----------|-------------------|
-| Small (<5k LOC) | 5-30 |
-| Medium (10k-50k LOC) | 20-200 |
-| Large (100k+ LOC) | 100-1,000+ |
+| Codebase             | Approximate signals |
+|----------------------|---------------------|
+| Small (<5k LOC)      | 5-30                |
+| Medium (10k-50k LOC) | 20-200              |
+| Large (100k+ LOC)    | 100-1,000+          |
 
 **Recommendation:** Use `--dry-run` first to see signal counts, then use `--max-issues` to cap output on your first scan.
 
@@ -158,15 +158,15 @@ stringer scan . --dry-run --json
 stringer scan [path] [flags]
 ```
 
-| Flag | Short | Default | Description |
-|------|-------|---------|-------------|
-| `--collectors` | `-c` | (all) | Comma-separated list of collectors to run |
-| `--format` | `-f` | `beads` | Output format |
-| `--output` | `-o` | stdout | Output file path |
-| `--dry-run` | | | Show signal count without producing output |
-| `--json` | | | Machine-readable output for `--dry-run` |
-| `--max-issues` | | `0` | Cap output count (0 = unlimited) |
-| `--no-llm` | | | Skip LLM clustering pass (noop — reserved for future use) |
+| Flag           | Short | Default | Description                                               |
+| -------------- | ----- | ------- | --------------------------------------------------------- |
+| `--collectors` | `-c`  | (all)   | Comma-separated list of collectors to run                 |
+| `--format`     | `-f`  | `beads` | Output format                                             |
+| `--output`     | `-o`  | stdout  | Output file path                                          |
+| `--dry-run`    |       |         | Show signal count without producing output                |
+| `--json`       |       |         | Machine-readable output for `--dry-run`                   |
+| `--max-issues` |       | `0`     | Cap output count (0 = unlimited)                          |
+| `--no-llm`     |       |         | Skip LLM clustering pass (noop — reserved for future use) |
 
 **Global flags:** `--quiet` (`-q`), `--verbose` (`-v`), `--no-color`, `--help` (`-h`)
 
@@ -211,14 +211,14 @@ Each signal gets a confidence score (0.0-1.0) based on keyword severity and age 
 
 **Base scores by keyword:**
 
-| Keyword | Base Score |
-|---------|-----------|
-| `BUG` | 0.7 |
-| `FIXME` | 0.6 |
-| `HACK` | 0.55 |
-| `TODO` | 0.5 |
-| `XXX` | 0.5 |
-| `OPTIMIZE` | 0.4 |
+| Keyword    | Base Score |
+| ---------- | ---------- |
+| `BUG`      | 0.7        |
+| `FIXME`    | 0.6        |
+| `HACK`     | 0.55       |
+| `TODO`     | 0.5        |
+| `XXX`      | 0.5        |
+| `OPTIMIZE` | 0.4        |
 
 **Age boost from git blame:**
 - Older than 1 year: +0.2
@@ -232,11 +232,11 @@ Score is capped at 1.0. See [DR-004](docs/decisions/004-confidence-scoring-seman
 Confidence maps to bead priority:
 
 | Confidence | Priority |
-|-----------|----------|
-| >= 0.8 | P1 |
-| >= 0.6 | P2 |
-| >= 0.4 | P3 |
-| < 0.4 | P4 |
+| ---------- | -------- |
+| >= 0.8     | P1       |
+| >= 0.6     | P2       |
+| >= 0.4     | P3       |
+| < 0.4      | P4       |
 
 ### Content-Based Hashing
 

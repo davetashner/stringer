@@ -8,7 +8,7 @@ Stringer follows [Semantic Versioning](https://semver.org/):
 - **MINOR** (0.x.0) — New collectors, output formats, or features
 - **PATCH** (0.0.x) — Bug fixes, test improvements, documentation, CI changes
 
-Pre-1.0, minor versions may include breaking changes. Post-1.0, the semver contract is strict.
+Stringer follows strict semver at all versions — breaking changes always require a major version bump, even pre-1.0.
 
 ## Release Process
 
@@ -64,7 +64,7 @@ The version string is injected at build time via `-ldflags`:
 | Pipeline enhancement | Minor | Parallel execution, deduplication |
 | Bug fix | Patch | Fixing incorrect confidence scoring |
 | Test/CI/docs only | Patch (or skip) | Coverage improvements, CI hardening |
-| Breaking CLI change | Major (post-1.0) | Renaming flags, changing output schema |
+| Breaking change | Major | Renaming flags, changing output schema, removing collectors, altering signal hash algorithm |
 
 ## Homebrew Tap Setup
 
