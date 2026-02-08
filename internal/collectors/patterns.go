@@ -13,8 +13,9 @@ import (
 	"github.com/davetashner/stringer/internal/signal"
 )
 
-// Large-file threshold in lines. Files exceeding this are flagged.
-const largeFileThreshold = 500
+// defaultLargeFileThreshold is the default large-file threshold in lines.
+// Files exceeding this are flagged. Can be overridden via CollectorOpts.
+const defaultLargeFileThreshold = 1000
 
 // minSourceLinesForTestCheck is the minimum number of lines a source file must
 // have before we report a missing-test signal. Very small files (stubs, config)
@@ -64,15 +65,42 @@ func init() {
 
 // PatternsCollector detects structural code-quality patterns such as
 // oversized files, missing tests, and low test-to-source ratios.
-type PatternsCollector struct{}
+type PatternsCollector struct {
+	testRoots     []string // cached parallel test root dirs (e.g., "tests/", "test/")
+	testRootsInit bool     // whether testRoots has been initialized
+}
 
 // Name returns the collector name used for registration and filtering.
 func (c *PatternsCollector) Name() string { return "patterns" }
+
+// detectTestRoots finds parallel test directories at the repo root.
+func (c *PatternsCollector) detectTestRoots(repoPath string) {
+	if c.testRootsInit {
+		return
+	}
+	c.testRootsInit = true
+	candidates := []string{"tests", "test", "spec", "__tests__"}
+	for _, dir := range candidates {
+		info, err := os.Stat(filepath.Join(repoPath, dir))
+		if err == nil && info.IsDir() {
+			c.testRoots = append(c.testRoots, dir)
+		}
+	}
+}
 
 // Collect walks source files in repoPath, detects pattern-based signals, and
 // returns them as raw signals.
 func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error) {
 	excludes := mergeExcludes(opts.ExcludePatterns)
+
+	// Detect parallel test directories before the walk.
+	c.detectTestRoots(repoPath)
+
+	// Determine large-file threshold (configurable via opts).
+	threshold := defaultLargeFileThreshold
+	if opts.LargeFileThreshold > 0 {
+		threshold = opts.LargeFileThreshold
+	}
 
 	var signals []signal.RawSignal
 
@@ -142,15 +170,15 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 		}
 
 		// C3.1: Large file detection.
-		if lineCount > largeFileThreshold {
-			confidence := largeFileConfidence(lineCount)
+		if lineCount > threshold {
+			confidence := largeFileConfidence(lineCount, threshold)
 			signals = append(signals, signal.RawSignal{
 				Source:      "patterns",
 				Kind:        "large-file",
 				FilePath:    relPath,
 				Line:        0,
 				Title:       fmt.Sprintf("Large file: %s (%d lines)", relPath, lineCount),
-				Description: fmt.Sprintf("File exceeds %d-line threshold. Consider breaking it into smaller, focused modules.", largeFileThreshold),
+				Description: fmt.Sprintf("File exceeds %d-line threshold. Consider breaking it into smaller, focused modules.", threshold),
 				Confidence:  confidence,
 				Tags:        []string{"large-file", "stringer-generated"},
 			})
@@ -170,7 +198,7 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 			// C3.2: Missing test detection — only for non-test source files
 			// with meaningful size.
 			if lineCount >= minSourceLinesForTestCheck {
-				if !hasTestCounterpart(path, relPath) {
+				if !hasTestCounterpart(path, relPath, repoPath, c.testRoots) {
 					signals = append(signals, signal.RawSignal{
 						Source:      "patterns",
 						Kind:        "missing-tests",
@@ -241,9 +269,9 @@ func countLines(path string) (int, error) {
 
 // largeFileConfidence scales confidence from 0.4 (just over threshold) to 0.8
 // (at 2x threshold or more).
-func largeFileConfidence(lineCount int) float64 {
+func largeFileConfidence(lineCount, threshold int) float64 {
 	// Linear interpolation from threshold..2*threshold → 0.4..0.8
-	ratio := float64(lineCount) / float64(largeFileThreshold)
+	ratio := float64(lineCount) / float64(threshold)
 	// ratio > 1.0 (since lineCount > threshold)
 	// At ratio=1.0 → 0.4, at ratio>=2.0 → 0.8
 	confidence := 0.4 + 0.4*(ratio-1.0)
@@ -286,8 +314,8 @@ func isTestFile(relPath string) bool {
 }
 
 // hasTestCounterpart checks if a corresponding test file exists in the same
-// directory using naming heuristics.
-func hasTestCounterpart(absPath, relPath string) bool {
+// directory or in a parallel test tree using naming heuristics.
+func hasTestCounterpart(absPath, relPath, repoPath string, testRoots []string) bool {
 	dir := filepath.Dir(absPath)
 	base := filepath.Base(relPath)
 	ext := filepath.Ext(base)
@@ -339,11 +367,26 @@ func hasTestCounterpart(absPath, relPath string) bool {
 		return false
 	}
 
+	// Check same-directory candidates.
 	for _, candidate := range candidates {
 		if _, err := os.Stat(filepath.Join(dir, candidate)); err == nil {
 			return true
 		}
 	}
+
+	// Check parallel test directories.
+	for _, testRoot := range testRoots {
+		// Mirror the relative path under the test root.
+		// e.g., "src/handler.py" -> "tests/src/test_handler.py"
+		relDir := filepath.Dir(relPath)
+		testDir := filepath.Join(repoPath, testRoot, relDir)
+		for _, candidate := range candidates {
+			if _, err := os.Stat(filepath.Join(testDir, candidate)); err == nil {
+				return true
+			}
+		}
+	}
+
 	return false
 }
 

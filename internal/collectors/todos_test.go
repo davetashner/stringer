@@ -82,6 +82,10 @@ func TestTodoPatternNoMatch(t *testing.T) {
 		{name: "string_literal", input: `fmt.Println("TODO: test")`},
 		{name: "empty_line", input: ""},
 		{name: "just_comment", input: "// This is a normal comment"},
+		{name: "todoist_api", input: "// TODOIST_API: config"},
+		{name: "fixmeup", input: "// FIXMEUP: handler"},
+		{name: "todoist_tasks", input: "// TODOIST_TASKS: config"},
+		{name: "bugzilla", input: "// BUGZILLA: tracker"},
 	}
 
 	for _, tt := range noMatch {
@@ -325,6 +329,58 @@ func runGit(t *testing.T, dir string, args ...string) {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v failed: %v\n%s", args, err, out)
+	}
+}
+
+func TestScanFile_NoFalsePositives(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "nofp.go")
+	content := `package main
+
+// TODOIST_API_TASKS: config
+func todoistHandler() {}
+
+// FIXMEUP_HANDLER: recovery
+func fixmeHandler() {}
+
+// BUGZILLA_ID: 12345
+func bugTracker() {}
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	signals, err := scanFile(path, "nofp.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(signals) != 0 {
+		t.Errorf("expected 0 signals (no false positives), got %d: %v", len(signals), signals)
+	}
+}
+
+func TestScanFile_TodoWithAuthorAfterWordBoundary(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "author.go")
+	content := "// TODO(alice): refactor this code\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	signals, err := scanFile(path, "author.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(signals) != 1 {
+		t.Fatalf("expected 1 signal, got %d", len(signals))
+	}
+	if signals[0].Kind != "todo" {
+		t.Errorf("Kind = %q, want %q", signals[0].Kind, "todo")
+	}
+	if signals[0].Title != "TODO: refactor this code" {
+		t.Errorf("Title = %q, want %q", signals[0].Title, "TODO: refactor this code")
 	}
 }
 
@@ -997,5 +1053,70 @@ func TestCollect_BrokenSymlinkSkipped(t *testing.T) {
 		if sig.FilePath == "broken_link.go" {
 			t.Error("broken symlink should be skipped")
 		}
+	}
+}
+
+// --- Subdirectory scan with GitRoot ---
+
+func TestCollect_SubdirectoryScanWithGitRoot(t *testing.T) {
+	// Create a git repo with a subdirectory containing a TODO.
+	repoPath := initTestGitRepo(t, map[string]string{
+		"sub/handler.go": "package sub\n\n// TODO: refactor handler\nfunc Handle() {}\n",
+	})
+
+	subDir := filepath.Join(repoPath, "sub")
+
+	c := &TodoCollector{}
+	// Scan the subdirectory, passing GitRoot pointing to the repo root.
+	signals, err := c.Collect(context.Background(), subDir, signal.CollectorOpts{
+		GitRoot: repoPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(signals) != 1 {
+		t.Fatalf("got %d signals, want 1", len(signals))
+	}
+
+	sig := signals[0]
+	if sig.Kind != "todo" {
+		t.Errorf("Kind = %q, want %q", sig.Kind, "todo")
+	}
+	// Blame attribution should work since GitRoot points to the repo root.
+	if sig.Author == "" {
+		t.Error("expected non-empty author from blame (GitRoot should enable blame)")
+	}
+	if sig.Timestamp.IsZero() {
+		t.Error("expected non-zero timestamp from blame")
+	}
+}
+
+func TestCollect_SubdirectoryScanWithoutGitRoot(t *testing.T) {
+	// Create a git repo with a subdirectory containing a TODO.
+	repoPath := initTestGitRepo(t, map[string]string{
+		"sub/handler.go": "package sub\n\n// TODO: refactor handler\nfunc Handle() {}\n",
+	})
+
+	subDir := filepath.Join(repoPath, "sub")
+
+	c := &TodoCollector{}
+	// Scan the subdirectory WITHOUT GitRoot — blame will fail gracefully.
+	signals, err := c.Collect(context.Background(), subDir, signal.CollectorOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(signals) != 1 {
+		t.Fatalf("got %d signals, want 1", len(signals))
+	}
+
+	// Without GitRoot, blame won't work (sub/ is not a git root), so author should be empty.
+	sig := signals[0]
+	if sig.Kind != "todo" {
+		t.Errorf("Kind = %q, want %q", sig.Kind, "todo")
+	}
+	if sig.Author != "" {
+		t.Logf("note: got author %q (blame might still work depending on git implementation)", sig.Author)
 	}
 }

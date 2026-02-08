@@ -71,7 +71,12 @@ func (c *LotteryRiskCollector) Name() string { return "lotteryrisk" }
 // Collect scans the repository at repoPath for directories with low bus
 // factor and returns them as raw signals.
 func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error) {
-	repo, err := git.PlainOpen(repoPath)
+	// Use GitRoot if set (subdirectory scans), otherwise fall back to repoPath.
+	gitRoot := repoPath
+	if opts.GitRoot != "" {
+		gitRoot = opts.GitRoot
+	}
+	repo, err := git.PlainOpen(gitRoot)
 	if err != nil {
 		return nil, fmt.Errorf("opening repo: %w", err)
 	}

@@ -19,8 +19,8 @@ import (
 func TestLargeFileDetected(t *testing.T) {
 	dir := t.TempDir()
 
-	// Create a file with 600 lines (above the 500-line threshold).
-	content := strings.Repeat("package main\n", 600)
+	// Create a file with 1100 lines (above the 1000-line threshold).
+	content := strings.Repeat("package main\n", 1100)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "big.go"), []byte(content), 0o600))
 
 	c := &PatternsCollector{}
@@ -37,7 +37,7 @@ func TestLargeFileDetected(t *testing.T) {
 	require.Len(t, largeFileSignals, 1)
 	assert.Equal(t, "patterns", largeFileSignals[0].Source)
 	assert.Equal(t, "big.go", largeFileSignals[0].FilePath)
-	assert.Contains(t, largeFileSignals[0].Title, "600 lines")
+	assert.Contains(t, largeFileSignals[0].Title, "1100 lines")
 	assert.Equal(t, 0, largeFileSignals[0].Line)
 	assert.GreaterOrEqual(t, largeFileSignals[0].Confidence, 0.4)
 	assert.LessOrEqual(t, largeFileSignals[0].Confidence, 0.8)
@@ -48,8 +48,8 @@ func TestLargeFileDetected(t *testing.T) {
 func TestLargeFileNotDetectedUnderThreshold(t *testing.T) {
 	dir := t.TempDir()
 
-	// Create a file with exactly 500 lines (at threshold, not over).
-	content := strings.Repeat("package main\n", 500)
+	// Create a file with exactly 1000 lines (at threshold, not over).
+	content := strings.Repeat("package main\n", 1000)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "ok.go"), []byte(content), 0o600))
 
 	c := &PatternsCollector{}
@@ -63,22 +63,68 @@ func TestLargeFileNotDetectedUnderThreshold(t *testing.T) {
 	}
 }
 
+func TestLargeFileCustomThreshold(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a file with 600 lines — below the default 1000-line threshold
+	// but above a custom 500-line threshold.
+	content := strings.Repeat("package main\n", 600)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "medium.go"), []byte(content), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		LargeFileThreshold: 500,
+	})
+	require.NoError(t, err)
+
+	var largeFileSignals []signal.RawSignal
+	for _, s := range signals {
+		if s.Kind == "large-file" {
+			largeFileSignals = append(largeFileSignals, s)
+		}
+	}
+
+	require.Len(t, largeFileSignals, 1)
+	assert.Contains(t, largeFileSignals[0].Title, "600 lines")
+	assert.Contains(t, largeFileSignals[0].Description, "500-line threshold")
+}
+
+func TestLargeFileCustomThresholdNotTriggered(t *testing.T) {
+	dir := t.TempDir()
+
+	// 600 lines, default threshold of 1000 — should NOT trigger.
+	content := strings.Repeat("package main\n", 600)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "medium.go"), []byte(content), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	for _, s := range signals {
+		if s.Kind == "large-file" {
+			t.Errorf("unexpected large-file signal with default threshold: %s", s.Title)
+		}
+	}
+}
+
 func TestLargeFileConfidenceScaling(t *testing.T) {
 	tests := []struct {
 		name        string
 		lines       int
+		threshold   int
 		wantMinConf float64
 		wantMaxConf float64
 	}{
-		{name: "just_over", lines: 510, wantMinConf: 0.4, wantMaxConf: 0.45},
-		{name: "1.5x", lines: 750, wantMinConf: 0.55, wantMaxConf: 0.65},
-		{name: "2x", lines: 1000, wantMinConf: 0.79, wantMaxConf: 0.80},
-		{name: "3x_capped", lines: 1500, wantMinConf: 0.80, wantMaxConf: 0.80},
+		{name: "just_over_default", lines: 1010, threshold: 1000, wantMinConf: 0.4, wantMaxConf: 0.45},
+		{name: "1.5x_default", lines: 1500, threshold: 1000, wantMinConf: 0.55, wantMaxConf: 0.65},
+		{name: "2x_default", lines: 2000, threshold: 1000, wantMinConf: 0.79, wantMaxConf: 0.80},
+		{name: "3x_default_capped", lines: 3000, threshold: 1000, wantMinConf: 0.80, wantMaxConf: 0.80},
+		{name: "custom_threshold", lines: 510, threshold: 500, wantMinConf: 0.4, wantMaxConf: 0.45},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			conf := largeFileConfidence(tt.lines)
+			conf := largeFileConfidence(tt.lines, tt.threshold)
 			assert.GreaterOrEqual(t, conf, tt.wantMinConf, "confidence too low for %d lines", tt.lines)
 			assert.LessOrEqual(t, conf, tt.wantMaxConf, "confidence too high for %d lines", tt.lines)
 		})
@@ -262,11 +308,11 @@ func TestExcludedDirectoriesSkipped(t *testing.T) {
 	// Create a large file inside vendor/ (default exclude).
 	vendorDir := filepath.Join(dir, "vendor", "dep")
 	require.NoError(t, os.MkdirAll(vendorDir, 0o750))
-	bigContent := strings.Repeat("package dep\n", 600)
+	bigContent := strings.Repeat("package dep\n", 1100)
 	require.NoError(t, os.WriteFile(filepath.Join(vendorDir, "big.go"), []byte(bigContent), 0o600))
 
 	// Create a normal large file that should be detected.
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte(strings.Repeat("package main\n", 600)), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte(strings.Repeat("package main\n", 1100)), 0o600))
 
 	c := &PatternsCollector{}
 	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
@@ -294,7 +340,7 @@ func TestCustomExcludePatterns(t *testing.T) {
 	genDir := filepath.Join(dir, "generated")
 	require.NoError(t, os.MkdirAll(genDir, 0o750))
 
-	bigContent := strings.Repeat("package gen\n", 600)
+	bigContent := strings.Repeat("package gen\n", 1100)
 	require.NoError(t, os.WriteFile(filepath.Join(genDir, "gen.go"), []byte(bigContent), 0o600))
 
 	c := &PatternsCollector{}
@@ -434,8 +480,8 @@ func TestIncludePatterns(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create a large .go file and a large .py file.
-	goContent := strings.Repeat("package main\n", 600)
-	pyContent := strings.Repeat("# python\n", 600)
+	goContent := strings.Repeat("package main\n", 1100)
+	pyContent := strings.Repeat("# python\n", 1100)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte(goContent), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "script.py"), []byte(pyContent), 0o600))
 
@@ -468,10 +514,10 @@ func TestNonSourceExtensionsSkipped(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create large .md and .txt files — these should be ignored.
-	mdContent := strings.Repeat("# heading\n", 600)
+	mdContent := strings.Repeat("# heading\n", 1100)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "README.md"), []byte(mdContent), 0o600))
 
-	txtContent := strings.Repeat("some text\n", 600)
+	txtContent := strings.Repeat("some text\n", 1100)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte(txtContent), 0o600))
 
 	c := &PatternsCollector{}
@@ -509,14 +555,14 @@ func TestHasTestCounterpart_GoTestExists(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "handler.go"), []byte("package main\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "handler_test.go"), []byte("package main\n"), 0o600))
 
-	assert.True(t, hasTestCounterpart(filepath.Join(dir, "handler.go"), "handler.go"))
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "handler.go"), "handler.go", dir, nil))
 }
 
 func TestHasTestCounterpart_GoTestMissing(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "handler.go"), []byte("package main\n"), 0o600))
 
-	assert.False(t, hasTestCounterpart(filepath.Join(dir, "handler.go"), "handler.go"))
+	assert.False(t, hasTestCounterpart(filepath.Join(dir, "handler.go"), "handler.go", dir, nil))
 }
 
 func TestHasTestCounterpart_TSTestExists(t *testing.T) {
@@ -524,7 +570,7 @@ func TestHasTestCounterpart_TSTestExists(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.ts"), []byte("// ts\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.test.ts"), []byte("// test\n"), 0o600))
 
-	assert.True(t, hasTestCounterpart(filepath.Join(dir, "app.ts"), "app.ts"))
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "app.ts"), "app.ts", dir, nil))
 }
 
 func TestHasTestCounterpart_TSSpecExists(t *testing.T) {
@@ -532,7 +578,7 @@ func TestHasTestCounterpart_TSSpecExists(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.ts"), []byte("// ts\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.spec.ts"), []byte("// spec\n"), 0o600))
 
-	assert.True(t, hasTestCounterpart(filepath.Join(dir, "app.ts"), "app.ts"))
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "app.ts"), "app.ts", dir, nil))
 }
 
 func TestHasTestCounterpart_PythonTestPrefixExists(t *testing.T) {
@@ -540,7 +586,7 @@ func TestHasTestCounterpart_PythonTestPrefixExists(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "handler.py"), []byte("# py\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test_handler.py"), []byte("# test\n"), 0o600))
 
-	assert.True(t, hasTestCounterpart(filepath.Join(dir, "handler.py"), "handler.py"))
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "handler.py"), "handler.py", dir, nil))
 }
 
 func TestHasTestCounterpart_PythonTestSuffixExists(t *testing.T) {
@@ -548,7 +594,7 @@ func TestHasTestCounterpart_PythonTestSuffixExists(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "handler.py"), []byte("# py\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "handler_test.py"), []byte("# test\n"), 0o600))
 
-	assert.True(t, hasTestCounterpart(filepath.Join(dir, "handler.py"), "handler.py"))
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "handler.py"), "handler.py", dir, nil))
 }
 
 func TestHasTestCounterpart_RubySpecExists(t *testing.T) {
@@ -556,7 +602,7 @@ func TestHasTestCounterpart_RubySpecExists(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "model.rb"), []byte("# rb\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "model_spec.rb"), []byte("# spec\n"), 0o600))
 
-	assert.True(t, hasTestCounterpart(filepath.Join(dir, "model.rb"), "model.rb"))
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "model.rb"), "model.rb", dir, nil))
 }
 
 func TestHasTestCounterpart_RubyTestExists(t *testing.T) {
@@ -564,7 +610,7 @@ func TestHasTestCounterpart_RubyTestExists(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "model.rb"), []byte("# rb\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "model_test.rb"), []byte("# test\n"), 0o600))
 
-	assert.True(t, hasTestCounterpart(filepath.Join(dir, "model.rb"), "model.rb"))
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "model.rb"), "model.rb", dir, nil))
 }
 
 func TestHasTestCounterpart_JavaTestExists(t *testing.T) {
@@ -572,7 +618,7 @@ func TestHasTestCounterpart_JavaTestExists(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "Foo.java"), []byte("// java\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "FooTest.java"), []byte("// test\n"), 0o600))
 
-	assert.True(t, hasTestCounterpart(filepath.Join(dir, "Foo.java"), "Foo.java"))
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "Foo.java"), "Foo.java", dir, nil))
 }
 
 func TestHasTestCounterpart_JavaSpecExists(t *testing.T) {
@@ -580,7 +626,7 @@ func TestHasTestCounterpart_JavaSpecExists(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "Foo.java"), []byte("// java\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "FooSpec.java"), []byte("// spec\n"), 0o600))
 
-	assert.True(t, hasTestCounterpart(filepath.Join(dir, "Foo.java"), "Foo.java"))
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "Foo.java"), "Foo.java", dir, nil))
 }
 
 func TestHasTestCounterpart_KotlinTestExists(t *testing.T) {
@@ -588,7 +634,7 @@ func TestHasTestCounterpart_KotlinTestExists(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "Bar.kt"), []byte("// kt\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "BarTest.kt"), []byte("// test\n"), 0o600))
 
-	assert.True(t, hasTestCounterpart(filepath.Join(dir, "Bar.kt"), "Bar.kt"))
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "Bar.kt"), "Bar.kt", dir, nil))
 }
 
 func TestHasTestCounterpart_KotlinSpecExists(t *testing.T) {
@@ -596,7 +642,7 @@ func TestHasTestCounterpart_KotlinSpecExists(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "Bar.kt"), []byte("// kt\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "BarSpec.kt"), []byte("// spec\n"), 0o600))
 
-	assert.True(t, hasTestCounterpart(filepath.Join(dir, "Bar.kt"), "Bar.kt"))
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "Bar.kt"), "Bar.kt", dir, nil))
 }
 
 func TestHasTestCounterpart_JSTestExists(t *testing.T) {
@@ -604,7 +650,7 @@ func TestHasTestCounterpart_JSTestExists(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.js"), []byte("// js\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.test.js"), []byte("// test\n"), 0o600))
 
-	assert.True(t, hasTestCounterpart(filepath.Join(dir, "app.js"), "app.js"))
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "app.js"), "app.js", dir, nil))
 }
 
 func TestHasTestCounterpart_JSSpecExists(t *testing.T) {
@@ -612,7 +658,7 @@ func TestHasTestCounterpart_JSSpecExists(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.js"), []byte("// js\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.spec.js"), []byte("// spec\n"), 0o600))
 
-	assert.True(t, hasTestCounterpart(filepath.Join(dir, "app.js"), "app.js"))
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "app.js"), "app.js", dir, nil))
 }
 
 func TestHasTestCounterpart_JSXTestExists(t *testing.T) {
@@ -620,7 +666,7 @@ func TestHasTestCounterpart_JSXTestExists(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "component.jsx"), []byte("// jsx\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "component.test.jsx"), []byte("// test\n"), 0o600))
 
-	assert.True(t, hasTestCounterpart(filepath.Join(dir, "component.jsx"), "component.jsx"))
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "component.jsx"), "component.jsx", dir, nil))
 }
 
 func TestHasTestCounterpart_TSXSpecExists(t *testing.T) {
@@ -628,14 +674,14 @@ func TestHasTestCounterpart_TSXSpecExists(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "component.tsx"), []byte("// tsx\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "component.spec.tsx"), []byte("// spec\n"), 0o600))
 
-	assert.True(t, hasTestCounterpart(filepath.Join(dir, "component.tsx"), "component.tsx"))
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "component.tsx"), "component.tsx", dir, nil))
 }
 
 func TestHasTestCounterpart_UnknownExtension(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("key: val\n"), 0o600))
 
-	assert.False(t, hasTestCounterpart(filepath.Join(dir, "config.yaml"), "config.yaml"))
+	assert.False(t, hasTestCounterpart(filepath.Join(dir, "config.yaml"), "config.yaml", dir, nil))
 }
 
 // --- isTestFile edge case tests ---
@@ -670,13 +716,13 @@ func TestPatterns_SymlinkOutsideRepoSkipped(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create a normal large source file.
-	goContent := strings.Repeat("package main\n", 600)
+	goContent := strings.Repeat("package main\n", 1100)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte(goContent), 0o600))
 
 	// Create an outside file.
 	outsideDir := t.TempDir()
 	outsidePath := filepath.Join(outsideDir, "external.go")
-	bigContent := strings.Repeat("package ext\n", 600)
+	bigContent := strings.Repeat("package ext\n", 1100)
 	require.NoError(t, os.WriteFile(outsidePath, []byte(bigContent), 0o600))
 
 	// Create a symlink inside the dir pointing outside.
@@ -699,15 +745,15 @@ func TestPatterns_SymlinkOutsideRepoSkipped(t *testing.T) {
 // --- largeFileConfidence edge case tests ---
 
 func TestLargeFileConfidence_AtThreshold(t *testing.T) {
-	// At exactly the threshold (501), confidence should be just above 0.4.
-	conf := largeFileConfidence(501)
+	// At exactly the threshold+1 (1001), confidence should be just above 0.4.
+	conf := largeFileConfidence(1001, defaultLargeFileThreshold)
 	assert.GreaterOrEqual(t, conf, 0.4)
 	assert.Less(t, conf, 0.41)
 }
 
 func TestLargeFileConfidence_ExtremelyLarge(t *testing.T) {
 	// 10000 lines should cap at 0.8.
-	conf := largeFileConfidence(10000)
+	conf := largeFileConfidence(10000, defaultLargeFileThreshold)
 	assert.InDelta(t, 0.8, conf, 0.001)
 }
 
@@ -739,7 +785,7 @@ func TestPatterns_ExcludedFilePattern(t *testing.T) {
 	dir := t.TempDir()
 
 	// Create a large .go file and a large .generated.go file.
-	goContent := strings.Repeat("package main\n", 600)
+	goContent := strings.Repeat("package main\n", 1100)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte(goContent), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "code.generated.go"), []byte(goContent), 0o600))
 
@@ -773,7 +819,7 @@ func TestPatterns_BrokenSymlinkSkipped(t *testing.T) {
 
 	// Create a normal file.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"),
-		[]byte(strings.Repeat("package main\n", 600)), 0o600))
+		[]byte(strings.Repeat("package main\n", 1100)), 0o600))
 
 	// Create a broken symlink (points to nonexistent target).
 	symlinkPath := filepath.Join(dir, "broken_link.go")
@@ -800,11 +846,11 @@ func TestPatterns_UnreadableFileSkipped(t *testing.T) {
 
 	// Create a normal large file.
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"),
-		[]byte(strings.Repeat("package main\n", 600)), 0o600))
+		[]byte(strings.Repeat("package main\n", 1100)), 0o600))
 
 	// Create a file with no read permission.
 	noReadPath := filepath.Join(dir, "noread.go")
-	require.NoError(t, os.WriteFile(noReadPath, []byte(strings.Repeat("package main\n", 600)), 0o000))
+	require.NoError(t, os.WriteFile(noReadPath, []byte(strings.Repeat("package main\n", 1100)), 0o000))
 
 	c := &PatternsCollector{}
 	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
@@ -864,4 +910,76 @@ func TestPatterns_MultipleDirRatios(t *testing.T) {
 	// Only dir1 should have a low-test-ratio signal.
 	require.Len(t, ratioSignals, 1)
 	assert.Equal(t, "dir1", ratioSignals[0].FilePath)
+}
+
+// --- Parallel test tree tests ---
+
+func TestHasTestCounterpart_ParallelTestTree(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create src/handler.py (source file).
+	srcDir := filepath.Join(dir, "src")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "handler.py"), []byte("# source\n"), 0o600))
+
+	// Create tests/src/test_handler.py (parallel test tree).
+	testDir := filepath.Join(dir, "tests", "src")
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(testDir, "test_handler.py"), []byte("# test\n"), 0o600))
+
+	// With testRoots = ["tests"], should find the counterpart.
+	assert.True(t, hasTestCounterpart(
+		filepath.Join(srcDir, "handler.py"),
+		"src/handler.py",
+		dir,
+		[]string{"tests"},
+	))
+}
+
+func TestHasTestCounterpart_NoParallelRoots(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create src/handler.py without any test file.
+	srcDir := filepath.Join(dir, "src")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "handler.py"), []byte("# source\n"), 0o600))
+
+	// No test roots, no same-directory test file — should be false.
+	assert.False(t, hasTestCounterpart(
+		filepath.Join(srcDir, "handler.py"),
+		"src/handler.py",
+		dir,
+		nil,
+	))
+}
+
+func TestDetectTestRoots(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create "tests" and "__tests__" directories.
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "tests"), 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "__tests__"), 0o750))
+
+	c := &PatternsCollector{}
+	c.detectTestRoots(dir)
+
+	assert.True(t, c.testRootsInit)
+	assert.Contains(t, c.testRoots, "tests")
+	assert.Contains(t, c.testRoots, "__tests__")
+	assert.NotContains(t, c.testRoots, "test")
+	assert.NotContains(t, c.testRoots, "spec")
+}
+
+func TestDetectTestRoots_OnlyRunsOnce(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "tests"), 0o750))
+
+	c := &PatternsCollector{}
+	c.detectTestRoots(dir)
+	assert.Len(t, c.testRoots, 1)
+
+	// Create another directory — calling again should not update.
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "test"), 0o750))
+	c.detectTestRoots(dir)
+	assert.Len(t, c.testRoots, 1, "detectTestRoots should only run once")
 }

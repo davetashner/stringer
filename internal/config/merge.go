@@ -41,6 +41,9 @@ func Merge(fileCfg *Config, cliCfg signal.ScanConfig) signal.ScanConfig {
 			if co.ErrorMode == "" && fc.ErrorMode != "" {
 				co.ErrorMode = signal.ErrorMode(fc.ErrorMode)
 			}
+			if co.LargeFileThreshold == 0 && fc.LargeFileThreshold > 0 {
+				co.LargeFileThreshold = fc.LargeFileThreshold
+			}
 			result.CollectorOpts[name] = co
 		}
 	}

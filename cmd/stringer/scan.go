@@ -87,6 +87,21 @@ func runScan(cmd *cobra.Command, args []string) error {
 		return exitError(ExitInvalidArgs, "stringer: %q is not a directory (provide a repository root)", repoPath)
 	}
 
+	// Walk up to find .git root for subdirectory scans.
+	gitRoot := absPath
+	for {
+		if _, err := os.Stat(filepath.Join(gitRoot, ".git")); err == nil {
+			break
+		}
+		parent := filepath.Dir(gitRoot)
+		if parent == gitRoot {
+			// No .git found — use absPath as-is (non-git repos are fine).
+			gitRoot = absPath
+			break
+		}
+		gitRoot = parent
+	}
+
 	// 2. Parse collectors flag.
 	var collectors []string
 	if scanCollectors != "" {
@@ -120,6 +135,19 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	// 5. Merge file config into CLI config.
 	scanCfg = config.Merge(fileCfg, scanCfg)
+
+	// Set GitRoot on all collector opts so collectors can open the git repo
+	// even when scanning a subdirectory.
+	if gitRoot != absPath {
+		if scanCfg.CollectorOpts == nil {
+			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
+		}
+		for _, name := range []string{"todos", "gitlog", "lotteryrisk"} {
+			co := scanCfg.CollectorOpts[name]
+			co.GitRoot = gitRoot
+			scanCfg.CollectorOpts[name] = co
+		}
+	}
 
 	// Apply default format if neither CLI nor file config specified one.
 	if scanCfg.OutputFormat == "" {
