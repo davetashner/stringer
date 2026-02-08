@@ -17,10 +17,15 @@ type CollectorConfig struct {
 	IncludePatterns []string `yaml:"include_patterns,omitempty"`
 	ExcludePatterns []string `yaml:"exclude_patterns,omitempty"`
 
-	// Bus factor collector settings.
-	BusFactorThreshold int `yaml:"bus_factor_threshold,omitempty"`
-	DirectoryDepth     int `yaml:"directory_depth,omitempty"`
-	MaxBlameFiles      int `yaml:"max_blame_files,omitempty"`
+	// Lottery risk collector settings.
+	LotteryRiskThreshold int `yaml:"lottery_risk_threshold,omitempty"`
+	DirectoryDepth       int `yaml:"directory_depth,omitempty"`
+	MaxBlameFiles        int `yaml:"max_blame_files,omitempty"`
+
+	// GitHub collector settings.
+	IncludePRs            *bool `yaml:"include_prs,omitempty"`
+	CommentDepth          int   `yaml:"comment_depth,omitempty"`
+	MaxIssuesPerCollector int   `yaml:"max_issues_per_collector,omitempty"`
 }
 
 // FileName is the expected config file name in a repository root.

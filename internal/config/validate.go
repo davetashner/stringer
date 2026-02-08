@@ -41,8 +41,8 @@ func Validate(cfg *Config) error {
 			errs = append(errs, fmt.Sprintf("collectors.%s.min_confidence: must be between 0.0 and 1.0, got %g", name, cc.MinConfidence))
 		}
 
-		if cc.BusFactorThreshold < 0 {
-			errs = append(errs, fmt.Sprintf("collectors.%s.bus_factor_threshold: must be non-negative, got %d", name, cc.BusFactorThreshold))
+		if cc.LotteryRiskThreshold < 0 {
+			errs = append(errs, fmt.Sprintf("collectors.%s.lottery_risk_threshold: must be non-negative, got %d", name, cc.LotteryRiskThreshold))
 		}
 
 		if cc.DirectoryDepth != 0 && (cc.DirectoryDepth < 1 || cc.DirectoryDepth > 10) {
@@ -51,6 +51,14 @@ func Validate(cfg *Config) error {
 
 		if cc.MaxBlameFiles != 0 && (cc.MaxBlameFiles < 1 || cc.MaxBlameFiles > 1000) {
 			errs = append(errs, fmt.Sprintf("collectors.%s.max_blame_files: must be between 1 and 1000, got %d", name, cc.MaxBlameFiles))
+		}
+
+		if cc.CommentDepth < 0 {
+			errs = append(errs, fmt.Sprintf("collectors.%s.comment_depth: must be non-negative, got %d", name, cc.CommentDepth))
+		}
+
+		if cc.MaxIssuesPerCollector < 0 {
+			errs = append(errs, fmt.Sprintf("collectors.%s.max_issues_per_collector: must be non-negative, got %d", name, cc.MaxIssuesPerCollector))
 		}
 	}
 

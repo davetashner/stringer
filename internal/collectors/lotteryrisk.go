@@ -17,9 +17,9 @@ import (
 	"github.com/davetashner/stringer/internal/signal"
 )
 
-// defaultBusFactorThreshold is the bus factor threshold below or at which a
-// signal is emitted. Directories with bus factor <= this value are flagged.
-const defaultBusFactorThreshold = 1
+// defaultLotteryRiskThreshold is the lottery risk threshold below or at which a
+// signal is emitted. Directories with lottery risk <= this value are flagged.
+const defaultLotteryRiskThreshold = 1
 
 // defaultDirectoryDepth is how many levels deep to walk when collecting
 // directory-level ownership data.
@@ -40,16 +40,16 @@ const blameWeight = 0.6
 const commitWeightFraction = 0.4
 
 // ownershipMajority is the threshold for combined ownership to determine
-// bus factor (min authors exceeding this fraction).
+// lottery risk (min authors exceeding this fraction).
 const ownershipMajority = 0.5
 
 func init() {
-	collector.Register(&BusFactorCollector{})
+	collector.Register(&LotteryRiskCollector{})
 }
 
-// BusFactorCollector analyzes git blame and commit history to identify
-// directories with low bus factor (single-author ownership risk).
-type BusFactorCollector struct{}
+// LotteryRiskCollector analyzes git blame and commit history to identify
+// directories with low lottery risk (single-author ownership risk).
+type LotteryRiskCollector struct{}
 
 // authorStats tracks per-author contribution metrics within a directory.
 type authorStats struct {
@@ -59,18 +59,18 @@ type authorStats struct {
 
 // dirOwnership holds aggregated ownership data for a single directory.
 type dirOwnership struct {
-	Path       string
-	Authors    map[string]*authorStats
-	TotalLines int
-	BusFactor  int
+	Path        string
+	Authors     map[string]*authorStats
+	TotalLines  int
+	LotteryRisk int
 }
 
 // Name returns the collector name used for registration and filtering.
-func (c *BusFactorCollector) Name() string { return "busfactor" }
+func (c *LotteryRiskCollector) Name() string { return "lotteryrisk" }
 
 // Collect scans the repository at repoPath for directories with low bus
 // factor and returns them as raw signals.
-func (c *BusFactorCollector) Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error) {
+func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error) {
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
 		return nil, fmt.Errorf("opening repo: %w", err)
@@ -109,7 +109,7 @@ func (c *BusFactorCollector) Collect(ctx context.Context, repoPath string, opts 
 		return nil, fmt.Errorf("walking commits for ownership: %w", err)
 	}
 
-	// Compute bus factor for each directory and build signals.
+	// Compute lottery risk for each directory and build signals.
 	var signals []signal.RawSignal
 	for _, dir := range dirs {
 		if err := ctx.Err(); err != nil {
@@ -121,11 +121,11 @@ func (c *BusFactorCollector) Collect(ctx context.Context, repoPath string, opts 
 			continue // skip empty directories
 		}
 
-		bf := computeBusFactor(own)
-		own.BusFactor = bf
+		bf := computeLotteryRisk(own)
+		own.LotteryRisk = bf
 
-		if bf <= defaultBusFactorThreshold {
-			sig := buildBusFactorSignal(own)
+		if bf <= defaultLotteryRiskThreshold {
+			sig := buildLotteryRiskSignal(own)
 			signals = append(signals, sig)
 		}
 	}
@@ -367,9 +367,9 @@ func recencyDecay(daysOld float64) float64 {
 	return math.Exp(-math.Ln2 / float64(decayHalfLifeDays) * daysOld)
 }
 
-// computeBusFactor calculates the bus factor for a directory: the minimum
+// computeLotteryRisk calculates the lottery risk for a directory: the minimum
 // number of authors whose combined ownership exceeds 50%.
-func computeBusFactor(own *dirOwnership) int {
+func computeLotteryRisk(own *dirOwnership) int {
 	if len(own.Authors) == 0 {
 		return 0
 	}
@@ -428,8 +428,8 @@ func totalCommitWeight(own *dirOwnership) float64 {
 	return total
 }
 
-// buildBusFactorSignal constructs a RawSignal for a low-bus-factor directory.
-func buildBusFactorSignal(own *dirOwnership) signal.RawSignal {
+// buildLotteryRiskSignal constructs a RawSignal for a low-lottery-risk directory.
+func buildLotteryRiskSignal(own *dirOwnership) signal.RawSignal {
 	// Find primary author (highest ownership).
 	totalBlameLines := own.TotalLines
 	totalCW := totalCommitWeight(own)
@@ -465,7 +465,7 @@ func buildBusFactorSignal(own *dirOwnership) signal.RawSignal {
 
 	// Build description with top authors.
 	var descParts []string
-	descParts = append(descParts, fmt.Sprintf("Bus factor: %d", own.BusFactor))
+	descParts = append(descParts, fmt.Sprintf("Lottery risk: %d", own.LotteryRisk))
 	descParts = append(descParts, "Top authors:")
 	for _, a := range authors {
 		if a.Pct < 1.0 {
@@ -474,7 +474,7 @@ func buildBusFactorSignal(own *dirOwnership) signal.RawSignal {
 		descParts = append(descParts, fmt.Sprintf("  - %s: %.0f%%", a.Name, a.Pct))
 	}
 
-	confidence := busFactorConfidence(own.BusFactor)
+	confidence := lotteryRiskConfidence(own.LotteryRisk)
 
 	// Ensure directory path ends with / for clarity.
 	dirPath := own.Path
@@ -483,19 +483,19 @@ func buildBusFactorSignal(own *dirOwnership) signal.RawSignal {
 	}
 
 	return signal.RawSignal{
-		Source:      "busfactor",
-		Kind:        "low-bus-factor",
+		Source:      "lotteryrisk",
+		Kind:        "low-lottery-risk",
 		FilePath:    dirPath,
 		Line:        0,
-		Title:       fmt.Sprintf("Low bus factor: %s (bus factor %d, primary: %s %.0f%%)", dirPath, own.BusFactor, primary.Name, primary.Pct),
+		Title:       fmt.Sprintf("Low lottery risk: %s (lottery risk %d, primary: %s %.0f%%)", dirPath, own.LotteryRisk, primary.Name, primary.Pct),
 		Description: strings.Join(descParts, "\n"),
 		Confidence:  confidence,
-		Tags:        []string{"low-bus-factor", "stringer-generated"},
+		Tags:        []string{"low-lottery-risk", "stringer-generated"},
 	}
 }
 
-// busFactorConfidence maps bus factor to confidence score per DR-006.
-func busFactorConfidence(busFactor int) float64 {
+// lotteryRiskConfidence maps lottery risk to confidence score per DR-006.
+func lotteryRiskConfidence(busFactor int) float64 {
 	switch {
 	case busFactor <= 1:
 		return 0.8
@@ -537,4 +537,4 @@ func isSourceExtension(ext string) bool {
 }
 
 // Compile-time interface check.
-var _ collector.Collector = (*BusFactorCollector)(nil)
+var _ collector.Collector = (*LotteryRiskCollector)(nil)

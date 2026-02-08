@@ -122,6 +122,55 @@ func TestValidate_MultipleErrors(t *testing.T) {
 	assert.Contains(t, err.Error(), "error_mode")
 }
 
+func TestValidate_NegativeCommentDepth(t *testing.T) {
+	cfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {CommentDepth: -1},
+		},
+	}
+	err := Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "comment_depth")
+}
+
+func TestValidate_ZeroCommentDepthValid(t *testing.T) {
+	cfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {CommentDepth: 0},
+		},
+	}
+	assert.NoError(t, Validate(cfg))
+}
+
+func TestValidate_NegativeMaxIssuesPerCollector(t *testing.T) {
+	cfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {MaxIssuesPerCollector: -5},
+		},
+	}
+	err := Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "max_issues_per_collector")
+}
+
+func TestValidate_ZeroMaxIssuesPerCollectorValid(t *testing.T) {
+	cfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {MaxIssuesPerCollector: 0},
+		},
+	}
+	assert.NoError(t, Validate(cfg))
+}
+
+func TestValidate_PositiveCommentDepthValid(t *testing.T) {
+	cfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {CommentDepth: 50},
+		},
+	}
+	assert.NoError(t, Validate(cfg))
+}
+
 func TestValidate_ValidErrorModes(t *testing.T) {
 	for _, mode := range []string{"warn", "skip", "fail"} {
 		cfg := &Config{
@@ -133,33 +182,33 @@ func TestValidate_ValidErrorModes(t *testing.T) {
 	}
 }
 
-// --- Bus factor config validation tests ---
+// --- Lottery risk config validation tests ---
 
-func TestValidate_BusFactorThreshold_Negative(t *testing.T) {
+func TestValidate_LotteryRiskThreshold_Negative(t *testing.T) {
 	cfg := &Config{
 		Collectors: map[string]CollectorConfig{
-			"busfactor": {BusFactorThreshold: -1},
+			"lotteryrisk": {LotteryRiskThreshold: -1},
 		},
 	}
 	err := Validate(cfg)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "bus_factor_threshold")
+	assert.Contains(t, err.Error(), "lottery_risk_threshold")
 }
 
-func TestValidate_BusFactorThreshold_Zero(t *testing.T) {
+func TestValidate_LotteryRiskThreshold_Zero(t *testing.T) {
 	// Zero is valid (non-negative).
 	cfg := &Config{
 		Collectors: map[string]CollectorConfig{
-			"busfactor": {BusFactorThreshold: 0},
+			"lotteryrisk": {LotteryRiskThreshold: 0},
 		},
 	}
 	require.NoError(t, Validate(cfg))
 }
 
-func TestValidate_BusFactorThreshold_Positive(t *testing.T) {
+func TestValidate_LotteryRiskThreshold_Positive(t *testing.T) {
 	cfg := &Config{
 		Collectors: map[string]CollectorConfig{
-			"busfactor": {BusFactorThreshold: 3},
+			"lotteryrisk": {LotteryRiskThreshold: 3},
 		},
 	}
 	require.NoError(t, Validate(cfg))
@@ -177,7 +226,7 @@ func TestValidate_DirectoryDepth_OutOfRange(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
 				Collectors: map[string]CollectorConfig{
-					"busfactor": {DirectoryDepth: tt.depth},
+					"lotteryrisk": {DirectoryDepth: tt.depth},
 				},
 			}
 			err := Validate(cfg)
@@ -191,7 +240,7 @@ func TestValidate_DirectoryDepth_ValidRange(t *testing.T) {
 	for _, depth := range []int{0, 1, 5, 10} {
 		cfg := &Config{
 			Collectors: map[string]CollectorConfig{
-				"busfactor": {DirectoryDepth: depth},
+				"lotteryrisk": {DirectoryDepth: depth},
 			},
 		}
 		assert.NoError(t, Validate(cfg), "directory_depth=%d should be valid", depth)
@@ -210,7 +259,7 @@ func TestValidate_MaxBlameFiles_OutOfRange(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := &Config{
 				Collectors: map[string]CollectorConfig{
-					"busfactor": {MaxBlameFiles: tt.val},
+					"lotteryrisk": {MaxBlameFiles: tt.val},
 				},
 			}
 			err := Validate(cfg)
@@ -224,7 +273,7 @@ func TestValidate_MaxBlameFiles_ValidRange(t *testing.T) {
 	for _, val := range []int{0, 1, 50, 1000} {
 		cfg := &Config{
 			Collectors: map[string]CollectorConfig{
-				"busfactor": {MaxBlameFiles: val},
+				"lotteryrisk": {MaxBlameFiles: val},
 			},
 		}
 		assert.NoError(t, Validate(cfg), "max_blame_files=%d should be valid", val)
