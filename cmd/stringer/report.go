@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,6 +16,7 @@ import (
 	_ "github.com/davetashner/stringer/internal/collectors"
 	"github.com/davetashner/stringer/internal/config"
 	"github.com/davetashner/stringer/internal/pipeline"
+	"github.com/davetashner/stringer/internal/report"
 	"github.com/davetashner/stringer/internal/signal"
 )
 
@@ -197,7 +199,16 @@ func runReport(cmd *cobra.Command, args []string) error {
 		w = f
 	}
 
-	if err := renderReport(result, absPath, collectorNames, w); err != nil {
+	// Parse --sections flag.
+	var sections []string
+	if reportSections != "" {
+		sections = strings.Split(reportSections, ",")
+		for i := range sections {
+			sections[i] = strings.TrimSpace(sections[i])
+		}
+	}
+
+	if err := renderReport(result, absPath, collectorNames, sections, w); err != nil {
 		return fmt.Errorf("stringer: rendering failed (%v)", err)
 	}
 
@@ -206,7 +217,7 @@ func runReport(cmd *cobra.Command, args []string) error {
 }
 
 // renderReport writes a terminal-friendly summary of the scan results.
-func renderReport(result *signal.ScanResult, repoPath string, collectorNames []string, w interface{ Write([]byte) (int, error) }) error {
+func renderReport(result *signal.ScanResult, repoPath string, collectorNames []string, sections []string, w interface{ Write([]byte) (int, error) }) error {
 	// Header.
 	_, _ = fmt.Fprintf(w, "Stringer Report\n")
 	_, _ = fmt.Fprintf(w, "===============\n\n")
@@ -253,20 +264,52 @@ func renderReport(result *signal.ScanResult, repoPath string, collectorNames []s
 		}
 	}
 
-	// Metrics availability.
-	if len(result.Metrics) > 0 {
-		_, _ = fmt.Fprintf(w, "\nMetrics Available\n")
-		_, _ = fmt.Fprintf(w, "-----------------\n")
-		names := make([]string, 0, len(result.Metrics))
-		for name := range result.Metrics {
-			names = append(names, name)
+	// Report sections.
+	sectionNames := resolveSections(sections, w)
+	for _, name := range sectionNames {
+		sec := report.Get(name)
+		if sec == nil {
+			continue // warning already printed by resolveSections
 		}
-		sort.Strings(names)
-		for _, name := range names {
-			_, _ = fmt.Fprintf(w, "  %s: yes\n", name)
+
+		if err := sec.Analyze(result); err != nil {
+			if errors.Is(err, report.ErrMetricsNotAvailable) {
+				_, _ = fmt.Fprintf(w, "\n%s: skipped (collector not run)\n", sec.Name())
+				continue
+			}
+			return fmt.Errorf("section %s: %w", name, err)
+		}
+
+		_, _ = fmt.Fprintf(w, "\n")
+		if err := sec.Render(w); err != nil {
+			return fmt.Errorf("section %s render: %w", name, err)
 		}
 	}
 
 	_, _ = fmt.Fprintf(w, "\n")
 	return nil
+}
+
+// resolveSections determines which sections to run. If filter is empty, all
+// registered sections are used. Unknown names produce a warning.
+func resolveSections(filter []string, w interface{ Write([]byte) (int, error) }) []string {
+	if len(filter) == 0 {
+		return report.List()
+	}
+
+	available := make(map[string]bool)
+	for _, name := range report.List() {
+		available[name] = true
+	}
+
+	var names []string
+	for _, name := range filter {
+		if !available[name] {
+			_, _ = fmt.Fprintf(w, "\nWarning: unknown section %q (available: %s)\n",
+				name, strings.Join(report.List(), ", "))
+			continue
+		}
+		names = append(names, name)
+	}
+	return names
 }
