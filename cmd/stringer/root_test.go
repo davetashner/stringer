@@ -23,6 +23,9 @@ func TestRootHelp(t *testing.T) {
 	if !strings.Contains(out, "scan") {
 		t.Errorf("root help missing scan subcommand, got:\n%s", out)
 	}
+	if !strings.Contains(out, "report") {
+		t.Errorf("root help missing report subcommand, got:\n%s", out)
+	}
 	if !strings.Contains(out, "version") {
 		t.Errorf("root help missing version subcommand, got:\n%s", out)
 	}
