@@ -2,12 +2,24 @@
 package context
 
 import (
+	"regexp"
 	"sort"
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
+
+// TagInfo holds metadata about a version tag.
+type TagInfo struct {
+	Name string    // e.g. "v1.2.0"
+	Hash string    // 8-char short hash
+	Date time.Time // commit date
+}
+
+// semverTagPattern matches semver-like tag names (with or without "v" prefix).
+var semverTagPattern = regexp.MustCompile(`^v?\d+\.\d+\.\d+`)
 
 // CommitSummary holds metadata about a single commit.
 type CommitSummary struct {
@@ -15,13 +27,16 @@ type CommitSummary struct {
 	Message string
 	Author  string
 	Date    time.Time
-	Files   int // number of files changed
+	Files   int    // number of files changed
+	IsMerge bool   // true if commit has 2+ parents
+	Tag     string // non-empty if commit has a semver tag
 }
 
 // WeekActivity groups commits by ISO week.
 type WeekActivity struct {
 	WeekStart time.Time
 	Commits   []CommitSummary
+	Tags      []TagInfo // version tags that landed in this week
 }
 
 // AuthorStats tracks commit count per contributor.
@@ -35,6 +50,7 @@ type GitHistory struct {
 	RecentWeeks  []WeekActivity
 	TopAuthors   []AuthorStats
 	TotalCommits int
+	Milestones   []TagInfo // all version tags, newest first, max 10
 }
 
 // AnalyzeHistory walks the git log and groups commits by week.
@@ -82,6 +98,7 @@ func analyzeHistoryWithNow(repoPath string, weeks int, now time.Time) (*GitHisto
 			Message: firstLine(c.Message),
 			Author:  c.Author.Name,
 			Date:    c.Author.When,
+			IsMerge: c.NumParents() >= 2,
 		}
 
 		// Count changed files (compare with parent).
@@ -97,12 +114,37 @@ func analyzeHistoryWithNow(repoPath string, weeks int, now time.Time) (*GitHisto
 		return nil, err
 	}
 
+	// Collect version tags.
+	milestones := collectTags(repo)
+
+	// Build hash→tag lookup and assign tags to commits.
+	tagsByHash := make(map[string]string, len(milestones))
+	for _, t := range milestones {
+		tagsByHash[t.Hash] = t.Name
+	}
+	for ws, commits := range weekBuckets {
+		for i := range commits {
+			if tag, ok := tagsByHash[commits[i].Hash]; ok {
+				commits[i].Tag = tag
+			}
+		}
+		weekBuckets[ws] = commits
+	}
+
+	// Build tag-to-week lookup for distributing tags to weeks.
+	tagsByWeek := make(map[time.Time][]TagInfo)
+	for _, t := range milestones {
+		ws := startOfWeek(t.Date)
+		tagsByWeek[ws] = append(tagsByWeek[ws], t)
+	}
+
 	// Build sorted week activities (newest first).
 	var recentWeeks []WeekActivity
 	for ws, commits := range weekBuckets {
 		recentWeeks = append(recentWeeks, WeekActivity{
 			WeekStart: ws,
 			Commits:   commits,
+			Tags:      tagsByWeek[ws],
 		})
 	}
 	sort.Slice(recentWeeks, func(i, j int) bool {
@@ -128,7 +170,64 @@ func analyzeHistoryWithNow(repoPath string, weeks int, now time.Time) (*GitHisto
 		RecentWeeks:  recentWeeks,
 		TopAuthors:   topAuthors,
 		TotalCommits: total,
+		Milestones:   milestones,
 	}, nil
+}
+
+// collectTags returns semver-matching tags sorted newest-first, capped at 10.
+func collectTags(repo *git.Repository) []TagInfo {
+	tagRefs, err := repo.Tags()
+	if err != nil {
+		return nil
+	}
+
+	var tags []TagInfo
+	_ = tagRefs.ForEach(func(ref *plumbing.Reference) error {
+		name := ref.Name().Short()
+		if !semverTagPattern.MatchString(name) {
+			return nil
+		}
+
+		// Resolve annotated tags to their target commit.
+		hash := ref.Hash()
+		tagObj, err := repo.TagObject(hash)
+		if err == nil {
+			// Annotated tag — follow to commit.
+			commit, err := tagObj.Commit()
+			if err != nil {
+				return nil
+			}
+			tags = append(tags, TagInfo{
+				Name: name,
+				Hash: commit.Hash.String()[:8],
+				Date: commit.Author.When,
+			})
+			return nil
+		}
+
+		// Lightweight tag — hash points directly to commit.
+		commit, err := repo.CommitObject(hash)
+		if err != nil {
+			return nil
+		}
+		tags = append(tags, TagInfo{
+			Name: name,
+			Hash: commit.Hash.String()[:8],
+			Date: commit.Author.When,
+		})
+		return nil
+	})
+
+	// Sort newest first.
+	sort.Slice(tags, func(i, j int) bool {
+		return tags[i].Date.After(tags[j].Date)
+	})
+
+	if len(tags) > 10 {
+		tags = tags[:10]
+	}
+
+	return tags
 }
 
 // startOfWeek returns the Monday 00:00 UTC for the given time's ISO week.

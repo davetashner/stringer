@@ -2,6 +2,7 @@ package context
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -218,4 +219,199 @@ func TestSortStrings(t *testing.T) {
 	s := []string{"c", "a", "b"}
 	sortStrings(s)
 	assert.Equal(t, []string{"a", "b", "c"}, s)
+}
+
+func TestGenerate_WithMilestones(t *testing.T) {
+	analysis := &docs.RepoAnalysis{
+		Name:     "myproject",
+		Language: "Go",
+	}
+
+	history := &GitHistory{
+		TotalCommits: 10,
+		RecentWeeks: []WeekActivity{
+			{
+				WeekStart: time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC),
+				Commits: []CommitSummary{
+					{Hash: "abc12345", Message: "feat: release", Author: "alice", Tag: "v1.0.0"},
+				},
+				Tags: []TagInfo{
+					{Name: "v1.0.0", Hash: "abc12345", Date: time.Date(2026, 2, 5, 12, 0, 0, 0, time.UTC)},
+				},
+			},
+		},
+		TopAuthors: []AuthorStats{
+			{Name: "alice", Commits: 10},
+		},
+		Milestones: []TagInfo{
+			{Name: "v1.0.0", Hash: "abc12345", Date: time.Date(2026, 2, 5, 12, 0, 0, 0, time.UTC)},
+			{Name: "v0.9.0", Hash: "def67890", Date: time.Date(2026, 1, 28, 12, 0, 0, 0, time.UTC)},
+		},
+	}
+
+	var buf bytes.Buffer
+	err := Generate(analysis, history, nil, &buf)
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "## Recent Milestones")
+	assert.Contains(t, output, "**v1.0.0** — Feb 5, 2026 (`abc12345`)")
+	assert.Contains(t, output, "**v0.9.0** — Jan 28, 2026 (`def67890`)")
+}
+
+func TestGenerate_NoMilestonesSection(t *testing.T) {
+	analysis := &docs.RepoAnalysis{
+		Name:     "myproject",
+		Language: "Go",
+	}
+
+	history := &GitHistory{
+		TotalCommits: 5,
+		RecentWeeks: []WeekActivity{
+			{
+				WeekStart: time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC),
+				Commits: []CommitSummary{
+					{Hash: "abc12345", Message: "feat: something", Author: "alice"},
+				},
+			},
+		},
+		TopAuthors: []AuthorStats{{Name: "alice", Commits: 5}},
+	}
+
+	var buf bytes.Buffer
+	err := Generate(analysis, history, nil, &buf)
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.NotContains(t, output, "## Recent Milestones")
+}
+
+func TestGenerate_CommitIndicators(t *testing.T) {
+	analysis := &docs.RepoAnalysis{
+		Name:     "myproject",
+		Language: "Go",
+	}
+
+	history := &GitHistory{
+		TotalCommits: 4,
+		RecentWeeks: []WeekActivity{
+			{
+				WeekStart: time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC),
+				Commits: []CommitSummary{
+					{Hash: "aaa11111", Message: "feat: tagged release", Author: "alice", Tag: "v1.0.0"},
+					{Hash: "bbb22222", Message: "feat: big change", Author: "bob", Files: 15},
+					{Hash: "ccc33333", Message: "Merge branch feature", Author: "alice", IsMerge: true},
+					{Hash: "ddd44444", Message: "fix: small fix", Author: "bob", Files: 2},
+				},
+				Tags: []TagInfo{
+					{Name: "v1.0.0", Hash: "aaa11111", Date: time.Date(2026, 2, 5, 12, 0, 0, 0, time.UTC)},
+				},
+			},
+		},
+		TopAuthors: []AuthorStats{
+			{Name: "alice", Commits: 2},
+			{Name: "bob", Commits: 2},
+		},
+	}
+
+	var buf bytes.Buffer
+	err := Generate(analysis, history, nil, &buf)
+	require.NoError(t, err)
+
+	output := buf.String()
+
+	// Tag indicator.
+	assert.Contains(t, output, "[v1.0.0]")
+	// Large file count indicator.
+	assert.Contains(t, output, "[15 files]")
+	// Merge indicator.
+	assert.Contains(t, output, "[merge]")
+	// Small fix should have no indicator — check it doesn't have brackets.
+	assert.Contains(t, output, "`ddd44444` fix: small fix (bob)\n")
+	// Week releases header.
+	assert.Contains(t, output, "Releases: **v1.0.0**")
+}
+
+func TestCommitIndicators(t *testing.T) {
+	tests := []struct {
+		name   string
+		commit CommitSummary
+		want   string
+	}{
+		{
+			name:   "no indicators",
+			commit: CommitSummary{Files: 3},
+			want:   "",
+		},
+		{
+			name:   "tagged",
+			commit: CommitSummary{Tag: "v1.0.0"},
+			want:   "[v1.0.0]",
+		},
+		{
+			name:   "many files",
+			commit: CommitSummary{Files: 12},
+			want:   "[12 files]",
+		},
+		{
+			name:   "merge",
+			commit: CommitSummary{IsMerge: true},
+			want:   "[merge]",
+		},
+		{
+			name:   "all indicators",
+			commit: CommitSummary{Tag: "v2.0.0", Files: 20, IsMerge: true},
+			want:   "[v2.0.0] [20 files] [merge]",
+		},
+		{
+			name:   "exactly threshold",
+			commit: CommitSummary{Files: 10},
+			want:   "[10 files]",
+		},
+		{
+			name:   "below threshold",
+			commit: CommitSummary{Files: 9},
+			want:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, commitIndicators(tt.commit))
+		})
+	}
+}
+
+func TestGenerate_MilestonesSectionOrder(t *testing.T) {
+	// Milestones section should appear after Active Contributors and before Known Technical Debt.
+	analysis := &docs.RepoAnalysis{
+		Name:     "myproject",
+		Language: "Go",
+	}
+
+	history := &GitHistory{
+		TotalCommits: 1,
+		RecentWeeks: []WeekActivity{
+			{
+				WeekStart: time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC),
+				Commits:   []CommitSummary{{Hash: "abc12345", Message: "init", Author: "alice"}},
+			},
+		},
+		TopAuthors: []AuthorStats{{Name: "alice", Commits: 1}},
+		Milestones: []TagInfo{
+			{Name: "v1.0.0", Hash: "abc12345", Date: time.Date(2026, 2, 5, 12, 0, 0, 0, time.UTC)},
+		},
+	}
+
+	var buf bytes.Buffer
+	err := Generate(analysis, history, nil, &buf)
+	require.NoError(t, err)
+
+	output := buf.String()
+	contributorsIdx := strings.Index(output, "## Active Contributors")
+	milestonesIdx := strings.Index(output, "## Recent Milestones")
+	debtIdx := strings.Index(output, "## Known Technical Debt")
+
+	assert.Greater(t, milestonesIdx, contributorsIdx, "Milestones should come after Contributors")
+	assert.Less(t, milestonesIdx, debtIdx, "Milestones should come before Technical Debt")
 }

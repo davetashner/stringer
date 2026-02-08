@@ -9,6 +9,9 @@ import (
 	"github.com/davetashner/stringer/internal/state"
 )
 
+// majorChangeFileThreshold is the minimum number of files changed to annotate a commit.
+const majorChangeFileThreshold = 10
+
 // Generate writes a CONTEXT.md to w based on analysis, git history, and scan state.
 // scanState may be nil if no previous scan exists.
 func Generate(analysis *docs.RepoAnalysis, history *GitHistory, scanState *state.ScanState, w io.Writer) error {
@@ -64,8 +67,23 @@ func Generate(analysis *docs.RepoAnalysis, history *GitHistory, scanState *state
 			g.printf("\n### Week of %s (%d commits)\n\n",
 				week.WeekStart.Format("Jan 2, 2006"),
 				len(week.Commits))
+
+			// Show releases header if the week has tags.
+			if len(week.Tags) > 0 {
+				tagNames := make([]string, 0, len(week.Tags))
+				for _, t := range week.Tags {
+					tagNames = append(tagNames, "**"+t.Name+"**")
+				}
+				g.printf("Releases: %s\n\n", strings.Join(tagNames, ", "))
+			}
+
 			for _, c := range week.Commits {
-				g.printf("- `%s` %s (%s)\n", c.Hash, c.Message, c.Author)
+				indicators := commitIndicators(c)
+				if indicators != "" {
+					g.printf("- `%s` %s (%s) %s\n", c.Hash, c.Message, c.Author, indicators)
+				} else {
+					g.printf("- `%s` %s (%s)\n", c.Hash, c.Message, c.Author)
+				}
 			}
 		}
 	}
@@ -75,6 +93,14 @@ func Generate(analysis *docs.RepoAnalysis, history *GitHistory, scanState *state
 		g.print("\n## Active Contributors\n\n")
 		for _, a := range history.TopAuthors {
 			g.printf("- **%s**: %d commits\n", a.Name, a.Commits)
+		}
+	}
+
+	// Recent Milestones
+	if history != nil && len(history.Milestones) > 0 {
+		g.print("\n## Recent Milestones\n\n")
+		for _, m := range history.Milestones {
+			g.printf("- **%s** — %s (`%s`)\n", m.Name, m.Date.Format("Jan 2, 2006"), m.Hash)
 		}
 	}
 
@@ -213,4 +239,19 @@ func (g *genWriter) printf(format string, args ...any) {
 		return
 	}
 	_, g.err = fmt.Fprintf(g.w, format, args...)
+}
+
+// commitIndicators returns bracketed annotations for notable commits.
+func commitIndicators(c CommitSummary) string {
+	var parts []string
+	if c.Tag != "" {
+		parts = append(parts, "["+c.Tag+"]")
+	}
+	if c.Files >= majorChangeFileThreshold {
+		parts = append(parts, fmt.Sprintf("[%d files]", c.Files))
+	}
+	if c.IsMerge {
+		parts = append(parts, "[merge]")
+	}
+	return strings.Join(parts, " ")
 }
