@@ -16,6 +16,11 @@ type CollectorConfig struct {
 	MinConfidence   float64  `yaml:"min_confidence,omitempty"`
 	IncludePatterns []string `yaml:"include_patterns,omitempty"`
 	ExcludePatterns []string `yaml:"exclude_patterns,omitempty"`
+
+	// Bus factor collector settings.
+	BusFactorThreshold int `yaml:"bus_factor_threshold,omitempty"`
+	DirectoryDepth     int `yaml:"directory_depth,omitempty"`
+	MaxBlameFiles      int `yaml:"max_blame_files,omitempty"`
 }
 
 // FileName is the expected config file name in a repository root.

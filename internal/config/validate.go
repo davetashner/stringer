@@ -40,6 +40,18 @@ func Validate(cfg *Config) error {
 		if cc.MinConfidence < 0 || cc.MinConfidence > 1 {
 			errs = append(errs, fmt.Sprintf("collectors.%s.min_confidence: must be between 0.0 and 1.0, got %g", name, cc.MinConfidence))
 		}
+
+		if cc.BusFactorThreshold < 0 {
+			errs = append(errs, fmt.Sprintf("collectors.%s.bus_factor_threshold: must be non-negative, got %d", name, cc.BusFactorThreshold))
+		}
+
+		if cc.DirectoryDepth != 0 && (cc.DirectoryDepth < 1 || cc.DirectoryDepth > 10) {
+			errs = append(errs, fmt.Sprintf("collectors.%s.directory_depth: must be between 1 and 10, got %d", name, cc.DirectoryDepth))
+		}
+
+		if cc.MaxBlameFiles != 0 && (cc.MaxBlameFiles < 1 || cc.MaxBlameFiles > 1000) {
+			errs = append(errs, fmt.Sprintf("collectors.%s.max_blame_files: must be between 1 and 1000, got %d", name, cc.MaxBlameFiles))
+		}
 	}
 
 	if len(errs) > 0 {

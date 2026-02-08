@@ -46,6 +46,7 @@ Stringer solves the cold-start problem. It mines signals already present in your
 - **TODO collector** (`todos`) — Scans source files for `TODO`, `FIXME`, `HACK`, `XXX`, `BUG`, and `OPTIMIZE` comments. Enriched with git blame author and timestamp. Confidence scoring with age-based boosts.
 - **Git log collector** (`gitlog`) — Detects reverts, high-churn files, and stale branches from git history.
 - **Patterns collector** (`patterns`) — Flags large files and modules with low test coverage ratios.
+- **Bus factor analyzer** (`busfactor`) — Flags directories with low bus factor (single-author ownership risk) using git blame and commit history with recency weighting.
 
 ### Output Formats
 
@@ -170,7 +171,7 @@ stringer scan [path] [flags]
 
 **Global flags:** `--quiet` (`-q`), `--verbose` (`-v`), `--no-color`, `--help` (`-h`)
 
-**Available collectors:** `todos`, `gitlog`, `patterns`
+**Available collectors:** `todos`, `gitlog`, `patterns`, `busfactor`
 
 **Available formats:** `beads`, `json`, `markdown`
 

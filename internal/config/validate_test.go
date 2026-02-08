@@ -132,3 +132,101 @@ func TestValidate_ValidErrorModes(t *testing.T) {
 		assert.NoError(t, Validate(cfg), "error_mode=%q should be valid", mode)
 	}
 }
+
+// --- Bus factor config validation tests ---
+
+func TestValidate_BusFactorThreshold_Negative(t *testing.T) {
+	cfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"busfactor": {BusFactorThreshold: -1},
+		},
+	}
+	err := Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bus_factor_threshold")
+}
+
+func TestValidate_BusFactorThreshold_Zero(t *testing.T) {
+	// Zero is valid (non-negative).
+	cfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"busfactor": {BusFactorThreshold: 0},
+		},
+	}
+	require.NoError(t, Validate(cfg))
+}
+
+func TestValidate_BusFactorThreshold_Positive(t *testing.T) {
+	cfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"busfactor": {BusFactorThreshold: 3},
+		},
+	}
+	require.NoError(t, Validate(cfg))
+}
+
+func TestValidate_DirectoryDepth_OutOfRange(t *testing.T) {
+	tests := []struct {
+		name  string
+		depth int
+	}{
+		{"below_min", -1},
+		{"above_max", 11},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				Collectors: map[string]CollectorConfig{
+					"busfactor": {DirectoryDepth: tt.depth},
+				},
+			}
+			err := Validate(cfg)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "directory_depth")
+		})
+	}
+}
+
+func TestValidate_DirectoryDepth_ValidRange(t *testing.T) {
+	for _, depth := range []int{0, 1, 5, 10} {
+		cfg := &Config{
+			Collectors: map[string]CollectorConfig{
+				"busfactor": {DirectoryDepth: depth},
+			},
+		}
+		assert.NoError(t, Validate(cfg), "directory_depth=%d should be valid", depth)
+	}
+}
+
+func TestValidate_MaxBlameFiles_OutOfRange(t *testing.T) {
+	tests := []struct {
+		name string
+		val  int
+	}{
+		{"below_min", -1},
+		{"above_max", 1001},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				Collectors: map[string]CollectorConfig{
+					"busfactor": {MaxBlameFiles: tt.val},
+				},
+			}
+			err := Validate(cfg)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "max_blame_files")
+		})
+	}
+}
+
+func TestValidate_MaxBlameFiles_ValidRange(t *testing.T) {
+	for _, val := range []int{0, 1, 50, 1000} {
+		cfg := &Config{
+			Collectors: map[string]CollectorConfig{
+				"busfactor": {MaxBlameFiles: val},
+			},
+		}
+		assert.NoError(t, Validate(cfg), "max_blame_files=%d should be valid", val)
+	}
+}
