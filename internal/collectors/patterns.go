@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/davetashner/stringer/internal/collector"
@@ -63,11 +64,26 @@ func init() {
 	collector.Register(&PatternsCollector{})
 }
 
+// PatternsMetrics holds structured metrics from the patterns analysis.
+type PatternsMetrics struct {
+	LargeFiles          int
+	DirectoryTestRatios []DirectoryTestRatio
+}
+
+// DirectoryTestRatio describes the test coverage ratio for a directory.
+type DirectoryTestRatio struct {
+	Path        string
+	SourceFiles int
+	TestFiles   int
+	Ratio       float64
+}
+
 // PatternsCollector detects structural code-quality patterns such as
 // oversized files, missing tests, and low test-to-source ratios.
 type PatternsCollector struct {
 	testRoots     []string // cached parallel test root dirs (e.g., "tests/", "test/")
 	testRootsInit bool     // whether testRoots has been initialized
+	metrics       *PatternsMetrics
 }
 
 // Name returns the collector name used for registration and filtering.
@@ -227,9 +243,29 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 	}
 
 	// C3.3: Test-to-source ratio per directory.
+	// Also build metrics from ALL directories (not just below-threshold).
+	largeFileCount := 0
+	for _, sig := range signals {
+		if sig.Kind == "large-file" {
+			largeFileCount++
+		}
+	}
+
+	var dirRatios []DirectoryTestRatio
 	for dir, stats := range dirMap {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+
+		// Build metrics for every directory with source files.
+		if stats.sourceFiles > 0 {
+			ratio := float64(stats.testFiles) / float64(stats.sourceFiles)
+			dirRatios = append(dirRatios, DirectoryTestRatio{
+				Path:        dir,
+				SourceFiles: stats.sourceFiles,
+				TestFiles:   stats.testFiles,
+				Ratio:       ratio,
+			})
 		}
 
 		if stats.sourceFiles < minSourceFilesForRatio {
@@ -249,6 +285,15 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 				Tags:        []string{"low-test-ratio", "stringer-generated"},
 			})
 		}
+	}
+
+	sort.Slice(dirRatios, func(i, j int) bool {
+		return dirRatios[i].Path < dirRatios[j].Path
+	})
+
+	c.metrics = &PatternsMetrics{
+		LargeFiles:          largeFileCount,
+		DirectoryTestRatios: dirRatios,
 	}
 
 	return signals, nil
@@ -396,5 +441,9 @@ func hasTestCounterpart(absPath, relPath, repoPath string, testRoots []string) b
 	return false
 }
 
-// Compile-time interface check.
+// Metrics returns structured metrics from the patterns analysis.
+func (c *PatternsCollector) Metrics() any { return c.metrics }
+
+// Compile-time interface checks.
 var _ collector.Collector = (*PatternsCollector)(nil)
+var _ collector.MetricsProvider = (*PatternsCollector)(nil)
