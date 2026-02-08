@@ -154,6 +154,12 @@ func (p *Pipeline) errorMode(collectorName string) signal.ErrorMode {
 // runCollector executes a single collector and captures its result and timing.
 func (p *Pipeline) runCollector(ctx context.Context, c collector.Collector) signal.CollectorResult {
 	opts := p.config.CollectorOpts[c.Name()]
+
+	// Prepend global exclude patterns so they apply to every collector.
+	if len(p.config.ExcludePatterns) > 0 {
+		opts.ExcludePatterns = append(p.config.ExcludePatterns, opts.ExcludePatterns...)
+	}
+
 	start := time.Now()
 
 	signals, err := c.Collect(ctx, p.config.RepoPath, opts)

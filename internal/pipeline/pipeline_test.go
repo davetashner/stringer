@@ -302,6 +302,82 @@ func (o *optsRecordingCollector) Collect(_ context.Context, _ string, opts signa
 	return o.signals, nil
 }
 
+func TestPipeline_GlobalExcludesPrependedToCollectorOpts(t *testing.T) {
+	wrapper := &optsRecordingCollector{
+		name: "capture",
+		signals: []signal.RawSignal{
+			{Source: "capture", Title: "OK", FilePath: "f.go", Confidence: 0.5},
+		},
+	}
+
+	config := signal.ScanConfig{
+		RepoPath:        "/tmp/repo",
+		ExcludePatterns: []string{"tests/**", "docs/**"},
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"capture": {
+				ExcludePatterns: []string{"build/**"},
+			},
+		},
+	}
+
+	p := NewWithCollectors(config, []collector.Collector{wrapper})
+	_, err := p.Run(context.Background())
+	require.NoError(t, err)
+	require.True(t, wrapper.captured)
+
+	// Global excludes should be prepended before per-collector excludes.
+	want := []string{"tests/**", "docs/**", "build/**"}
+	assert.Equal(t, want, wrapper.receivedOpts.ExcludePatterns)
+}
+
+func TestPipeline_GlobalExcludesWithNoPerCollectorOpts(t *testing.T) {
+	wrapper := &optsRecordingCollector{
+		name: "capture",
+		signals: []signal.RawSignal{
+			{Source: "capture", Title: "OK", FilePath: "f.go", Confidence: 0.5},
+		},
+	}
+
+	config := signal.ScanConfig{
+		RepoPath:        "/tmp/repo",
+		ExcludePatterns: []string{"vendor/**"},
+	}
+
+	p := NewWithCollectors(config, []collector.Collector{wrapper})
+	_, err := p.Run(context.Background())
+	require.NoError(t, err)
+	require.True(t, wrapper.captured)
+
+	// Global excludes should be passed through even when no per-collector opts exist.
+	assert.Equal(t, []string{"vendor/**"}, wrapper.receivedOpts.ExcludePatterns)
+}
+
+func TestPipeline_NoGlobalExcludes(t *testing.T) {
+	wrapper := &optsRecordingCollector{
+		name: "capture",
+		signals: []signal.RawSignal{
+			{Source: "capture", Title: "OK", FilePath: "f.go", Confidence: 0.5},
+		},
+	}
+
+	config := signal.ScanConfig{
+		RepoPath: "/tmp/repo",
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"capture": {
+				ExcludePatterns: []string{"build/**"},
+			},
+		},
+	}
+
+	p := NewWithCollectors(config, []collector.Collector{wrapper})
+	_, err := p.Run(context.Background())
+	require.NoError(t, err)
+	require.True(t, wrapper.captured)
+
+	// Without global excludes, per-collector patterns should be unchanged.
+	assert.Equal(t, []string{"build/**"}, wrapper.receivedOpts.ExcludePatterns)
+}
+
 func TestPipeline_ContextCancelled(t *testing.T) {
 	cancelCollector := &contextAwareCollector{
 		name: "ctx-aware",
