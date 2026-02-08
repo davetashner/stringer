@@ -56,11 +56,33 @@ func init() {
 	collector.Register(&LotteryRiskCollector{})
 }
 
+// LotteryRiskMetrics holds structured metrics from the lottery risk analysis.
+type LotteryRiskMetrics struct {
+	Directories []DirectoryOwnership
+}
+
+// DirectoryOwnership describes ownership distribution for a single directory.
+type DirectoryOwnership struct {
+	Path        string
+	LotteryRisk int
+	Authors     []AuthorShare
+	TotalLines  int
+}
+
+// AuthorShare describes a single author's ownership share of a directory.
+type AuthorShare struct {
+	Name      string
+	Ownership float64
+}
+
 // LotteryRiskCollector analyzes git blame and commit history to identify
 // directories with low lottery risk (single-author ownership risk).
 type LotteryRiskCollector struct {
 	// ghCtx is set during testing to inject a mock GitHub API.
 	ghCtx *githubContext
+
+	// metrics stores structured ownership data for all analyzed directories.
+	metrics *LotteryRiskMetrics
 }
 
 // authorStats tracks per-author contribution metrics within a directory.
@@ -136,8 +158,9 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 		anon = newNameAnonymizer()
 	}
 
-	// Compute lottery risk for each directory and build signals.
+	// Compute lottery risk for each directory and build signals + metrics.
 	var signals []signal.RawSignal
+	var metricsDirectories []DirectoryOwnership
 	for _, dir := range dirs {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -151,11 +174,16 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 		bf := computeLotteryRisk(own)
 		own.LotteryRisk = bf
 
+		// Build metrics entry for every non-empty directory.
+		metricsDirectories = append(metricsDirectories, buildDirectoryOwnership(own))
+
 		if bf <= defaultLotteryRiskThreshold {
 			sig := buildLotteryRiskSignal(own, anon)
 			signals = append(signals, sig)
 		}
 	}
+
+	c.metrics = &LotteryRiskMetrics{Directories: metricsDirectories}
 
 	// Review participation analysis via GitHub API (optional).
 	if ghCtx != nil {
@@ -488,6 +516,41 @@ func totalCommitWeight(own *dirOwnership) float64 {
 	return total
 }
 
+// buildDirectoryOwnership converts internal dirOwnership into the exported
+// DirectoryOwnership metrics type.
+func buildDirectoryOwnership(own *dirOwnership) DirectoryOwnership {
+	totalBlameLines := own.TotalLines
+	totalCW := totalCommitWeight(own)
+
+	var authors []AuthorShare
+	for name, stats := range own.Authors {
+		var blameFrac float64
+		if totalBlameLines > 0 {
+			blameFrac = float64(stats.BlameLines) / float64(totalBlameLines)
+		}
+		var commitFrac float64
+		if totalCW > 0 {
+			commitFrac = stats.CommitWeight / totalCW
+		}
+		ownership := blameFrac*blameWeight + commitFrac*commitWeightFraction
+		authors = append(authors, AuthorShare{Name: name, Ownership: ownership})
+	}
+
+	sort.Slice(authors, func(i, j int) bool {
+		if authors[i].Ownership != authors[j].Ownership {
+			return authors[i].Ownership > authors[j].Ownership
+		}
+		return authors[i].Name < authors[j].Name
+	})
+
+	return DirectoryOwnership{
+		Path:        own.Path,
+		LotteryRisk: own.LotteryRisk,
+		Authors:     authors,
+		TotalLines:  own.TotalLines,
+	}
+}
+
 // buildLotteryRiskSignal constructs a RawSignal for a low-lottery-risk directory.
 // If anon is non-nil, author names are anonymized.
 func buildLotteryRiskSignal(own *dirOwnership, anon *nameAnonymizer) signal.RawSignal {
@@ -800,5 +863,9 @@ func buildReviewConcentrationSignals(reviewData map[string]*reviewParticipation,
 	return signals
 }
 
-// Compile-time interface check.
+// Metrics returns structured ownership data for all analyzed directories.
+func (c *LotteryRiskCollector) Metrics() any { return c.metrics }
+
+// Compile-time interface checks.
 var _ collector.Collector = (*LotteryRiskCollector)(nil)
+var _ collector.MetricsProvider = (*LotteryRiskCollector)(nil)
