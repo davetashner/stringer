@@ -193,6 +193,15 @@ func runScan(cmd *cobra.Command, args []string) error {
 		newSignals := state.FilterNew(allSignals, prevState)
 		slog.Info("delta filter", "total", len(allSignals), "new", len(newSignals))
 		result.Signals = newSignals
+
+		// 10.5a. Compute and display diff summary to stderr.
+		if prevState != nil {
+			currentState := state.Build(absPath, collectorNames, allSignals)
+			diff := state.ComputeDiff(prevState, currentState)
+			if err := state.FormatDiff(diff, absPath, cmd.ErrOrStderr()); err != nil {
+				slog.Warn("failed to write diff summary", "error", err)
+			}
+		}
 	}
 
 	// 10.5. Beads-aware dedup: filter signals already tracked as beads.

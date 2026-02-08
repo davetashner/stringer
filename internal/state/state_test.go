@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -226,4 +227,429 @@ func TestFilterNew_EmptyPrevHashes(t *testing.T) {
 	prev := &ScanState{SignalHashes: nil}
 	result := FilterNew(signals, prev)
 	assert.Len(t, result, 1, "empty hash list should treat all as new")
+}
+
+func TestBuild_PopulatesSignalMetas(t *testing.T) {
+	dir := t.TempDir()
+	signals := []signal.RawSignal{
+		{Source: "todos", Kind: "todo", FilePath: "main.go", Line: 42, Title: "implement caching"},
+		{Source: "gitlog", Kind: "churn", FilePath: "config.go", Line: 0, Title: "High churn: config.go"},
+	}
+
+	s := Build(dir, []string{"todos", "gitlog"}, signals)
+	require.Len(t, s.SignalMetas, 2)
+	require.Len(t, s.SignalHashes, 2)
+
+	// Verify metas match signal content.
+	assert.Equal(t, "todos", s.SignalMetas[0].Source)
+	assert.Equal(t, "todo", s.SignalMetas[0].Kind)
+	assert.Equal(t, "main.go", s.SignalMetas[0].FilePath)
+	assert.Equal(t, 42, s.SignalMetas[0].Line)
+	assert.Equal(t, "implement caching", s.SignalMetas[0].Title)
+	assert.Equal(t, s.SignalHashes[0], s.SignalMetas[0].Hash)
+
+	assert.Equal(t, "gitlog", s.SignalMetas[1].Source)
+	assert.Equal(t, "churn", s.SignalMetas[1].Kind)
+	assert.Equal(t, "config.go", s.SignalMetas[1].FilePath)
+	assert.Equal(t, 0, s.SignalMetas[1].Line)
+	assert.Equal(t, "High churn: config.go", s.SignalMetas[1].Title)
+	assert.Equal(t, s.SignalHashes[1], s.SignalMetas[1].Hash)
+}
+
+func TestComputeDiff_AllNew(t *testing.T) {
+	prev := &ScanState{}
+	current := &ScanState{
+		SignalMetas: []SignalMeta{
+			{Hash: "aaa", Source: "todos", Kind: "todo", FilePath: "main.go", Line: 10, Title: "A"},
+			{Hash: "bbb", Source: "todos", Kind: "todo", FilePath: "main.go", Line: 20, Title: "B"},
+		},
+	}
+
+	diff := ComputeDiff(prev, current)
+	assert.Len(t, diff.Added, 2)
+	assert.Empty(t, diff.Removed)
+	assert.Empty(t, diff.Moved)
+}
+
+func TestComputeDiff_AllRemoved(t *testing.T) {
+	prev := &ScanState{
+		SignalMetas: []SignalMeta{
+			{Hash: "aaa", Source: "todos", Kind: "todo", FilePath: "old.go", Line: 10, Title: "A"},
+			{Hash: "bbb", Source: "todos", Kind: "todo", FilePath: "old.go", Line: 20, Title: "B"},
+		},
+	}
+	current := &ScanState{}
+
+	diff := ComputeDiff(prev, current)
+	assert.Empty(t, diff.Added)
+	assert.Len(t, diff.Removed, 2)
+	assert.Empty(t, diff.Moved)
+}
+
+func TestComputeDiff_Mixed(t *testing.T) {
+	prev := &ScanState{
+		SignalMetas: []SignalMeta{
+			{Hash: "aaa", Source: "todos", Kind: "todo", FilePath: "old.go", Line: 10, Title: "kept"},
+			{Hash: "bbb", Source: "todos", Kind: "fixme", FilePath: "old.go", Line: 20, Title: "removed"},
+		},
+	}
+	current := &ScanState{
+		SignalMetas: []SignalMeta{
+			{Hash: "aaa", Source: "todos", Kind: "todo", FilePath: "old.go", Line: 10, Title: "kept"},
+			{Hash: "ccc", Source: "todos", Kind: "todo", FilePath: "new.go", Line: 5, Title: "added"},
+		},
+	}
+
+	diff := ComputeDiff(prev, current)
+	require.Len(t, diff.Added, 1)
+	assert.Equal(t, "added", diff.Added[0].Title)
+	require.Len(t, diff.Removed, 1)
+	assert.Equal(t, "removed", diff.Removed[0].Title)
+	assert.Empty(t, diff.Moved)
+}
+
+func TestComputeDiff_MovedSignal(t *testing.T) {
+	// Same title+kind, different file path — should be detected as moved.
+	prev := &ScanState{
+		SignalMetas: []SignalMeta{
+			{Hash: "aaa", Source: "todos", Kind: "todo", FilePath: "parser/old.go", Line: 15, Title: "refactor parser"},
+		},
+	}
+	current := &ScanState{
+		SignalMetas: []SignalMeta{
+			{Hash: "bbb", Source: "todos", Kind: "todo", FilePath: "parser/new.go", Line: 22, Title: "refactor parser"},
+		},
+	}
+
+	diff := ComputeDiff(prev, current)
+	assert.Empty(t, diff.Added)
+	assert.Empty(t, diff.Removed)
+	require.Len(t, diff.Moved, 1)
+	assert.Equal(t, "parser/old.go", diff.Moved[0].Previous.FilePath)
+	assert.Equal(t, 15, diff.Moved[0].Previous.Line)
+	assert.Equal(t, "parser/new.go", diff.Moved[0].Current.FilePath)
+	assert.Equal(t, 22, diff.Moved[0].Current.Line)
+}
+
+func TestComputeDiff_NoChange(t *testing.T) {
+	state := &ScanState{
+		SignalMetas: []SignalMeta{
+			{Hash: "aaa", Source: "todos", Kind: "todo", FilePath: "main.go", Line: 10, Title: "A"},
+			{Hash: "bbb", Source: "todos", Kind: "todo", FilePath: "main.go", Line: 20, Title: "B"},
+		},
+	}
+
+	diff := ComputeDiff(state, state)
+	assert.Empty(t, diff.Added)
+	assert.Empty(t, diff.Removed)
+	assert.Empty(t, diff.Moved)
+}
+
+func TestAnnotateRemovedSignals_DeletedFile(t *testing.T) {
+	dir := t.TempDir()
+	// Do NOT create the file — it should be considered deleted.
+	removed := []SignalMeta{
+		{Source: "todos", Kind: "todo", FilePath: "nonexistent.go", Line: 10, Title: "fix bug"},
+	}
+
+	annotated := AnnotateRemovedSignals(dir, removed)
+	require.Len(t, annotated, 1)
+	assert.Equal(t, "file_deleted", annotated[0].Resolution)
+	assert.Equal(t, "fix bug", annotated[0].Title)
+}
+
+func TestAnnotateRemovedSignals_ExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	// Create the file so it is NOT considered deleted.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "exists.go"), []byte("package main"), 0o600))
+
+	removed := []SignalMeta{
+		{Source: "todos", Kind: "todo", FilePath: "exists.go", Line: 5, Title: "cleanup"},
+	}
+
+	annotated := AnnotateRemovedSignals(dir, removed)
+	require.Len(t, annotated, 1)
+	assert.Equal(t, "", annotated[0].Resolution)
+}
+
+func TestAnnotateRemovedSignals_EmptyFilePath(t *testing.T) {
+	dir := t.TempDir()
+	removed := []SignalMeta{
+		{Source: "gitlog", Kind: "churn", Title: "High churn"},
+	}
+
+	annotated := AnnotateRemovedSignals(dir, removed)
+	require.Len(t, annotated, 1)
+	assert.Equal(t, "", annotated[0].Resolution, "empty file path should not be marked as deleted")
+}
+
+func TestFormatDiff_Output(t *testing.T) {
+	dir := t.TempDir()
+	// Create a file so the "still exists" resolved signal does not get [file deleted].
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "legacy.go"), []byte("package main"), 0o600))
+
+	diff := &DiffResult{
+		Added: []SignalMeta{
+			{Source: "todos", Kind: "todo", FilePath: "main.go", Line: 42, Title: "implement caching"},
+			{Source: "gitlog", Kind: "churn", FilePath: "config.go", Title: "High churn: config.go"},
+		},
+		Removed: []SignalMeta{
+			{Source: "todos", Kind: "fixme", FilePath: "old.go", Line: 10, Title: "broken validation"},
+			{Source: "patterns", Kind: "large_file", FilePath: "legacy.go", Title: "Large file: legacy.go"},
+		},
+		Moved: []MovedSignal{
+			{
+				Previous: SignalMeta{Source: "todos", Kind: "todo", FilePath: "parser/old.go", Line: 15, Title: "refactor parser"},
+				Current:  SignalMeta{Source: "todos", Kind: "todo", FilePath: "parser/new.go", Line: 22, Title: "refactor parser"},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	err := FormatDiff(diff, dir, &buf)
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "Delta scan summary:")
+	assert.Contains(t, output, "+ 2 new signal(s)")
+	assert.Contains(t, output, "- 2 resolved signal(s)")
+	assert.Contains(t, output, "~ 1 moved signal(s)")
+	assert.Contains(t, output, "+ [todos] implement caching (main.go:42)")
+	assert.Contains(t, output, "+ [gitlog] High churn: config.go (config.go)")
+	assert.Contains(t, output, "- [todos] broken validation (old.go:10) [file deleted]")
+	assert.Contains(t, output, "- [patterns] Large file: legacy.go (legacy.go)")
+	assert.NotContains(t, output, "Large file: legacy.go (legacy.go) [file deleted]")
+	assert.Contains(t, output, "~ [todos] refactor parser")
+	assert.Contains(t, output, "from: parser/old.go:15")
+	assert.Contains(t, output, "to:   parser/new.go:22")
+}
+
+func TestFormatDiff_NoChanges(t *testing.T) {
+	diff := &DiffResult{}
+
+	var buf bytes.Buffer
+	err := FormatDiff(diff, t.TempDir(), &buf)
+	require.NoError(t, err)
+	assert.Contains(t, buf.String(), "no changes")
+}
+
+func TestFormatDiff_OnlyAdded(t *testing.T) {
+	diff := &DiffResult{
+		Added: []SignalMeta{
+			{Source: "todos", Kind: "todo", FilePath: "main.go", Line: 1, Title: "new thing"},
+		},
+	}
+
+	var buf bytes.Buffer
+	err := FormatDiff(diff, t.TempDir(), &buf)
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.Contains(t, output, "New signals:")
+	assert.NotContains(t, output, "Resolved signals:")
+	assert.NotContains(t, output, "Moved signals:")
+}
+
+func TestFormatDiff_OnlyRemoved(t *testing.T) {
+	diff := &DiffResult{
+		Removed: []SignalMeta{
+			{Source: "todos", Kind: "todo", FilePath: "gone.go", Line: 5, Title: "old thing"},
+		},
+	}
+
+	var buf bytes.Buffer
+	err := FormatDiff(diff, t.TempDir(), &buf)
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.NotContains(t, output, "New signals:")
+	assert.Contains(t, output, "Resolved signals:")
+	assert.NotContains(t, output, "Moved signals:")
+}
+
+func TestBackwardCompat_V1State(t *testing.T) {
+	dir := t.TempDir()
+	// Write a v1 state file (no signal_metas field).
+	v1State := map[string]interface{}{
+		"version":        "1",
+		"scan_timestamp": "2026-02-07T12:00:00Z",
+		"git_head":       "abc123",
+		"collectors":     []string{"todos"},
+		"signal_hashes":  []string{"deadbeef", "cafebabe"},
+		"signal_count":   2,
+	}
+	data, err := json.MarshalIndent(v1State, "", "  ")
+	require.NoError(t, err)
+
+	stateDir := filepath.Join(dir, ".stringer")
+	require.NoError(t, os.MkdirAll(stateDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(stateDir, "last-scan.json"), data, 0o600))
+
+	// Load should succeed — v1 states have no SignalMetas.
+	loaded, err := Load(dir)
+	require.NoError(t, err)
+	require.NotNil(t, loaded)
+
+	assert.Equal(t, "1", loaded.Version)
+	assert.Equal(t, []string{"deadbeef", "cafebabe"}, loaded.SignalHashes)
+	assert.Nil(t, loaded.SignalMetas, "v1 state should have nil SignalMetas")
+	assert.Equal(t, 2, loaded.SignalCount)
+
+	// FilterNew should still work with v1 state (uses SignalHashes).
+	signals := []signal.RawSignal{
+		{Source: "todos", Kind: "todo", Title: "new signal"},
+	}
+	filtered := FilterNew(signals, loaded)
+	assert.Len(t, filtered, 1, "FilterNew should work with v1 state")
+
+	// ComputeDiff should handle empty SignalMetas gracefully.
+	current := &ScanState{
+		SignalMetas: []SignalMeta{
+			{Hash: "newmeta", Source: "todos", Kind: "todo", Title: "new"},
+		},
+	}
+	diff := ComputeDiff(loaded, current)
+	assert.Len(t, diff.Added, 1, "all current signals should be added vs v1 state")
+	assert.Empty(t, diff.Removed, "no removals since v1 has no metas")
+}
+
+func TestFormatDiff_OnlyMoved(t *testing.T) {
+	diff := &DiffResult{
+		Moved: []MovedSignal{
+			{
+				Previous: SignalMeta{Source: "todos", Kind: "todo", FilePath: "old.go", Line: 5, Title: "move me"},
+				Current:  SignalMeta{Source: "todos", Kind: "todo", FilePath: "new.go", Line: 15, Title: "move me"},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	err := FormatDiff(diff, t.TempDir(), &buf)
+	require.NoError(t, err)
+
+	output := buf.String()
+	assert.NotContains(t, output, "New signals:")
+	assert.NotContains(t, output, "Resolved signals:")
+	assert.Contains(t, output, "Moved signals:")
+	assert.Contains(t, output, "~ 1 moved signal(s)")
+	assert.Contains(t, output, "~ [todos] move me")
+	assert.Contains(t, output, "from: old.go:5")
+	assert.Contains(t, output, "to:   new.go:15")
+}
+
+func TestCollectorsMatch_SameLengthDifferentContent(t *testing.T) {
+	prev := &ScanState{Collectors: []string{"gitlog", "todos"}}
+	assert.False(t, CollectorsMatch(prev, []string{"patterns", "todos"}))
+}
+
+func TestSave_ReadOnlyDirectory(t *testing.T) {
+	dir := t.TempDir()
+	// Create a file where the .stringer directory should be, blocking MkdirAll.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".stringer"), []byte("not a dir"), 0o600))
+
+	s := &ScanState{
+		Version:      "2",
+		Collectors:   []string{"todos"},
+		SignalHashes: []string{"abc"},
+		SignalCount:  1,
+	}
+
+	err := Save(dir, s)
+	assert.Error(t, err, "Save should fail when .stringer is a file, not directory")
+}
+
+func TestBuild_EmptyGitRepo(t *testing.T) {
+	// Create a git repo WITHOUT an initial commit — Head() will fail.
+	dir := t.TempDir()
+	_, err := gogit.PlainInit(dir, false)
+	require.NoError(t, err)
+
+	s := Build(dir, []string{"todos"}, nil)
+	assert.Empty(t, s.GitHead, "empty git repo should have empty HEAD")
+}
+
+func TestLoad_UnreadableFile(t *testing.T) {
+	dir := t.TempDir()
+	stateDir := filepath.Join(dir, ".stringer")
+	require.NoError(t, os.MkdirAll(stateDir, 0o750))
+	statePath := filepath.Join(stateDir, "last-scan.json")
+	require.NoError(t, os.WriteFile(statePath, []byte(`{"version":"2"}`), 0o600))
+	// Make the file unreadable.
+	require.NoError(t, os.Chmod(statePath, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(statePath, 0o600) })
+
+	s, err := Load(dir)
+	assert.Error(t, err)
+	assert.Nil(t, s)
+}
+
+func TestFormatLocation(t *testing.T) {
+	tests := []struct {
+		name     string
+		meta     SignalMeta
+		expected string
+	}{
+		{
+			name:     "with line number",
+			meta:     SignalMeta{FilePath: "main.go", Line: 42},
+			expected: "main.go:42",
+		},
+		{
+			name:     "without line number",
+			meta:     SignalMeta{FilePath: "main.go", Line: 0},
+			expected: "main.go",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, formatLocation(tt.meta))
+		})
+	}
+}
+
+func TestComputeDiff_MovedSameFileNewLine(t *testing.T) {
+	// Signal moved within the same file (different line number).
+	prev := &ScanState{
+		SignalMetas: []SignalMeta{
+			{Hash: "aaa", Source: "todos", Kind: "todo", FilePath: "main.go", Line: 10, Title: "fix this"},
+		},
+	}
+	current := &ScanState{
+		SignalMetas: []SignalMeta{
+			{Hash: "bbb", Source: "todos", Kind: "todo", FilePath: "main.go", Line: 50, Title: "fix this"},
+		},
+	}
+
+	diff := ComputeDiff(prev, current)
+	assert.Empty(t, diff.Added)
+	assert.Empty(t, diff.Removed)
+	require.Len(t, diff.Moved, 1)
+	assert.Equal(t, 10, diff.Moved[0].Previous.Line)
+	assert.Equal(t, 50, diff.Moved[0].Current.Line)
+}
+
+func TestSave_Load_RoundTrip_V2WithMetas(t *testing.T) {
+	dir := t.TempDir()
+	original := &ScanState{
+		Version:       "2",
+		ScanTimestamp: time.Date(2026, 2, 7, 12, 0, 0, 0, time.UTC),
+		GitHead:       "abc123",
+		Collectors:    []string{"todos"},
+		SignalHashes:  []string{"deadbeef"},
+		SignalMetas: []SignalMeta{
+			{Hash: "deadbeef", Source: "todos", Kind: "todo", FilePath: "main.go", Line: 42, Title: "test"},
+		},
+		SignalCount: 1,
+	}
+
+	require.NoError(t, Save(dir, original))
+
+	loaded, err := Load(dir)
+	require.NoError(t, err)
+	require.NotNil(t, loaded)
+
+	assert.Equal(t, original.Version, loaded.Version)
+	require.Len(t, loaded.SignalMetas, 1)
+	assert.Equal(t, original.SignalMetas[0], loaded.SignalMetas[0])
 }
