@@ -43,6 +43,8 @@ type githubAPI interface {
 	ListPullRequests(ctx context.Context, owner, repo string, opts *github.PullRequestListOptions) ([]*github.PullRequest, *github.Response, error)
 	ListReviews(ctx context.Context, owner, repo string, number int, opts *github.ListOptions) ([]*github.PullRequestReview, *github.Response, error)
 	ListReviewComments(ctx context.Context, owner, repo string, number int, opts *github.PullRequestListCommentsOptions) ([]*github.PullRequestComment, *github.Response, error)
+	ListPullRequestFiles(ctx context.Context, owner, repo string, number int, opts *github.ListOptions) ([]*github.CommitFile, *github.Response, error)
+	GetRepository(ctx context.Context, owner, repo string) (*github.Repository, *github.Response, error)
 }
 
 // realGitHubAPI wraps the real go-github client to implement githubAPI.
@@ -64,6 +66,14 @@ func (r *realGitHubAPI) ListReviews(ctx context.Context, owner, repo string, num
 
 func (r *realGitHubAPI) ListReviewComments(ctx context.Context, owner, repo string, number int, opts *github.PullRequestListCommentsOptions) ([]*github.PullRequestComment, *github.Response, error) {
 	return r.client.PullRequests.ListComments(ctx, owner, repo, number, opts)
+}
+
+func (r *realGitHubAPI) ListPullRequestFiles(ctx context.Context, owner, repo string, number int, opts *github.ListOptions) ([]*github.CommitFile, *github.Response, error) {
+	return r.client.PullRequests.ListFiles(ctx, owner, repo, number, opts)
+}
+
+func (r *realGitHubAPI) GetRepository(ctx context.Context, owner, repo string) (*github.Repository, *github.Response, error) {
+	return r.client.Repositories.Get(ctx, owner, repo)
 }
 
 // GitHubCollector imports open issues, pull requests, and actionable review

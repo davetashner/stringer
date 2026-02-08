@@ -64,6 +64,14 @@ func (m *mockGitHubAPI) ListReviewComments(_ context.Context, _, _ string, numbe
 	return comments, resp, m.commentErr
 }
 
+func (m *mockGitHubAPI) ListPullRequestFiles(_ context.Context, _, _ string, _ int, _ *github.ListOptions) ([]*github.CommitFile, *github.Response, error) {
+	return nil, emptyResponse(), nil
+}
+
+func (m *mockGitHubAPI) GetRepository(_ context.Context, _, _ string) (*github.Repository, *github.Response, error) {
+	return nil, emptyResponse(), nil
+}
+
 func emptyResponse() *github.Response {
 	return &github.Response{
 		Response: &http.Response{StatusCode: http.StatusOK},
@@ -669,6 +677,14 @@ func (m *paginatingMockAPI) ListReviewComments(_ context.Context, _, _ string, n
 		return nil, emptyResponse(), nil
 	}
 	return m.comments[number], emptyResponse(), nil
+}
+
+func (m *paginatingMockAPI) ListPullRequestFiles(_ context.Context, _, _ string, _ int, _ *github.ListOptions) ([]*github.CommitFile, *github.Response, error) {
+	return nil, emptyResponse(), nil
+}
+
+func (m *paginatingMockAPI) GetRepository(_ context.Context, _, _ string) (*github.Repository, *github.Response, error) {
+	return nil, emptyResponse(), nil
 }
 
 // --- Helper functions ---
