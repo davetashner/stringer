@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -313,7 +314,8 @@ func BuildResolvedTodoSignals(repoPath string, removed []SignalMeta) []signal.Ra
 
 	signals := make([]signal.RawSignal, 0, len(annotated))
 	for _, a := range annotated {
-		desc := fmt.Sprintf("Resolved TODO at %s", formatLocation(a.SignalMeta))
+		module := moduleFromFilePath(a.FilePath)
+		desc := fmt.Sprintf("Module: %s\nResolved TODO at %s", module, formatLocation(a.SignalMeta))
 		if a.Resolution == "file_deleted" {
 			desc += " (file deleted)"
 		}
@@ -418,6 +420,21 @@ func formatLocation(m SignalMeta) string {
 		return fmt.Sprintf("%s:%d", m.FilePath, m.Line)
 	}
 	return m.FilePath
+}
+
+// moduleFromFilePath derives a module name from a file path.
+// e.g., "internal/collectors/todos.go" → "internal/collectors"
+// Root-level files return ".".
+func moduleFromFilePath(path string) string {
+	parts := strings.Split(path, "/")
+	switch {
+	case len(parts) >= 3:
+		return parts[0] + "/" + parts[1]
+	case len(parts) == 2:
+		return parts[0]
+	default:
+		return "."
+	}
 }
 
 // resolveHead returns the git HEAD commit hash, or empty string if not a git repo.
