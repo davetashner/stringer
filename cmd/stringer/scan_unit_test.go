@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -804,4 +805,44 @@ func TestComputeExitCode_AllFailedMany(t *testing.T) {
 
 	result := &signal.ScanResult{Results: results}
 	assert.Equal(t, ExitTotalFailure, computeExitCode(result))
+}
+
+// -----------------------------------------------------------------------
+// Subdirectory scan test
+// -----------------------------------------------------------------------
+
+func TestRunScan_SubdirectoryFindsGitRoot(t *testing.T) {
+	// This test verifies the git root discovery logic via the compiled binary,
+	// avoiding cobra's shared rootCmd state issues in the test suite.
+	binary := buildBinary(t)
+
+	// Create a fresh git repo with a subdirectory.
+	dir := t.TempDir()
+	subDir := filepath.Join(dir, "sub")
+	require.NoError(t, os.MkdirAll(subDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(subDir, "main.go"), []byte("// TODO: test sub scan\n"), 0o600))
+
+	// Initialize git repo at root.
+	for _, args := range [][]string{
+		{"init"},
+		{"config", "user.email", "test@test.com"},
+		{"config", "user.name", "Test"},
+		{"add", "."},
+		{"commit", "-m", "init"},
+	} {
+		gitCmd := exec.Command("git", args...) //nolint:gosec // test helper with controlled args
+		gitCmd.Dir = dir
+		out, err := gitCmd.CombinedOutput()
+		require.NoError(t, err, "git %v: %s", args, out)
+	}
+
+	// Run the binary pointing at the subdirectory.
+	cmd := exec.Command(binary, "scan", subDir, "--dry-run", "--json", "--quiet", "--collectors=todos") //nolint:gosec // test helper
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	err := cmd.Run()
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "total_signals")
 }

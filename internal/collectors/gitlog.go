@@ -63,7 +63,12 @@ func (c *GitlogCollector) Name() string { return "gitlog" }
 
 // Collect scans the repository at repoPath for git-level signals.
 func (c *GitlogCollector) Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error) {
-	repo, err := git.PlainOpen(repoPath)
+	// Use GitRoot if set (subdirectory scans), otherwise fall back to repoPath.
+	gitRoot := repoPath
+	if opts.GitRoot != "" {
+		gitRoot = opts.GitRoot
+	}
+	repo, err := git.PlainOpen(gitRoot)
 	if err != nil {
 		return nil, fmt.Errorf("opening repo: %w", err)
 	}

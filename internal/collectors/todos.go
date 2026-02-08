@@ -74,7 +74,12 @@ func (c *TodoCollector) Collect(ctx context.Context, repoPath string, opts signa
 	excludes := mergeExcludes(opts.ExcludePatterns)
 
 	// Open the git repo once for blame lookups.
-	repo, err := git.PlainOpen(repoPath)
+	// Use GitRoot if set (subdirectory scans), otherwise fall back to repoPath.
+	gitRoot := repoPath
+	if opts.GitRoot != "" {
+		gitRoot = opts.GitRoot
+	}
+	repo, err := git.PlainOpen(gitRoot)
 	if err != nil {
 		// If it's not a git repo, we can still scan files, just without blame.
 		repo = nil
@@ -134,8 +139,14 @@ func (c *TodoCollector) Collect(ctx context.Context, repoPath string, opts signa
 			return nil // skip files we can't read
 		}
 
+		// For blame, we need the path relative to gitRoot (not repoPath).
+		blameRelPath := relPath
+		if gitRoot != repoPath {
+			blameRelPath, _ = filepath.Rel(gitRoot, path)
+		}
+
 		for i := range found {
-			enrichWithBlame(repo, relPath, &found[i])
+			enrichWithBlame(repo, blameRelPath, &found[i])
 			found[i].Confidence = computeConfidence(found[i])
 		}
 

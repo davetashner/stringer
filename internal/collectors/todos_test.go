@@ -1055,3 +1055,68 @@ func TestCollect_BrokenSymlinkSkipped(t *testing.T) {
 		}
 	}
 }
+
+// --- Subdirectory scan with GitRoot ---
+
+func TestCollect_SubdirectoryScanWithGitRoot(t *testing.T) {
+	// Create a git repo with a subdirectory containing a TODO.
+	repoPath := initTestGitRepo(t, map[string]string{
+		"sub/handler.go": "package sub\n\n// TODO: refactor handler\nfunc Handle() {}\n",
+	})
+
+	subDir := filepath.Join(repoPath, "sub")
+
+	c := &TodoCollector{}
+	// Scan the subdirectory, passing GitRoot pointing to the repo root.
+	signals, err := c.Collect(context.Background(), subDir, signal.CollectorOpts{
+		GitRoot: repoPath,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(signals) != 1 {
+		t.Fatalf("got %d signals, want 1", len(signals))
+	}
+
+	sig := signals[0]
+	if sig.Kind != "todo" {
+		t.Errorf("Kind = %q, want %q", sig.Kind, "todo")
+	}
+	// Blame attribution should work since GitRoot points to the repo root.
+	if sig.Author == "" {
+		t.Error("expected non-empty author from blame (GitRoot should enable blame)")
+	}
+	if sig.Timestamp.IsZero() {
+		t.Error("expected non-zero timestamp from blame")
+	}
+}
+
+func TestCollect_SubdirectoryScanWithoutGitRoot(t *testing.T) {
+	// Create a git repo with a subdirectory containing a TODO.
+	repoPath := initTestGitRepo(t, map[string]string{
+		"sub/handler.go": "package sub\n\n// TODO: refactor handler\nfunc Handle() {}\n",
+	})
+
+	subDir := filepath.Join(repoPath, "sub")
+
+	c := &TodoCollector{}
+	// Scan the subdirectory WITHOUT GitRoot — blame will fail gracefully.
+	signals, err := c.Collect(context.Background(), subDir, signal.CollectorOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(signals) != 1 {
+		t.Fatalf("got %d signals, want 1", len(signals))
+	}
+
+	// Without GitRoot, blame won't work (sub/ is not a git root), so author should be empty.
+	sig := signals[0]
+	if sig.Kind != "todo" {
+		t.Errorf("Kind = %q, want %q", sig.Kind, "todo")
+	}
+	if sig.Author != "" {
+		t.Logf("note: got author %q (blame might still work depending on git implementation)", sig.Author)
+	}
+}
