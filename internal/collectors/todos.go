@@ -231,7 +231,7 @@ func scanFile(absPath, relPath string) ([]signal.RawSignal, error) {
 			FilePath: relPath,
 			Line:     lineNo,
 			Title:    fmt.Sprintf("%s: %s", keyword, message),
-			Tags:     []string{kind, "stringer-generated"},
+			Tags:     []string{kind},
 		})
 	}
 

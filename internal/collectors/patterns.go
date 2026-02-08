@@ -197,7 +197,7 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 				Title:       fmt.Sprintf("Large file: %s (%d lines)", relPath, lineCount),
 				Description: fmt.Sprintf("File exceeds %d-line threshold. Consider breaking it into smaller, focused modules.", threshold),
 				Confidence:  confidence,
-				Tags:        []string{"large-file", "stringer-generated"},
+				Tags:        []string{"large-file"},
 			})
 		}
 
@@ -224,7 +224,7 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 						Title:       fmt.Sprintf("No test file found for %s", relPath),
 						Description: "No corresponding test file was found using naming heuristics. Consider adding tests.",
 						Confidence:  missingTestConfidence,
-						Tags:        []string{"missing-tests", "stringer-generated"},
+						Tags:        []string{"missing-tests"},
 					})
 				}
 			}
@@ -282,7 +282,7 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 				Title:       fmt.Sprintf("Low test ratio in %s: %d test files / %d source files", dir, stats.testFiles, stats.sourceFiles),
 				Description: fmt.Sprintf("Test-to-source ratio is %.1f%%, below the %.0f%% threshold. Consider adding more tests.", ratio*100, lowTestRatioThreshold*100),
 				Confidence:  lowTestRatioConfidence,
-				Tags:        []string{"low-test-ratio", "stringer-generated"},
+				Tags:        []string{"low-test-ratio"},
 			})
 		}
 	}
@@ -431,6 +431,24 @@ func hasTestCounterpart(absPath, relPath, repoPath string, testRoots []string) b
 		// e.g., "src/handler.py" -> "tests/src/test_handler.py"
 		relDir := filepath.Dir(relPath)
 		testDir := filepath.Join(repoPath, testRoot, relDir)
+		for _, candidate := range candidates {
+			if _, err := os.Stat(filepath.Join(testDir, candidate)); err == nil {
+				return true
+			}
+		}
+	}
+
+	// Try stripping the first path component for projects where the
+	// source root (e.g., "src/", "lib/", "homeassistant/") is not
+	// mirrored in the test tree.
+	for _, testRoot := range testRoots {
+		relDir := filepath.Dir(relPath)
+		parts := strings.SplitN(relDir, string(filepath.Separator), 2)
+		if len(parts) < 2 {
+			continue // only one component, nothing to strip
+		}
+		stripped := parts[1]
+		testDir := filepath.Join(repoPath, testRoot, stripped)
 		for _, candidate := range candidates {
 			if _, err := os.Stat(filepath.Join(testDir, candidate)); err == nil {
 				return true

@@ -38,7 +38,6 @@ func TestLotteryRiskCollector_SingleAuthor(t *testing.T) {
 		assert.Equal(t, "low-lottery-risk", sig.Kind)
 		assert.Equal(t, 0.8, sig.Confidence, "lottery risk 1 should have confidence 0.8")
 		assert.Contains(t, sig.Tags, "low-lottery-risk")
-		assert.Contains(t, sig.Tags, "stringer-generated")
 		assert.Contains(t, sig.Title, "lottery risk 1")
 		assert.Contains(t, sig.Title, "Test Author")
 	}
@@ -200,7 +199,6 @@ func TestLotteryRiskCollector_SignalFields(t *testing.T) {
 	assert.Contains(t, sig.Description, "Top authors:")
 	assert.InDelta(t, 0.8, sig.Confidence, 0.001)
 	assert.Contains(t, sig.Tags, "low-lottery-risk")
-	assert.Contains(t, sig.Tags, "stringer-generated")
 }
 
 // --- Recency decay function tests ---

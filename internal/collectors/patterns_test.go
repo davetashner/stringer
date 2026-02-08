@@ -42,7 +42,6 @@ func TestLargeFileDetected(t *testing.T) {
 	assert.GreaterOrEqual(t, largeFileSignals[0].Confidence, 0.4)
 	assert.LessOrEqual(t, largeFileSignals[0].Confidence, 0.8)
 	assert.Contains(t, largeFileSignals[0].Tags, "large-file")
-	assert.Contains(t, largeFileSignals[0].Tags, "stringer-generated")
 }
 
 func TestLargeFileNotDetectedUnderThreshold(t *testing.T) {
@@ -950,6 +949,29 @@ func TestHasTestCounterpart_NoParallelRoots(t *testing.T) {
 		"src/handler.py",
 		dir,
 		nil,
+	))
+}
+
+func TestHasTestCounterpart_ParallelTestTreeStrippedRoot(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create homeassistant/components/light/sensor.py (source file with
+	// a top-level directory that is NOT mirrored in the test tree).
+	srcDir := filepath.Join(dir, "homeassistant", "components", "light")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "sensor.py"), []byte("# source\n"), 0o600))
+
+	// Create tests/components/light/test_sensor.py (first component stripped).
+	testDir := filepath.Join(dir, "tests", "components", "light")
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(testDir, "test_sensor.py"), []byte("# test\n"), 0o600))
+
+	// With testRoots = ["tests"], should find the counterpart via stripping.
+	assert.True(t, hasTestCounterpart(
+		filepath.Join(srcDir, "sensor.py"),
+		"homeassistant/components/light/sensor.py",
+		dir,
+		[]string{"tests"},
 	))
 }
 

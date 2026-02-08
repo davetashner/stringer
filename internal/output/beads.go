@@ -21,7 +21,7 @@ type beadRecord struct {
 	Type        string   `json:"type"`
 	Priority    int      `json:"priority"`
 	Status      string   `json:"status"`
-	CreatedAt   string   `json:"created_at"`
+	CreatedAt   string   `json:"created_at,omitempty"`
 	CreatedBy   string   `json:"created_by"`
 	Labels      []string `json:"labels,omitempty"`
 	ClosedAt    string   `json:"closed_at,omitempty"`

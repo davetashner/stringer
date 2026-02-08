@@ -618,7 +618,7 @@ func buildLotteryRiskSignal(own *dirOwnership, anon *nameAnonymizer) signal.RawS
 		Title:       fmt.Sprintf("Low lottery risk: %s (lottery risk %d, primary: %s %.0f%%)", dirPath, own.LotteryRisk, primary.Name, primary.Pct),
 		Description: strings.Join(descParts, "\n"),
 		Confidence:  confidence,
-		Tags:        []string{"low-lottery-risk", "stringer-generated"},
+		Tags:        []string{"low-lottery-risk"},
 	}
 }
 
@@ -854,7 +854,7 @@ func buildReviewConcentrationSignals(reviewData map[string]*reviewParticipation,
 					Title:       fmt.Sprintf("Review bottleneck: %s reviews %.0f%% of PRs in %s", displayName, fraction*100, dirPath),
 					Description: fmt.Sprintf("Reviewer %s handled %d of %d reviews (%.0f%%) in %s. Consider distributing review responsibility to reduce knowledge silos.", displayName, count, totalReviews, fraction*100, dirPath),
 					Confidence:  0.6,
-					Tags:        []string{"review-concentration", "stringer-generated"},
+					Tags:        []string{"review-concentration"},
 				})
 			}
 		}
