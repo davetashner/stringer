@@ -50,6 +50,16 @@ func resetScanFlags() {
 	})
 }
 
+// fixtureDir returns the testdata/fixtures/sample-repo path (a small directory
+// with TODOs inside the git repo). Use this instead of repoRoot for tests that
+// exercise flag behavior rather than collector thoroughness — scanning the full
+// repo triggers git blame on every file and can exceed the test timeout.
+func fixtureDir(t *testing.T) string {
+	t.Helper()
+	root := repoRoot(t)
+	return filepath.Join(root, "testdata", "fixtures", "sample-repo")
+}
+
 // -----------------------------------------------------------------------
 // exitCodeError tests
 // -----------------------------------------------------------------------
@@ -518,10 +528,10 @@ func TestRunScan_UnknownCollector(t *testing.T) {
 
 func TestRunScan_DryRunInProcess(t *testing.T) {
 	resetScanFlags()
-	root := repoRoot(t)
+	dir := fixtureDir(t)
 
 	cmd, stdout, _ := newTestCmd()
-	cmd.SetArgs([]string{"scan", root, "--dry-run", "--quiet", "--collectors=todos"})
+	cmd.SetArgs([]string{"scan", dir, "--dry-run", "--quiet", "--collectors=todos"})
 
 	err := cmd.Execute()
 	// dry-run with exit code OK returns nil
@@ -534,10 +544,10 @@ func TestRunScan_DryRunInProcess(t *testing.T) {
 
 func TestRunScan_DryRunJSONInProcess(t *testing.T) {
 	resetScanFlags()
-	root := repoRoot(t)
+	dir := fixtureDir(t)
 
 	cmd, stdout, _ := newTestCmd()
-	cmd.SetArgs([]string{"scan", root, "--dry-run", "--json", "--quiet", "--collectors=todos"})
+	cmd.SetArgs([]string{"scan", dir, "--dry-run", "--json", "--quiet", "--collectors=todos"})
 
 	err := cmd.Execute()
 	require.NoError(t, err)
@@ -559,11 +569,11 @@ func TestRunScan_DryRunJSONInProcess(t *testing.T) {
 
 func TestRunScan_OutputToFile(t *testing.T) {
 	resetScanFlags()
-	root := repoRoot(t)
+	dir := fixtureDir(t)
 	outFile := filepath.Join(t.TempDir(), "output.jsonl")
 
 	cmd, _, _ := newTestCmd()
-	cmd.SetArgs([]string{"scan", root, "-o", outFile, "--quiet", "--collectors=todos"})
+	cmd.SetArgs([]string{"scan", dir, "-o", outFile, "--quiet", "--collectors=todos"})
 
 	err := cmd.Execute()
 	require.NoError(t, err)
@@ -582,10 +592,10 @@ func TestRunScan_OutputToFile(t *testing.T) {
 
 func TestRunScan_OutputToInvalidFile(t *testing.T) {
 	resetScanFlags()
-	root := repoRoot(t)
+	dir := fixtureDir(t)
 
 	cmd, _, _ := newTestCmd()
-	cmd.SetArgs([]string{"scan", root, "-o", "/nonexistent/dir/file.jsonl", "--quiet", "--collectors=todos"})
+	cmd.SetArgs([]string{"scan", dir, "-o", "/nonexistent/dir/file.jsonl", "--quiet", "--collectors=todos"})
 
 	err := cmd.Execute()
 	require.Error(t, err)
@@ -615,10 +625,10 @@ func TestRunScan_DefaultPathUsesCurrentDir(t *testing.T) {
 
 func TestRunScan_BeadsFormatInProcess(t *testing.T) {
 	resetScanFlags()
-	root := repoRoot(t)
+	dir := fixtureDir(t)
 
 	cmd, stdout, _ := newTestCmd()
-	cmd.SetArgs([]string{"scan", root, "--format=beads", "--quiet", "--collectors=todos"})
+	cmd.SetArgs([]string{"scan", dir, "--format=beads", "--quiet", "--collectors=todos"})
 
 	err := cmd.Execute()
 	require.NoError(t, err)
@@ -638,10 +648,10 @@ func TestRunScan_BeadsFormatInProcess(t *testing.T) {
 
 func TestRunScan_MaxIssuesInProcess(t *testing.T) {
 	resetScanFlags()
-	root := repoRoot(t)
+	dir := fixtureDir(t)
 
 	cmd, stdout, _ := newTestCmd()
-	cmd.SetArgs([]string{"scan", root, "--max-issues=2", "--quiet", "--collectors=todos"})
+	cmd.SetArgs([]string{"scan", dir, "--max-issues=2", "--quiet", "--collectors=todos"})
 
 	err := cmd.Execute()
 	require.NoError(t, err)
@@ -662,11 +672,11 @@ func TestRunScan_TooManyArgs(t *testing.T) {
 
 func TestRunScan_CollectorsTrimWhitespace(t *testing.T) {
 	resetScanFlags()
-	root := repoRoot(t)
+	dir := fixtureDir(t)
 
 	// Spaces around collector name should be trimmed.
 	cmd, stdout, _ := newTestCmd()
-	cmd.SetArgs([]string{"scan", root, "--collectors= todos ", "--dry-run", "--quiet"})
+	cmd.SetArgs([]string{"scan", dir, "--collectors= todos ", "--dry-run", "--quiet"})
 
 	err := cmd.Execute()
 	require.NoError(t, err)
@@ -677,10 +687,10 @@ func TestRunScan_CollectorsTrimWhitespace(t *testing.T) {
 
 func TestRunScan_NoLLMFlag(t *testing.T) {
 	resetScanFlags()
-	root := repoRoot(t)
+	dir := fixtureDir(t)
 
 	cmd, stdout, _ := newTestCmd()
-	cmd.SetArgs([]string{"scan", root, "--no-llm", "--dry-run", "--quiet", "--collectors=todos"})
+	cmd.SetArgs([]string{"scan", dir, "--no-llm", "--dry-run", "--quiet", "--collectors=todos"})
 
 	err := cmd.Execute()
 	require.NoError(t, err)
@@ -692,10 +702,10 @@ func TestRunScan_NoLLMFlag(t *testing.T) {
 
 func TestRunScan_VerboseFlag(t *testing.T) {
 	resetScanFlags()
-	root := repoRoot(t)
+	dir := fixtureDir(t)
 
 	cmd, stdout, _ := newTestCmd()
-	cmd.SetArgs([]string{"scan", root, "--verbose", "--dry-run", "--collectors=todos"})
+	cmd.SetArgs([]string{"scan", dir, "--verbose", "--dry-run", "--collectors=todos"})
 
 	err := cmd.Execute()
 	require.NoError(t, err)
@@ -935,9 +945,9 @@ func TestComputeExitCode_NoResults_Strict(t *testing.T) {
 
 func TestRunScan_MinConfidenceFilter(t *testing.T) {
 	resetScanFlags()
-	root := repoRoot(t)
+	dir := fixtureDir(t)
 	cmd, stdout, _ := newTestCmd()
-	cmd.SetArgs([]string{"scan", root, "--min-confidence=0.9", "--dry-run", "--quiet", "--collectors=todos"})
+	cmd.SetArgs([]string{"scan", dir, "--min-confidence=0.9", "--dry-run", "--quiet", "--collectors=todos"})
 	err := cmd.Execute()
 	require.NoError(t, err)
 	// With very high confidence filter, most/all signals should be filtered out.
@@ -951,9 +961,9 @@ func TestRunScan_MinConfidenceFilter(t *testing.T) {
 
 func TestRunScan_KindFilter(t *testing.T) {
 	resetScanFlags()
-	root := repoRoot(t)
+	dir := fixtureDir(t)
 	cmd, stdout, _ := newTestCmd()
-	cmd.SetArgs([]string{"scan", root, "--kind=todo", "--dry-run", "--quiet", "--collectors=todos"})
+	cmd.SetArgs([]string{"scan", dir, "--kind=todo", "--dry-run", "--quiet", "--collectors=todos"})
 	err := cmd.Execute()
 	require.NoError(t, err)
 	out := stdout.String()
@@ -962,9 +972,9 @@ func TestRunScan_KindFilter(t *testing.T) {
 
 func TestRunScan_KindFilterNoMatch(t *testing.T) {
 	resetScanFlags()
-	root := repoRoot(t)
+	dir := fixtureDir(t)
 	cmd, stdout, _ := newTestCmd()
-	cmd.SetArgs([]string{"scan", root, "--kind=nonexistentkind", "--dry-run", "--quiet", "--collectors=todos"})
+	cmd.SetArgs([]string{"scan", dir, "--kind=nonexistentkind", "--dry-run", "--quiet", "--collectors=todos"})
 	err := cmd.Execute()
 	require.NoError(t, err)
 	out := stdout.String()
