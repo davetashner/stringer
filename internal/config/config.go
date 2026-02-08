@@ -6,6 +6,7 @@ type Config struct {
 	OutputFormat string                     `yaml:"output_format,omitempty"`
 	MaxIssues    int                        `yaml:"max_issues,omitempty"`
 	NoLLM        bool                       `yaml:"no_llm,omitempty"`
+	BeadsAware   *bool                      `yaml:"beads_aware,omitempty"`
 	Collectors   map[string]CollectorConfig `yaml:"collectors,omitempty"`
 }
 

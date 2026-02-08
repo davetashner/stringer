@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/davetashner/stringer/internal/beads"
 	"github.com/davetashner/stringer/internal/collector"
 	_ "github.com/davetashner/stringer/internal/collectors"
 	"github.com/davetashner/stringer/internal/config"
@@ -192,6 +193,31 @@ func runScan(cmd *cobra.Command, args []string) error {
 		newSignals := state.FilterNew(allSignals, prevState)
 		slog.Info("delta filter", "total", len(allSignals), "new", len(newSignals))
 		result.Signals = newSignals
+	}
+
+	// 10.5. Beads-aware dedup: filter signals already tracked as beads.
+	beadsAwareEnabled := fileCfg.BeadsAware == nil || *fileCfg.BeadsAware
+	if beadsAwareEnabled {
+		existingBeads, beadsErr := beads.LoadBeads(absPath)
+		if beadsErr != nil {
+			slog.Warn("failed to load existing beads", "error", beadsErr)
+		} else if existingBeads != nil {
+			before := len(result.Signals)
+			result.Signals = beads.FilterAgainstExisting(result.Signals, existingBeads)
+			slog.Info("beads dedup", "before", before, "after", len(result.Signals),
+				"filtered", before-len(result.Signals))
+
+			// Adopt beads conventions for output formatting.
+			if scanCfg.OutputFormat == "beads" {
+				if conventions := beads.DetectConventions(existingBeads); conventions != nil {
+					if f, _ := output.GetFormatter("beads"); f != nil {
+						if bf, ok := f.(*output.BeadsFormatter); ok {
+							bf.SetConventions(conventions)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// 11. Determine exit code based on collector results.
