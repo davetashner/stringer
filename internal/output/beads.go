@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davetashner/stringer/internal/beads"
 	"github.com/davetashner/stringer/internal/signal"
 )
 
@@ -30,7 +31,9 @@ func init() {
 }
 
 // BeadsFormatter writes signals as Beads-compatible JSONL.
-type BeadsFormatter struct{}
+type BeadsFormatter struct {
+	conventions *beads.Conventions
+}
 
 // Compile-time interface check.
 var _ Formatter = (*BeadsFormatter)(nil)
@@ -38,6 +41,12 @@ var _ Formatter = (*BeadsFormatter)(nil)
 // NewBeadsFormatter returns a new BeadsFormatter.
 func NewBeadsFormatter() *BeadsFormatter {
 	return &BeadsFormatter{}
+}
+
+// SetConventions configures the formatter to adopt existing beads conventions.
+// Passing nil resets to default behavior.
+func (b *BeadsFormatter) SetConventions(c *beads.Conventions) {
+	b.conventions = c
 }
 
 // Name returns the format name.
@@ -49,7 +58,7 @@ func (b *BeadsFormatter) Name() string {
 // Each line is valid JSON parseable by `bd import`.
 func (b *BeadsFormatter) Format(signals []signal.RawSignal, w io.Writer) error {
 	for i, sig := range signals {
-		rec := signalToBead(sig)
+		rec := b.signalToBead(sig)
 		data, err := json.Marshal(rec)
 		if err != nil {
 			return fmt.Errorf("marshal signal %d: %w", i, err)
@@ -65,9 +74,9 @@ func (b *BeadsFormatter) Format(signals []signal.RawSignal, w io.Writer) error {
 }
 
 // signalToBead converts a RawSignal into a beadRecord.
-func signalToBead(sig signal.RawSignal) beadRecord {
+func (b *BeadsFormatter) signalToBead(sig signal.RawSignal) beadRecord {
 	return beadRecord{
-		ID:          generateID(sig),
+		ID:          b.generateID(sig),
 		Title:       sig.Title,
 		Description: buildDescription(sig),
 		Type:        mapKindToType(sig.Kind),
@@ -75,21 +84,26 @@ func signalToBead(sig signal.RawSignal) beadRecord {
 		Status:      "open",
 		CreatedAt:   formatTimestamp(sig.Timestamp),
 		CreatedBy:   resolveAuthor(sig.Author),
-		Labels:      buildLabels(sig),
+		Labels:      b.buildLabels(sig),
 	}
 }
 
 // generateID produces a deterministic ID from signal content.
 // It hashes Source + Kind + FilePath + Line + Title using SHA-256,
-// truncates to 8 hex characters, and prefixes with "str-".
-func generateID(sig signal.RawSignal) string {
+// truncates to 8 hex characters, and prefixes with "str-" (or the
+// convention prefix if set).
+func (b *BeadsFormatter) generateID(sig signal.RawSignal) string {
 	h := sha256.New()
 	// Write each field separated by null bytes to avoid collisions
 	// from field concatenation (e.g., "ab"+"c" vs "a"+"bc").
 	// sha256.Hash.Write never returns an error per the hash.Hash contract.
 	_, _ = fmt.Fprintf(h, "%s\x00%s\x00%s\x00%d\x00%s", sig.Source, sig.Kind, sig.FilePath, sig.Line, sig.Title)
 	sum := h.Sum(nil)
-	return fmt.Sprintf("str-%x", sum[:4])
+	prefix := "str-"
+	if b.conventions != nil && b.conventions.IDPrefix != "" {
+		prefix = b.conventions.IDPrefix
+	}
+	return fmt.Sprintf("%s%x", prefix, sum[:4])
 }
 
 // mapKindToType maps a signal Kind to a bead type.
@@ -162,10 +176,14 @@ func buildDescription(sig signal.RawSignal) string {
 }
 
 // buildLabels combines signal tags with standard stringer labels.
-func buildLabels(sig signal.RawSignal) []string {
+func (b *BeadsFormatter) buildLabels(sig signal.RawSignal) []string {
 	labels := make([]string, 0, len(sig.Tags)+2)
 	labels = append(labels, sig.Tags...)
-	labels = append(labels, "stringer-generated")
+	generatedLabel := "stringer-generated"
+	if b.conventions != nil && b.conventions.LabelStyle == "snake_case" {
+		generatedLabel = "stringer_generated"
+	}
+	labels = append(labels, generatedLabel)
 	if sig.Source != "" {
 		labels = append(labels, sig.Source)
 	}
