@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-git/v5"
+
 	"github.com/davetashner/stringer/internal/signal"
 )
 
@@ -571,5 +573,429 @@ func TestCollect_BlameAttribution(t *testing.T) {
 	}
 	if sig.Timestamp.IsZero() {
 		t.Error("Timestamp should not be zero for committed file")
+	}
+}
+
+// --- matchesAny edge case tests ---
+
+func TestMatchesAny_DoubleStarPatterns(t *testing.T) {
+	tests := []struct {
+		name     string
+		relPath  string
+		patterns []string
+		want     bool
+	}{
+		{
+			name:     "double_star_prefix_match",
+			relPath:  "src/components/button.go",
+			patterns: []string{"src/**/*.go"},
+			want:     true,
+		},
+		{
+			name:     "double_star_no_suffix_match",
+			relPath:  "src/anything/deep/nested.go",
+			patterns: []string{"src/**"},
+			want:     true,
+		},
+		{
+			name:     "double_star_prefix_no_match",
+			relPath:  "lib/components/button.go",
+			patterns: []string{"src/**/*.go"},
+			want:     false,
+		},
+		{
+			name:     "double_star_suffix_no_match",
+			relPath:  "src/components/button.py",
+			patterns: []string{"src/**/*.go"},
+			want:     false,
+		},
+		{
+			name:     "double_star_root_match",
+			relPath:  "foo.go",
+			patterns: []string{"**/*.go"},
+			want:     true,
+		},
+		{
+			name:     "empty_patterns_returns_false",
+			relPath:  "anything.go",
+			patterns: []string{},
+			want:     false,
+		},
+		{
+			name:     "invalid_pattern_does_not_panic",
+			relPath:  "foo.go",
+			patterns: []string{"[invalid"},
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := matchesAny(tt.relPath, tt.patterns)
+			if got != tt.want {
+				t.Errorf("matchesAny(%q, %v) = %v, want %v", tt.relPath, tt.patterns, got, tt.want)
+			}
+		})
+	}
+}
+
+// --- enrichWithBlame edge case tests ---
+
+func TestEnrichWithBlame_NilRepo(t *testing.T) {
+	sig := signal.RawSignal{Line: 1}
+	enrichWithBlame(nil, "any.go", &sig)
+	if sig.Author != "" {
+		t.Errorf("expected empty author when repo is nil, got %q", sig.Author)
+	}
+}
+
+func TestEnrichWithBlame_LineOutOfBounds(t *testing.T) {
+	repoPath := initTestGitRepo(t, map[string]string{
+		"small.go": "package main\n",
+	})
+
+	repo, err := git.PlainOpen(repoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Line 100 is way beyond the file (1 line), so blame should skip gracefully.
+	sig := signal.RawSignal{Line: 100}
+	enrichWithBlame(repo, "small.go", &sig)
+	if sig.Author != "" {
+		t.Errorf("expected empty author for out-of-bounds line, got %q", sig.Author)
+	}
+}
+
+func TestEnrichWithBlame_LineZero(t *testing.T) {
+	repoPath := initTestGitRepo(t, map[string]string{
+		"z.go": "package main\n",
+	})
+
+	repo, err := git.PlainOpen(repoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Line=0 → idx=-1 which is out of bounds.
+	sig := signal.RawSignal{Line: 0}
+	enrichWithBlame(repo, "z.go", &sig)
+	if sig.Author != "" {
+		t.Errorf("expected empty author for line=0, got %q", sig.Author)
+	}
+}
+
+func TestEnrichWithBlame_NegativeLine(t *testing.T) {
+	repoPath := initTestGitRepo(t, map[string]string{
+		"neg.go": "package main\n",
+	})
+
+	repo, err := git.PlainOpen(repoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sig := signal.RawSignal{Line: -5}
+	enrichWithBlame(repo, "neg.go", &sig)
+	if sig.Author != "" {
+		t.Errorf("expected empty author for negative line, got %q", sig.Author)
+	}
+}
+
+func TestEnrichWithBlame_NonexistentFile(t *testing.T) {
+	repoPath := initTestGitRepo(t, map[string]string{
+		"exists.go": "package main\n",
+	})
+
+	repo, err := git.PlainOpen(repoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Blame on a file not in the repo should fail gracefully.
+	sig := signal.RawSignal{Line: 1}
+	enrichWithBlame(repo, "nonexistent.go", &sig)
+	if sig.Author != "" {
+		t.Errorf("expected empty author for nonexistent file, got %q", sig.Author)
+	}
+}
+
+// --- blameFile edge case tests ---
+
+func TestBlameFile_EmptyRepo(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := git.PlainInit(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Empty repo has no HEAD, so blameFile should return an error.
+	result, err := blameFile(repo, "any.go")
+	if err == nil {
+		t.Error("expected error for empty repo with no HEAD")
+	}
+	if result != nil {
+		t.Error("expected nil result for empty repo")
+	}
+}
+
+func TestBlameFile_NonexistentFile(t *testing.T) {
+	repoPath := initTestGitRepo(t, map[string]string{
+		"exists.go": "package main\n",
+	})
+
+	repo, err := git.PlainOpen(repoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Blaming a file that doesn't exist in the commit tree should return error.
+	_, err = blameFile(repo, "does-not-exist.go")
+	if err == nil {
+		t.Error("expected error for nonexistent file in blame")
+	}
+}
+
+func TestBlameFile_ValidFile(t *testing.T) {
+	repoPath := initTestGitRepo(t, map[string]string{
+		"real.go": "package main\n// line two\n",
+	})
+
+	repo, err := git.PlainOpen(repoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := blameFile(repo, "real.go")
+	if err != nil {
+		t.Fatalf("blameFile() error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil blame result")
+	}
+	if len(result.Lines) != 2 {
+		t.Errorf("expected 2 blame lines, got %d", len(result.Lines))
+	}
+}
+
+// --- computeConfidence edge case tests ---
+
+func TestComputeConfidence_UnknownKeyword(t *testing.T) {
+	sig := signal.RawSignal{Kind: "unknown"}
+	got := computeConfidence(sig)
+	if !floatEqual(got, 0.5) {
+		t.Errorf("computeConfidence(unknown keyword) = %v, want 0.5", got)
+	}
+}
+
+// --- isBinaryFile edge case tests ---
+
+func TestIsBinaryFile_Nonexistent(t *testing.T) {
+	if !isBinaryFile("/nonexistent/path/to/file") {
+		t.Error("nonexistent file should be treated as binary (unreadable)")
+	}
+}
+
+func TestIsBinaryFile_EmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty")
+	if err := os.WriteFile(path, []byte{}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Empty file read returns n=0 and err (EOF), treated as binary.
+	if !isBinaryFile(path) {
+		t.Error("empty file should be treated as binary")
+	}
+}
+
+// --- scanFile edge case tests ---
+
+func TestScanFile_NonexistentFile(t *testing.T) {
+	_, err := scanFile("/nonexistent/path.go", "path.go")
+	if err == nil {
+		t.Error("expected error for nonexistent file")
+	}
+}
+
+func TestScanFile_EmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.go")
+	if err := os.WriteFile(path, []byte{}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	signals, err := scanFile(path, "empty.go")
+	if err != nil {
+		t.Fatalf("scanFile() error: %v", err)
+	}
+	if len(signals) != 0 {
+		t.Errorf("expected 0 signals for empty file, got %d", len(signals))
+	}
+}
+
+func TestScanFile_BlockCommentStripping(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "block.go")
+	content := "/* TODO: refactor this code */\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	signals, err := scanFile(path, "block.go")
+	if err != nil {
+		t.Fatalf("scanFile() error: %v", err)
+	}
+	if len(signals) != 1 {
+		t.Fatalf("expected 1 signal, got %d", len(signals))
+	}
+	// Verify trailing */ was stripped from the title.
+	if signals[0].Title != "TODO: refactor this code" {
+		t.Errorf("Title = %q, want %q", signals[0].Title, "TODO: refactor this code")
+	}
+}
+
+// --- shouldExclude edge case tests ---
+
+func TestShouldExclude_InvalidPattern(t *testing.T) {
+	// An invalid glob pattern should not cause a crash.
+	got := shouldExclude("foo.go", []string{"[invalid"})
+	if got {
+		t.Error("invalid pattern should not match")
+	}
+}
+
+// --- Collect edge case: symlink outside repo ---
+
+func TestCollect_SymlinkOutsideRepoSkipped(t *testing.T) {
+	// Create two directories: repo and outside.
+	repoPath := initTestGitRepo(t, map[string]string{
+		"main.go": "// TODO: inside repo\n",
+	})
+
+	outsideDir := t.TempDir()
+	outsidePath := filepath.Join(outsideDir, "external.go")
+	if err := os.WriteFile(outsidePath, []byte("// TODO: outside repo\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a symlink inside the repo pointing outside.
+	symlinkPath := filepath.Join(repoPath, "external_link.go")
+	if err := os.Symlink(outsidePath, symlinkPath); err != nil {
+		t.Skip("symlinks not supported on this OS")
+	}
+
+	c := &TodoCollector{}
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, sig := range signals {
+		if sig.FilePath == "external_link.go" {
+			t.Error("symlink pointing outside repo should be skipped")
+		}
+	}
+}
+
+// --- Collect edge case: unreadable directory entry ---
+
+func TestCollect_WalkDirErrorContinues(t *testing.T) {
+	repoPath := initTestGitRepo(t, map[string]string{
+		"good.go": "// TODO: readable\n",
+	})
+
+	c := &TodoCollector{}
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The collector should still find signals from readable files.
+	if len(signals) < 1 {
+		t.Error("expected at least 1 signal from readable file")
+	}
+}
+
+// --- Collect edge case: excluded file pattern (not directory) ---
+
+func TestCollect_ExcludedFilePattern(t *testing.T) {
+	repoPath := initTestGitRepo(t, map[string]string{
+		"main.go":          "// TODO: keep this\n",
+		"generated.min.js": "// TODO: should be excluded\n",
+	})
+
+	c := &TodoCollector{}
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{
+		ExcludePatterns: []string{"*.min.js"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, sig := range signals {
+		if sig.FilePath == "generated.min.js" {
+			t.Error("excluded file pattern should skip the file")
+		}
+	}
+
+	// Should still find the TODO in main.go.
+	if len(signals) != 1 {
+		t.Fatalf("expected 1 signal, got %d", len(signals))
+	}
+	if signals[0].FilePath != "main.go" {
+		t.Errorf("expected main.go, got %s", signals[0].FilePath)
+	}
+}
+
+// --- Collect edge case: unreadable source file ---
+
+func TestCollect_UnreadableFileSkipped(t *testing.T) {
+	repoPath := initTestGitRepo(t, map[string]string{
+		"good.go": "// TODO: readable\n",
+	})
+
+	// Create a file that can't be read.
+	noReadPath := filepath.Join(repoPath, "noread.go")
+	if err := os.WriteFile(noReadPath, []byte("// TODO: secret\n"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+
+	c := &TodoCollector{}
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Should still get the signal from good.go.
+	for _, sig := range signals {
+		if sig.FilePath == "noread.go" {
+			t.Error("unreadable file should be skipped")
+		}
+	}
+}
+
+// --- Collect edge case: broken symlink ---
+
+func TestCollect_BrokenSymlinkSkipped(t *testing.T) {
+	repoPath := initTestGitRepo(t, map[string]string{
+		"main.go": "// TODO: real\n",
+	})
+
+	// Create a broken symlink.
+	symlinkPath := filepath.Join(repoPath, "broken_link.go")
+	if err := os.Symlink("/nonexistent/target.go", symlinkPath); err != nil {
+		t.Skip("symlinks not supported on this OS")
+	}
+
+	c := &TodoCollector{}
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, sig := range signals {
+		if sig.FilePath == "broken_link.go" {
+			t.Error("broken symlink should be skipped")
+		}
 	}
 }
