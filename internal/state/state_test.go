@@ -629,6 +629,90 @@ func TestComputeDiff_MovedSameFileNewLine(t *testing.T) {
 	assert.Equal(t, 50, diff.Moved[0].Current.Line)
 }
 
+func TestBuildResolvedTodoSignals_FiltersToTodosOnly(t *testing.T) {
+	dir := t.TempDir()
+	removed := []SignalMeta{
+		{Source: "todos", Kind: "todo", FilePath: "main.go", Line: 10, Title: "fix bug"},
+		{Source: "gitlog", Kind: "churn", FilePath: "config.go", Title: "High churn"},
+		{Source: "todos", Kind: "fixme", FilePath: "util.go", Line: 5, Title: "clean up"},
+		{Source: "patterns", Kind: "large_file", FilePath: "big.go", Title: "Large file"},
+	}
+
+	signals := BuildResolvedTodoSignals(dir, removed)
+	require.Len(t, signals, 2)
+	assert.Equal(t, "fix bug", signals[0].Title)
+	assert.Equal(t, "clean up", signals[1].Title)
+	for _, s := range signals {
+		assert.Equal(t, "todos", s.Source)
+	}
+}
+
+func TestBuildResolvedTodoSignals_SignalFields(t *testing.T) {
+	dir := t.TempDir()
+	removed := []SignalMeta{
+		{Source: "todos", Kind: "todo", FilePath: "handler.go", Line: 42, Title: "implement retry logic"},
+	}
+
+	before := time.Now()
+	signals := BuildResolvedTodoSignals(dir, removed)
+	after := time.Now()
+
+	require.Len(t, signals, 1)
+	s := signals[0]
+
+	assert.Equal(t, "todos", s.Source)
+	assert.Equal(t, "todo", s.Kind)
+	assert.Equal(t, "handler.go", s.FilePath)
+	assert.Equal(t, 42, s.Line)
+	assert.Equal(t, "implement retry logic", s.Title)
+	assert.Contains(t, s.Description, "handler.go:42")
+	assert.InEpsilon(t, 0.3, s.Confidence, 0.001)
+	assert.Equal(t, []string{"todo", "pre-closed", "resolved", "stringer-generated"}, s.Tags)
+	assert.False(t, s.ClosedAt.IsZero(), "ClosedAt should be set")
+	assert.True(t, !s.ClosedAt.Before(before) && !s.ClosedAt.After(after), "ClosedAt should be approximately now")
+	assert.False(t, s.Timestamp.IsZero(), "Timestamp should be set")
+}
+
+func TestBuildResolvedTodoSignals_FileDeleted(t *testing.T) {
+	dir := t.TempDir()
+	// Do NOT create the file — it should be detected as deleted.
+	removed := []SignalMeta{
+		{Source: "todos", Kind: "todo", FilePath: "deleted.go", Line: 1, Title: "old todo"},
+	}
+
+	signals := BuildResolvedTodoSignals(dir, removed)
+	require.Len(t, signals, 1)
+	assert.Contains(t, signals[0].Description, "file deleted")
+}
+
+func TestBuildResolvedTodoSignals_FileExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "exists.go"), []byte("package main"), 0o600))
+
+	removed := []SignalMeta{
+		{Source: "todos", Kind: "fixme", FilePath: "exists.go", Line: 5, Title: "resolved fixme"},
+	}
+
+	signals := BuildResolvedTodoSignals(dir, removed)
+	require.Len(t, signals, 1)
+	assert.NotContains(t, signals[0].Description, "file deleted")
+	assert.Contains(t, signals[0].Description, "exists.go:5")
+}
+
+func TestBuildResolvedTodoSignals_Empty(t *testing.T) {
+	dir := t.TempDir()
+
+	// Empty input.
+	signals := BuildResolvedTodoSignals(dir, nil)
+	assert.Nil(t, signals)
+
+	// No todos in removed signals.
+	signals = BuildResolvedTodoSignals(dir, []SignalMeta{
+		{Source: "gitlog", Kind: "churn", FilePath: "x.go", Title: "churn"},
+	})
+	assert.Nil(t, signals)
+}
+
 func TestSave_Load_RoundTrip_V2WithMetas(t *testing.T) {
 	dir := t.TempDir()
 	original := &ScanState{
