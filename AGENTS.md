@@ -18,12 +18,17 @@ stringer/
 │   ├── collector/          # Collector registry and interface
 │   │   └── collector.go        # Register(), List(), Get(), Collector interface
 │   ├── collectors/         # Signal extraction modules
-│   │   └── todos.go            # TODO/FIXME/HACK/XXX/BUG/OPTIMIZE scanner
+│   │   ├── todos.go            # TODO/FIXME/HACK/XXX/BUG/OPTIMIZE scanner
+│   │   ├── gitlog.go           # Reverts, high-churn files, stale branches
+│   │   └── patterns.go         # Large files, low test coverage ratios
 │   ├── output/             # Output formatters
 │   │   ├── formatter.go        # Formatter interface and registry
-│   │   └── beads.go            # Beads JSONL writer (primary)
+│   │   ├── beads.go            # Beads JSONL writer (primary)
+│   │   ├── json.go             # JSON with metadata envelope
+│   │   └── markdown.go         # Human-readable markdown summary
 │   ├── pipeline/           # Scan orchestration
-│   │   ├── pipeline.go         # New(), Run() — runs collectors, caps output
+│   │   ├── pipeline.go         # New(), Run() — parallel execution via errgroup
+│   │   ├── dedup.go            # Content-based signal deduplication
 │   │   └── validate.go         # ScanConfig validation
 │   ├── redact/             # Secret redaction
 │   │   └── redact.go           # Scrub sensitive patterns from signal content
@@ -44,7 +49,7 @@ stringer/
 └── CLAUDE.md
 ```
 
-**Note:** The collector architecture is extensible (see [Adding a new collector](#adding-a-new-collector)) but v0.1.0 ships with one implementation: the TODO collector. Planned collectors (gitlog, github, patterns) and additional formatters (markdown, json) are on the roadmap.
+**Note:** The collector architecture is extensible (see [Adding a new collector](#adding-a-new-collector)). v0.2.0 ships with three collectors (todos, gitlog, patterns) and three output formats (beads, json, markdown). See [docs/release-strategy.md](docs/release-strategy.md) for versioning and release process.
 
 ## Tech Stack
 
@@ -53,7 +58,8 @@ stringer/
 - **Git interaction:** `go-git` for blame lookups
 - **Testing:** `stretchr/testify` for assertions
 - **Linting:** `golangci-lint` v2 with gosec
-- **Output:** Beads-compatible JSONL adhering to `bd import` expectations
+- **Output:** Beads JSONL, JSON, and Markdown formatters
+- **Release:** GoReleaser for cross-platform binaries and Homebrew tap
 
 ## Build & Test
 
@@ -70,8 +76,8 @@ golangci-lint run ./...
 # Run on a target repo
 ./stringer scan /path/to/repo
 
-# Only the TODO collector (currently the only one)
-./stringer scan /path/to/repo --collectors=todos
+# Run specific collectors
+./stringer scan /path/to/repo --collectors=todos,gitlog
 
 # Dry run (preview signal count without writing JSONL)
 ./stringer scan /path/to/repo --dry-run
@@ -228,7 +234,7 @@ Optional but valuable:
 | `Format` | `gofmt` formatting compliance |
 | `Lint` | `golangci-lint` (includes gosec SAST) |
 | `Tidy` | `go.mod` / `go.sum` are tidy |
-| `Coverage` | Test coverage above 55% threshold |
+| `Coverage` | Test coverage above 90% threshold |
 | `Vulncheck` | No known vulnerabilities in dependencies |
 | `Binary Size` | Binary does not exceed 2x baseline (`.github/binary-size-baseline`) |
 | `Commit Lint` | PR commits follow conventional commits format (PRs only) |
@@ -236,6 +242,19 @@ Optional but valuable:
 | `License Check` | All dependency licenses are OSS-compatible |
 
 **No exceptions.** Branch protection enforces these checks for all users including admins. If CI is broken, fix the checks — do not bypass them.
+
+## Releasing
+
+See [docs/release-strategy.md](docs/release-strategy.md) for the full release strategy, versioning policy, and Homebrew tap setup.
+
+**Quick release checklist:**
+
+1. Ensure `main` is clean, CI is green, README is up to date
+2. Tag: `git tag v0.x.0 && git push origin v0.x.0`
+3. GoReleaser runs automatically via `.github/workflows/release.yml`
+4. Verify the [GitHub Release](https://github.com/davetashner/stringer/releases) has binaries and checksums
+
+**Version is injected at build time** — never hardcode it. GoReleaser sets `-X main.Version={{.Version}}` via ldflags. During development, `stringer version` shows `dev`.
 
 ## Use Beads for task tracking
 

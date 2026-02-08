@@ -12,7 +12,7 @@
 [![Release](https://img.shields.io/github/v/release/davetashner/stringer)](https://github.com/davetashner/stringer/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **Status: v0.1.0 — MVP.** Works today with TODO/FIXME scanning and Beads JSONL output. One collector, one output format. See [Current Limitations](#current-limitations) for what's not here yet.
+> **Status: v0.2.0.** Three collectors, three output formats, parallel pipeline with signal deduplication. See [Current Limitations](#current-limitations) for what's not here yet.
 
 **Codebase archaeology for [Beads](https://github.com/steveyegge/beads).** Mine your repo for actionable work items, output them as Beads-formatted issues, and give your AI agents instant situational awareness.
 
@@ -38,12 +38,23 @@ Stringer solves the cold-start problem. It mines signals already present in your
 
 ## What It Does Today
 
-Stringer v0.1.0 has one collector and one output format:
+### Collectors
 
-- **TODO collector** (`todos`) — Scans source files for `TODO`, `FIXME`, `HACK`, `XXX`, `BUG`, and `OPTIMIZE` comments across common comment styles (`//`, `#`, `/* */`, `*`, `--`)
-- **Git blame enrichment** — Each signal is enriched with author name and timestamp from `git blame`
-- **Confidence scoring** — Keyword-specific base scores with age-based boosts (see [How Output Works](#how-output-works))
-- **Beads JSONL output** — Produces JSONL ready for `bd import`, with deterministic content-based IDs
+- **TODO collector** (`todos`) — Scans source files for `TODO`, `FIXME`, `HACK`, `XXX`, `BUG`, and `OPTIMIZE` comments. Enriched with git blame author and timestamp. Confidence scoring with age-based boosts.
+- **Git log collector** (`gitlog`) — Detects reverts, high-churn files, and stale branches from git history.
+- **Patterns collector** (`patterns`) — Flags large files and modules with low test coverage ratios.
+
+### Output Formats
+
+- **Beads JSONL** (`beads`) — Produces JSONL ready for `bd import`, with deterministic content-based IDs
+- **JSON** (`json`) — Raw signals with metadata envelope, TTY-aware pretty/compact output
+- **Markdown** (`markdown`) — Human-readable summary grouped by collector with priority distribution
+
+### Pipeline
+
+- **Parallel execution** — Collectors run concurrently via errgroup
+- **Per-collector error modes** — skip, warn (default), or fail
+- **Signal deduplication** — Content-based SHA-256 hashing merges duplicate signals
 - **Dry-run mode** — Preview signal counts without producing output
 
 ```
@@ -51,23 +62,24 @@ Stringer v0.1.0 has one collector and one output format:
 │       Target Repository         │
 └────────────────┬────────────────┘
                  │
-          ┌──────▼──────┐
-          │ TODO/FIXME  │  ... extensible
-          │   Scanner   │
-          └──────┬──────┘
-                 │
-          ┌──────▼──────┐
-          │ Git Blame   │
-          │ Enrichment  │
-          └──────┬──────┘
-                 │
-          ┌──────▼──────┐
-          │ Beads JSONL │
-          │   Output    │
-          └──────┬──────┘
-                 │
+    ┌────────────┼────────────┐
+    ▼            ▼            ▼
+┌────────┐ ┌─────────┐ ┌──────────┐
+│ TODOs  │ │ Git Log │ │ Patterns │  (parallel)
+└───┬────┘ └────┬────┘ └────┬─────┘
+    └────────────┼───────────┘
                  ▼
-           bd import -i -
+          ┌──────────────┐
+          │    Dedup +    │
+          │  Validation   │
+          └──────┬───────┘
+                 │
+    ┌────────────┼────────────┐
+    ▼            ▼            ▼
+┌────────┐ ┌─────────┐ ┌──────────┐
+│ Beads  │ │  JSON   │ │ Markdown │
+│ JSONL  │ │         │ │          │
+└────────┘ └─────────┘ └──────────┘
 ```
 
 ## What to Expect
@@ -155,9 +167,9 @@ stringer scan [path] [flags]
 
 **Global flags:** `--quiet` (`-q`), `--verbose` (`-v`), `--no-color`, `--help` (`-h`)
 
-**Available collectors:** `todos`
+**Available collectors:** `todos`, `gitlog`, `patterns`
 
-**Available formats:** `beads`
+**Available formats:** `beads`, `json`, `markdown`
 
 ## How Output Works
 
@@ -227,7 +239,6 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 
 ## Current Limitations
 
-- **Single collector.** Only TODO/FIXME scanning. No git log analysis, GitHub issue import, or pattern detection yet.
 - **No delta scanning.** Every run scans the full repo. No way to find only new signals since the last scan.
 - **No LLM clustering.** The `--no-llm` flag exists but is a noop. There is no LLM pass to cluster related signals or infer dependencies.
 - **No config file.** No `.stringer.yaml` or global config. All options are CLI flags.
@@ -239,15 +250,14 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 
 Planned for future releases:
 
-- **Git log collector** — Detect reverts, high-churn files, WIP/stale branches
-- **GitHub issues collector** — Import open issues and PRs as beads
-- **Pattern collector** — Flag large files, missing tests, deep nesting
-- **Markdown output format** — Human-readable summary
-- **JSON output format** — Raw signals for custom processing
-- **LLM clustering pass** — Group related signals, infer dependencies, prioritize
-- **Config file support** — `.stringer.yaml` for persistent scan configuration
+- **GitHub issues collector** — Import open issues, PRs, and review comments as beads
+- **Bus factor analyzer** — Flag modules with single-author ownership risk
 - **Delta scanning** — Only find signals added since last scan
+- **Config file support** — `.stringer.yaml` for persistent scan configuration
+- **LLM clustering pass** — Group related signals, infer dependencies, prioritize
+- **Monorepo support** — Per-workspace scanning and scoped output
 - **`--min-confidence` flag** — Filter by confidence threshold with named presets
+- **`stringer docs`** — Auto-generate AGENTS.md scaffolds from repo structure
 
 ## Design Principles
 
