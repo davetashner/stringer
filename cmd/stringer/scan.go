@@ -303,6 +303,13 @@ func runScan(cmd *cobra.Command, args []string) error {
 			if err := state.FormatDiff(diff, absPath, cmd.ErrOrStderr()); err != nil {
 				slog.Warn("failed to write diff summary", "error", err)
 			}
+
+			// Emit resolved TODOs as pre-closed signals.
+			resolvedTodos := state.BuildResolvedTodoSignals(absPath, diff.Removed)
+			if len(resolvedTodos) > 0 {
+				slog.Info("resolved TODOs detected", "count", len(resolvedTodos))
+				result.Signals = append(result.Signals, resolvedTodos...)
+			}
 		}
 	}
 

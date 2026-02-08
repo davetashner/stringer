@@ -292,6 +292,48 @@ func AnnotateRemovedSignals(repoPath string, removed []SignalMeta) []AnnotatedSi
 	return annotated
 }
 
+// BuildResolvedTodoSignals converts removed TODO signals into closed RawSignals.
+// When delta scanning detects that a TODO has disappeared, this function creates
+// a pre-closed signal representing the resolved work item.
+func BuildResolvedTodoSignals(repoPath string, removed []SignalMeta) []signal.RawSignal {
+	// Filter to only TODO-sourced signals.
+	var todoRemoved []SignalMeta
+	for _, m := range removed {
+		if m.Source == "todos" {
+			todoRemoved = append(todoRemoved, m)
+		}
+	}
+	if len(todoRemoved) == 0 {
+		return nil
+	}
+
+	// Annotate with file deletion context.
+	annotated := AnnotateRemovedSignals(repoPath, todoRemoved)
+	now := time.Now()
+
+	signals := make([]signal.RawSignal, 0, len(annotated))
+	for _, a := range annotated {
+		desc := fmt.Sprintf("Resolved TODO at %s", formatLocation(a.SignalMeta))
+		if a.Resolution == "file_deleted" {
+			desc += " (file deleted)"
+		}
+
+		signals = append(signals, signal.RawSignal{
+			Source:      "todos",
+			Kind:        a.Kind,
+			FilePath:    a.FilePath,
+			Line:        a.Line,
+			Title:       a.Title,
+			Description: desc,
+			Confidence:  0.3,
+			Tags:        []string{a.Kind, "pre-closed", "resolved", "stringer-generated"},
+			ClosedAt:    now,
+			Timestamp:   now,
+		})
+	}
+	return signals
+}
+
 // FormatDiff writes a human-readable diff summary to w.
 // The output uses +/- notation similar to git diff.
 func FormatDiff(diff *DiffResult, repoPath string, w io.Writer) error {
