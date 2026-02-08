@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-git/go-git/v5"
-
 	"github.com/davetashner/stringer/internal/signal"
 )
 
@@ -697,64 +695,11 @@ func TestMatchesAny_DoubleStarPatterns(t *testing.T) {
 
 // --- enrichWithBlame edge case tests ---
 
-func TestEnrichWithBlame_NilRepo(t *testing.T) {
+func TestEnrichWithBlame_NoGitRoot(t *testing.T) {
 	sig := signal.RawSignal{Line: 1}
-	enrichWithBlame(nil, "any.go", &sig, "any.go")
+	enrichWithBlame(context.Background(), "", "any.go", &sig, "any.go")
 	if sig.Author != "" {
-		t.Errorf("expected empty author when repo is nil, got %q", sig.Author)
-	}
-}
-
-func TestEnrichWithBlame_LineOutOfBounds(t *testing.T) {
-	repoPath := initTestGitRepo(t, map[string]string{
-		"small.go": "package main\n",
-	})
-
-	repo, err := git.PlainOpen(repoPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Line 100 is way beyond the file (1 line), so blame should skip gracefully.
-	sig := signal.RawSignal{Line: 100}
-	enrichWithBlame(repo, "small.go", &sig, filepath.Join(repoPath, "small.go"))
-	if sig.Author != "" {
-		t.Errorf("expected empty author for out-of-bounds line, got %q", sig.Author)
-	}
-}
-
-func TestEnrichWithBlame_LineZero(t *testing.T) {
-	repoPath := initTestGitRepo(t, map[string]string{
-		"z.go": "package main\n",
-	})
-
-	repo, err := git.PlainOpen(repoPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Line=0 → idx=-1 which is out of bounds.
-	sig := signal.RawSignal{Line: 0}
-	enrichWithBlame(repo, "z.go", &sig, filepath.Join(repoPath, "z.go"))
-	if sig.Author != "" {
-		t.Errorf("expected empty author for line=0, got %q", sig.Author)
-	}
-}
-
-func TestEnrichWithBlame_NegativeLine(t *testing.T) {
-	repoPath := initTestGitRepo(t, map[string]string{
-		"neg.go": "package main\n",
-	})
-
-	repo, err := git.PlainOpen(repoPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	sig := signal.RawSignal{Line: -5}
-	enrichWithBlame(repo, "neg.go", &sig, filepath.Join(repoPath, "neg.go"))
-	if sig.Author != "" {
-		t.Errorf("expected empty author for negative line, got %q", sig.Author)
+		t.Errorf("expected empty author when gitRoot is empty, got %q", sig.Author)
 	}
 }
 
@@ -763,14 +708,10 @@ func TestEnrichWithBlame_NonexistentFile(t *testing.T) {
 		"exists.go": "package main\n",
 	})
 
-	repo, err := git.PlainOpen(repoPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Blame on a file not in the repo should fail gracefully.
+	// Blame on a file not in the repo should fail gracefully (mtime fallback).
 	sig := signal.RawSignal{Line: 1}
-	enrichWithBlame(repo, "nonexistent.go", &sig, filepath.Join(repoPath, "nonexistent.go"))
+	enrichWithBlame(context.Background(), repoPath, "nonexistent.go", &sig, filepath.Join(repoPath, "nonexistent.go"))
+	// nonexistent.go doesn't exist on disk either, so no mtime fallback.
 	if sig.Author != "" {
 		t.Errorf("expected empty author for nonexistent file, got %q", sig.Author)
 	}
@@ -781,11 +722,6 @@ func TestEnrichWithBlame_MtimeFallback(t *testing.T) {
 		"exists.go": "package main\n",
 	})
 
-	repo, err := git.PlainOpen(repoPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	// Create a file on disk that is NOT tracked in git, so blame fails.
 	untracked := filepath.Join(repoPath, "untracked.go")
 	if err := os.WriteFile(untracked, []byte("// TODO: fix\n"), 0o600); err != nil {
@@ -793,7 +729,7 @@ func TestEnrichWithBlame_MtimeFallback(t *testing.T) {
 	}
 
 	sig := signal.RawSignal{Line: 1, Tags: []string{"todo"}}
-	enrichWithBlame(repo, "untracked.go", &sig, untracked)
+	enrichWithBlame(context.Background(), repoPath, "untracked.go", &sig, untracked)
 
 	// Blame fails, but file exists → should get mtime as timestamp.
 	if sig.Timestamp.IsZero() {
@@ -813,64 +749,6 @@ func TestEnrichWithBlame_MtimeFallback(t *testing.T) {
 	// Author should remain empty (no blame data).
 	if sig.Author != "" {
 		t.Errorf("expected empty author, got %q", sig.Author)
-	}
-}
-
-// --- blameFile edge case tests ---
-
-func TestBlameFile_EmptyRepo(t *testing.T) {
-	dir := t.TempDir()
-	repo, err := git.PlainInit(dir, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Empty repo has no HEAD, so blameFile should return an error.
-	result, err := blameFile(repo, "any.go")
-	if err == nil {
-		t.Error("expected error for empty repo with no HEAD")
-	}
-	if result != nil {
-		t.Error("expected nil result for empty repo")
-	}
-}
-
-func TestBlameFile_NonexistentFile(t *testing.T) {
-	repoPath := initTestGitRepo(t, map[string]string{
-		"exists.go": "package main\n",
-	})
-
-	repo, err := git.PlainOpen(repoPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Blaming a file that doesn't exist in the commit tree should return error.
-	_, err = blameFile(repo, "does-not-exist.go")
-	if err == nil {
-		t.Error("expected error for nonexistent file in blame")
-	}
-}
-
-func TestBlameFile_ValidFile(t *testing.T) {
-	repoPath := initTestGitRepo(t, map[string]string{
-		"real.go": "package main\n// line two\n",
-	})
-
-	repo, err := git.PlainOpen(repoPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	result, err := blameFile(repo, "real.go")
-	if err != nil {
-		t.Fatalf("blameFile() error: %v", err)
-	}
-	if result == nil {
-		t.Fatal("expected non-nil blame result")
-	}
-	if len(result.Lines) != 2 {
-		t.Errorf("expected 2 blame lines, got %d", len(result.Lines))
 	}
 }
 

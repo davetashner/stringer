@@ -3,10 +3,10 @@ package collectors
 import (
 	"context"
 	"net/http"
+	"os/exec"
 	"testing"
 	"time"
 
-	gogit "github.com/go-git/go-git/v5"
 	"github.com/google/go-github/v68/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -120,8 +120,9 @@ func TestLotteryRiskCollector_OneDominant(t *testing.T) {
 
 func TestLotteryRiskCollector_EmptyRepo(t *testing.T) {
 	dir := t.TempDir()
-	_, err := gogit.PlainInit(dir, false)
-	require.NoError(t, err)
+	cmd := exec.Command("git", "init") //nolint:gosec // test
+	cmd.Dir = dir
+	require.NoError(t, cmd.Run())
 
 	c := &LotteryRiskCollector{}
 	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})

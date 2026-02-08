@@ -12,9 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-git/v5"
-
 	"github.com/davetashner/stringer/internal/collector"
+	"github.com/davetashner/stringer/internal/gitcli"
 	"github.com/davetashner/stringer/internal/signal"
 )
 
@@ -82,22 +81,21 @@ func (c *TodoCollector) Name() string { return "todos" }
 func (c *TodoCollector) Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error) {
 	excludes := mergeExcludes(opts.ExcludePatterns)
 
-	// Open the git repo once for blame lookups.
+	// Detect git root for blame lookups.
 	// Use GitRoot if set (subdirectory scans), otherwise fall back to repoPath.
 	gitRoot := repoPath
 	if opts.GitRoot != "" {
 		gitRoot = opts.GitRoot
 	}
-	repo, err := git.PlainOpen(gitRoot)
-	if err != nil {
-		// If it's not a git repo, we can still scan files, just without blame.
-		repo = nil
+	if _, err := gitcli.Run(ctx, gitRoot, "rev-parse", "--git-dir"); err != nil {
+		// Not a git repo — we can still scan files, just without blame.
+		gitRoot = ""
 	}
 
 	var signals []signal.RawSignal
 	var fileCount int
 
-	err = filepath.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil // skip unreadable entries
 		}
@@ -156,7 +154,7 @@ func (c *TodoCollector) Collect(ctx context.Context, repoPath string, opts signa
 		}
 
 		for i := range found {
-			enrichWithBlame(repo, blameRelPath, &found[i], path)
+			enrichWithBlame(ctx, gitRoot, blameRelPath, &found[i], path)
 			found[i].Confidence = computeConfidence(found[i])
 		}
 
@@ -245,13 +243,13 @@ func scanFile(absPath, relPath string) ([]signal.RawSignal, error) {
 // enrichWithBlame populates Author and Timestamp from git blame if available.
 // When blame fails (e.g. shallow clones), falls back to the file's mtime
 // and tags the signal with "estimated-timestamp".
-func enrichWithBlame(repo *git.Repository, relPath string, sig *signal.RawSignal, absPath string) {
-	if repo == nil {
+func enrichWithBlame(ctx context.Context, gitRoot string, relPath string, sig *signal.RawSignal, absPath string) {
+	if gitRoot == "" {
 		return
 	}
 
-	result, err := blameFile(repo, relPath)
-	if err != nil || result == nil {
+	author, ts, err := gitcli.BlameOneLine(ctx, gitRoot, relPath, sig.Line)
+	if err != nil {
 		// Blame failed — fall back to file mtime.
 		if info, statErr := os.Stat(absPath); statErr == nil {
 			sig.Timestamp = info.ModTime()
@@ -260,42 +258,8 @@ func enrichWithBlame(repo *git.Repository, relPath string, sig *signal.RawSignal
 		return
 	}
 
-	// Lines are 0-indexed in go-git blame result.
-	idx := sig.Line - 1
-	if idx < 0 || idx >= len(result.Lines) {
-		return
-	}
-
-	blameLine := result.Lines[idx]
-	// Prefer AuthorName (human-readable) over Author (email).
-	if blameLine.AuthorName != "" {
-		sig.Author = blameLine.AuthorName
-	} else {
-		sig.Author = blameLine.Author
-	}
-	sig.Timestamp = blameLine.Date
-}
-
-// blameFile returns the git blame result for the given file path relative to
-// the repo root.
-func blameFile(repo *git.Repository, relPath string) (*git.BlameResult, error) {
-	head, err := repo.Head()
-	if err != nil {
-		return nil, err
-	}
-
-	commit, err := repo.CommitObject(head.Hash())
-	if err != nil {
-		return nil, err
-	}
-
-	// go-git blame uses forward slashes.
-	blameResult, err := git.Blame(commit, filepath.ToSlash(relPath))
-	if err != nil {
-		return nil, err
-	}
-
-	return blameResult, nil
+	sig.Author = author
+	sig.Timestamp = ts
 }
 
 // computeConfidence calculates the confidence score per DR-004:

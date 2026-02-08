@@ -11,11 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/google/go-github/v68/github"
 
 	"github.com/davetashner/stringer/internal/collector"
+	"github.com/davetashner/stringer/internal/gitcli"
 	"github.com/davetashner/stringer/internal/signal"
 )
 
@@ -110,8 +109,7 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 	if opts.GitRoot != "" {
 		gitRoot = opts.GitRoot
 	}
-	repo, err := git.PlainOpen(gitRoot)
-	if err != nil {
+	if _, err := gitcli.Run(ctx, gitRoot, "rev-parse", "--git-dir"); err != nil {
 		return nil, fmt.Errorf("opening repo: %w", err)
 	}
 
@@ -139,12 +137,12 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 	}
 
 	// Blame source files and attribute lines to directories.
-	if err := blameDirectories(ctx, repo, repoPath, ownership, defaultMaxBlameFiles, opts); err != nil {
+	if err := blameDirectories(ctx, repoPath, gitRoot, ownership, defaultMaxBlameFiles, opts); err != nil {
 		return nil, fmt.Errorf("blaming files: %w", err)
 	}
 
 	// Walk commits and attribute weighted commit activity to directories.
-	if err := walkCommitsForOwnership(ctx, repo, repoPath, ownership, opts); err != nil {
+	if err := walkCommitsForOwnership(ctx, repoPath, gitRoot, ownership, opts); err != nil {
 		return nil, fmt.Errorf("walking commits for ownership: %w", err)
 	}
 
@@ -263,22 +261,17 @@ func discoverDirectories(ctx context.Context, repoPath string, maxDepth int) ([]
 
 // blameDirectories blames source files and attributes line counts to their
 // containing directories. It caps blame at maxFiles per directory.
-func blameDirectories(ctx context.Context, repo *git.Repository, repoPath string, ownership map[string]*dirOwnership, maxFiles int, opts signal.CollectorOpts) error {
-	head, err := repo.Head()
-	if err != nil {
+func blameDirectories(ctx context.Context, repoPath, gitRoot string, ownership map[string]*dirOwnership, maxFiles int, opts signal.CollectorOpts) error {
+	// Verify HEAD exists (empty repo has no blame data).
+	if _, err := gitcli.Run(ctx, gitRoot, "rev-parse", "HEAD"); err != nil {
 		return nil // empty repo, no blame data
-	}
-
-	commit, err := repo.CommitObject(head.Hash())
-	if err != nil {
-		return nil
 	}
 
 	// Count files per directory to respect the cap.
 	dirFileCount := make(map[string]int)
 	totalFiles := 0
 
-	err = filepath.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil
 		}
@@ -332,8 +325,14 @@ func blameDirectories(ctx context.Context, repo *git.Repository, repoPath string
 			opts.ProgressFunc(fmt.Sprintf("lotteryrisk: blamed %d files", totalFiles))
 		}
 
-		// Blame the file.
-		blameResult, blameErr := git.Blame(commit, filepath.ToSlash(relPath))
+		// For blame, we need the path relative to gitRoot.
+		blameRelPath := relPath
+		if gitRoot != repoPath {
+			blameRelPath, _ = filepath.Rel(gitRoot, path)
+		}
+
+		// Blame the file using native git.
+		blameResult, blameErr := gitcli.BlameFile(ctx, gitRoot, blameRelPath)
 		if blameErr != nil {
 			return nil // skip files that can't be blamed
 		}
@@ -341,9 +340,6 @@ func blameDirectories(ctx context.Context, repo *git.Repository, repoPath string
 		own := ownership[dir]
 		for _, line := range blameResult.Lines {
 			author := line.AuthorName
-			if author == "" {
-				author = line.Author
-			}
 			if author == "" {
 				continue
 			}
@@ -361,89 +357,88 @@ func blameDirectories(ctx context.Context, repo *git.Repository, repoPath string
 	return err
 }
 
-// walkCommitsForOwnership iterates commits and applies recency-weighted
-// attribution to directories based on changed files.
-func walkCommitsForOwnership(ctx context.Context, repo *git.Repository, repoPath string, ownership map[string]*dirOwnership, opts signal.CollectorOpts) error {
-	head, err := repo.Head()
-	if err != nil {
-		return nil // empty repo
-	}
-
-	logOpts := &git.LogOptions{
-		From:  head.Hash(),
-		Order: git.LogOrderCommitterTime,
-	}
-	if opts.GitSince != "" {
-		if since, parseErr := ParseDuration(opts.GitSince); parseErr == nil {
-			t := time.Now().Add(-since)
-			logOpts.Since = &t
-		}
-	}
-
-	iter, err := repo.Log(logOpts)
-	if err != nil {
-		return fmt.Errorf("creating log iterator: %w", err)
-	}
-
+// walkCommitsForOwnership iterates commits using native git log and applies
+// recency-weighted attribution to directories based on changed files.
+func walkCommitsForOwnership(ctx context.Context, repoPath, gitRoot string, ownership map[string]*dirOwnership, opts signal.CollectorOpts) error {
 	maxWalk := maxCommitWalk
 	if opts.GitDepth > 0 {
 		maxWalk = opts.GitDepth
 	}
 
+	// Build git log command args.
+	args := []string{"log", "--name-only", "--format=%H|%aN|%aI", "--max-count=" + fmt.Sprintf("%d", maxWalk)}
+	if opts.GitSince != "" {
+		if since, parseErr := ParseDuration(opts.GitSince); parseErr == nil {
+			t := time.Now().Add(-since)
+			args = append(args, "--since="+t.Format(time.RFC3339))
+		}
+	}
+
+	out, err := gitcli.Run(ctx, gitRoot, args...)
+	if err != nil {
+		// Empty repo or other issue — degrade gracefully.
+		if strings.Contains(err.Error(), "does not have any commits") ||
+			strings.Contains(err.Error(), "bad default revision") {
+			return nil
+		}
+		return fmt.Errorf("git log: %w", err)
+	}
+
 	now := time.Now()
 	count := 0
 
-	err = iter.ForEach(func(c *object.Commit) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if count >= maxWalk {
-			return errStopIter
-		}
-		count++
+	var currentAuthor string
+	var currentTime time.Time
 
-		if opts.ProgressFunc != nil && count%100 == 0 {
-			opts.ProgressFunc(fmt.Sprintf("lotteryrisk: examined %d commits", count))
+	for _, line := range strings.Split(string(out), "\n") {
+		if line == "" {
+			continue
 		}
 
-		author := c.Author.Name
-		if author == "" {
-			return nil
+		// Try to parse as commit header: "<hash>|<author>|<ISO8601>"
+		if parts := strings.SplitN(line, "|", 3); len(parts) == 3 && len(parts[0]) == 40 && isHex(parts[0]) {
+			currentAuthor = parts[1]
+			if t, parseErr := time.Parse(time.RFC3339, parts[2]); parseErr == nil {
+				currentTime = t
+			}
+			count++
+			if opts.ProgressFunc != nil && count%100 == 0 {
+				opts.ProgressFunc(fmt.Sprintf("lotteryrisk: examined %d commits", count))
+			}
+			continue
 		}
 
-		daysOld := now.Sub(c.Author.When).Hours() / 24
+		// Otherwise it's a filename from --name-only output.
+		if currentAuthor == "" {
+			continue
+		}
+
+		dir := findOwningDir(line, ownership)
+		if dir == "" {
+			continue
+		}
+
+		daysOld := now.Sub(currentTime).Hours() / 24
 		weight := recencyDecay(daysOld)
 
-		files, filesErr := changedFiles(c)
-		if filesErr != nil {
-			return nil // skip commits we can't diff
+		own := ownership[dir]
+		if own.Authors[currentAuthor] == nil {
+			own.Authors[currentAuthor] = &authorStats{}
 		}
-
-		for _, f := range files {
-			dir := findOwningDir(f, ownership)
-			if dir == "" {
-				continue
-			}
-
-			own := ownership[dir]
-			if own.Authors[author] == nil {
-				own.Authors[author] = &authorStats{}
-			}
-			own.Authors[author].CommitWeight += weight
-		}
-
-		return nil
-	})
-
-	if err != nil && err != errStopIter {
-		// Shallow clones may lack parent objects — degrade gracefully.
-		if strings.Contains(err.Error(), "object not found") {
-			return nil
-		}
-		return err
+		own.Authors[currentAuthor].CommitWeight += weight
 	}
 
 	return nil
+}
+
+// isHex reports whether s consists entirely of hexadecimal characters.
+func isHex(s string) bool {
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+			return false
+		}
+	}
+	return len(s) > 0
 }
 
 // recencyDecay computes the exponential decay weight for a commit that is
