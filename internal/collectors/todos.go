@@ -60,10 +60,19 @@ func init() {
 	collector.Register(&TodoCollector{})
 }
 
+// TodoMetrics holds structured metrics from the TODO scan.
+type TodoMetrics struct {
+	Total         int
+	ByKind        map[string]int
+	WithTimestamp int
+}
+
 // TodoCollector scans repository files for TODO, FIXME, HACK, XXX, BUG, and
 // OPTIMIZE comments, enriches them with git blame data, and produces scored
 // RawSignal values.
-type TodoCollector struct{}
+type TodoCollector struct {
+	metrics *TodoMetrics
+}
 
 // Name returns the collector name used for registration and filtering.
 func (c *TodoCollector) Name() string { return "todos" }
@@ -163,6 +172,21 @@ func (c *TodoCollector) Collect(ctx context.Context, repoPath string, opts signa
 
 	if err != nil {
 		return nil, fmt.Errorf("walking repo: %w", err)
+	}
+
+	// Build metrics from collected signals.
+	byKind := make(map[string]int)
+	withTimestamp := 0
+	for _, sig := range signals {
+		byKind[sig.Kind]++
+		if !sig.Timestamp.IsZero() {
+			withTimestamp++
+		}
+	}
+	c.metrics = &TodoMetrics{
+		Total:         len(signals),
+		ByKind:        byKind,
+		WithTimestamp: withTimestamp,
 	}
 
 	return signals, nil
@@ -387,5 +411,9 @@ func isBinaryFile(path string) bool {
 	return false
 }
 
-// Compile-time interface check.
+// Metrics returns structured metrics from the TODO scan.
+func (c *TodoCollector) Metrics() any { return c.metrics }
+
+// Compile-time interface checks.
 var _ collector.Collector = (*TodoCollector)(nil)
+var _ collector.MetricsProvider = (*TodoCollector)(nil)

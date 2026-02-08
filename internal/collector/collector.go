@@ -19,6 +19,13 @@ type Collector interface {
 	Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error)
 }
 
+// MetricsProvider is an optional interface that collectors can implement to
+// expose structured metrics from their analysis. The pipeline checks for this
+// interface after Collect() returns and stores the result in CollectorResult.
+type MetricsProvider interface {
+	Metrics() any
+}
+
 var (
 	mu       sync.RWMutex
 	registry = make(map[string]Collector)

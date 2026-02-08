@@ -932,3 +932,115 @@ func TestNew_ValidCollectorName(t *testing.T) {
 	assert.NotNil(t, p)
 	assert.Len(t, p.collectors, 1)
 }
+
+// --- Metrics Provider Tests ---
+
+// stubMetricsCollector implements both Collector and MetricsProvider.
+type stubMetricsCollector struct {
+	name        string
+	signals     []signal.RawSignal
+	err         error
+	metricsData any
+}
+
+func (s *stubMetricsCollector) Name() string { return s.name }
+
+func (s *stubMetricsCollector) Collect(_ context.Context, _ string, _ signal.CollectorOpts) ([]signal.RawSignal, error) {
+	return s.signals, s.err
+}
+
+func (s *stubMetricsCollector) Metrics() any { return s.metricsData }
+
+var _ collector.Collector = (*stubMetricsCollector)(nil)
+var _ collector.MetricsProvider = (*stubMetricsCollector)(nil)
+
+func TestPipeline_MetricsAggregated(t *testing.T) {
+	type testMetrics struct {
+		Count int
+	}
+
+	mc := &stubMetricsCollector{
+		name: "metrics-collector",
+		signals: []signal.RawSignal{
+			{Source: "metrics-collector", Title: "Signal", FilePath: "a.go", Confidence: 0.5},
+		},
+		metricsData: &testMetrics{Count: 42},
+	}
+
+	p := NewWithCollectors(signal.ScanConfig{RepoPath: "/tmp/repo"}, []collector.Collector{mc})
+	result, err := p.Run(context.Background())
+
+	require.NoError(t, err)
+	require.NotNil(t, result.Metrics)
+	assert.Contains(t, result.Metrics, "metrics-collector")
+
+	m, ok := result.Metrics["metrics-collector"].(*testMetrics)
+	require.True(t, ok)
+	assert.Equal(t, 42, m.Count)
+
+	// Also check per-result metrics.
+	assert.NotNil(t, result.Results[0].Metrics)
+}
+
+func TestPipeline_MetricsNotSetOnError(t *testing.T) {
+	mc := &stubMetricsCollector{
+		name:        "error-metrics",
+		err:         errors.New("collection failed"),
+		metricsData: "should not appear",
+	}
+
+	p := NewWithCollectors(signal.ScanConfig{RepoPath: "/tmp/repo"}, []collector.Collector{mc})
+	result, err := p.Run(context.Background())
+
+	require.NoError(t, err) // warn mode
+	// Metrics should not be populated for failed collectors.
+	assert.NotContains(t, result.Metrics, "error-metrics")
+	assert.Nil(t, result.Results[0].Metrics)
+}
+
+func TestPipeline_MixedMetricsAndNonMetrics(t *testing.T) {
+	type testMetrics struct {
+		Value string
+	}
+
+	metricsC := &stubMetricsCollector{
+		name: "with-metrics",
+		signals: []signal.RawSignal{
+			{Source: "with-metrics", Title: "S1", FilePath: "a.go", Confidence: 0.5},
+		},
+		metricsData: &testMetrics{Value: "hello"},
+	}
+	plainC := &stubCollector{
+		name: "without-metrics",
+		signals: []signal.RawSignal{
+			{Source: "without-metrics", Title: "S2", FilePath: "b.go", Confidence: 0.5},
+		},
+	}
+
+	p := NewWithCollectors(signal.ScanConfig{RepoPath: "/tmp/repo"},
+		[]collector.Collector{metricsC, plainC})
+	result, err := p.Run(context.Background())
+
+	require.NoError(t, err)
+	assert.Len(t, result.Signals, 2)
+
+	// Only the metrics collector should appear in the map.
+	assert.Len(t, result.Metrics, 1)
+	assert.Contains(t, result.Metrics, "with-metrics")
+	assert.NotContains(t, result.Metrics, "without-metrics")
+}
+
+func TestPipeline_MetricsEmptyWhenNoProviders(t *testing.T) {
+	stub := &stubCollector{
+		name: "plain",
+		signals: []signal.RawSignal{
+			{Source: "plain", Title: "S", FilePath: "a.go", Confidence: 0.5},
+		},
+	}
+
+	p := NewWithCollectors(signal.ScanConfig{RepoPath: "/tmp/repo"}, []collector.Collector{stub})
+	result, err := p.Run(context.Background())
+
+	require.NoError(t, err)
+	assert.Empty(t, result.Metrics)
+}

@@ -54,9 +54,25 @@ func init() {
 	collector.Register(&GitlogCollector{})
 }
 
+// GitlogMetrics holds structured metrics from the git log analysis.
+type GitlogMetrics struct {
+	FileChurns       []FileChurn
+	RevertCount      int
+	StaleBranchCount int
+}
+
+// FileChurn describes change frequency for a single file.
+type FileChurn struct {
+	Path        string
+	ChangeCount int
+	AuthorCount int
+}
+
 // GitlogCollector examines git history for reverts, high-churn files, and
 // stale branches.
-type GitlogCollector struct{}
+type GitlogCollector struct {
+	metrics *GitlogMetrics
+}
 
 // Name returns the collector name used for registration and filtering.
 func (c *GitlogCollector) Name() string { return "gitlog" }
@@ -76,7 +92,7 @@ func (c *GitlogCollector) Collect(ctx context.Context, repoPath string, opts sig
 	var signals []signal.RawSignal
 
 	// Collect reverts and build churn data in a single commit walk.
-	reverts, churnSignals, err := c.walkCommits(ctx, repo, opts)
+	reverts, churnSignals, fileChanges, fileAuthors, err := c.walkCommits(ctx, repo, opts)
 	if err != nil {
 		return nil, fmt.Errorf("walking commits: %w", err)
 	}
@@ -94,16 +110,36 @@ func (c *GitlogCollector) Collect(ctx context.Context, repoPath string, opts sig
 	}
 	signals = append(signals, staleBranches...)
 
+	// Build metrics from all files (not just above-threshold).
+	var churns []FileChurn
+	for path, count := range fileChanges {
+		authorCount := len(fileAuthors[path])
+		churns = append(churns, FileChurn{
+			Path:        path,
+			ChangeCount: count,
+			AuthorCount: authorCount,
+		})
+	}
+	sort.Slice(churns, func(i, j int) bool {
+		return churns[i].Path < churns[j].Path
+	})
+
+	c.metrics = &GitlogMetrics{
+		FileChurns:       churns,
+		RevertCount:      len(reverts),
+		StaleBranchCount: len(staleBranches),
+	}
+
 	return signals, nil
 }
 
-// walkCommits iterates over the most recent commits and returns revert signals
-// and churn signals.
-func (c *GitlogCollector) walkCommits(ctx context.Context, repo *git.Repository, opts signal.CollectorOpts) ([]signal.RawSignal, []signal.RawSignal, error) {
+// walkCommits iterates over the most recent commits and returns revert signals,
+// churn signals, and the raw file-change/author maps for metrics.
+func (c *GitlogCollector) walkCommits(ctx context.Context, repo *git.Repository, opts signal.CollectorOpts) ([]signal.RawSignal, []signal.RawSignal, map[string]int, map[string]map[string]bool, error) {
 	head, err := repo.Head()
 	if err != nil {
 		// Empty repo or detached HEAD with no commits.
-		return nil, nil, nil //nolint:nilerr // gracefully handle repos with no commits
+		return nil, nil, nil, nil, nil //nolint:nilerr // gracefully handle repos with no commits
 	}
 
 	logOpts := &git.LogOptions{
@@ -119,7 +155,7 @@ func (c *GitlogCollector) walkCommits(ctx context.Context, repo *git.Repository,
 
 	iter, err := repo.Log(logOpts)
 	if err != nil {
-		return nil, nil, fmt.Errorf("creating log iterator: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("creating log iterator: %w", err)
 	}
 
 	maxWalk := maxCommitWalk
@@ -171,15 +207,15 @@ func (c *GitlogCollector) walkCommits(ctx context.Context, repo *git.Repository,
 	if err != nil && err != errStopIter {
 		// Shallow clones may lack parent objects — degrade gracefully.
 		if errors.Is(err, plumbing.ErrObjectNotFound) {
-			return reverts, buildChurnSignals(fileChanges, fileAuthors), nil
+			return reverts, buildChurnSignals(fileChanges, fileAuthors), fileChanges, fileAuthors, nil
 		}
-		return nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	// Build churn signals from aggregated data.
 	churnSignals := buildChurnSignals(fileChanges, fileAuthors)
 
-	return reverts, churnSignals, nil
+	return reverts, churnSignals, fileChanges, fileAuthors, nil
 }
 
 // errStopIter is a sentinel used to stop the commit iterator after reaching
@@ -441,5 +477,9 @@ func sortedKeys(m map[string]bool) []string {
 	return keys
 }
 
-// Compile-time interface check.
+// Metrics returns structured metrics from the git log analysis.
+func (c *GitlogCollector) Metrics() any { return c.metrics }
+
+// Compile-time interface checks.
 var _ collector.Collector = (*GitlogCollector)(nil)
+var _ collector.MetricsProvider = (*GitlogCollector)(nil)

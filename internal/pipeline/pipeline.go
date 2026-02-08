@@ -136,10 +136,19 @@ func (p *Pipeline) Run(ctx context.Context) (*signal.ScanResult, error) {
 		allSignals = allSignals[:p.config.MaxIssues]
 	}
 
+	// Build aggregated metrics map from collector results.
+	metrics := make(map[string]any)
+	for _, result := range results {
+		if result.Metrics != nil {
+			metrics[result.Collector] = result.Metrics
+		}
+	}
+
 	return &signal.ScanResult{
 		Signals:  allSignals,
 		Results:  results,
 		Duration: time.Since(start),
+		Metrics:  metrics,
 	}, nil
 }
 
@@ -164,12 +173,21 @@ func (p *Pipeline) runCollector(ctx context.Context, c collector.Collector) sign
 
 	signals, err := c.Collect(ctx, p.config.RepoPath, opts)
 
-	return signal.CollectorResult{
+	result := signal.CollectorResult{
 		Collector: c.Name(),
 		Signals:   signals,
 		Duration:  time.Since(start),
 		Err:       err,
 	}
+
+	// If the collector provides metrics and collection succeeded, capture them.
+	if err == nil {
+		if mp, ok := c.(collector.MetricsProvider); ok {
+			result.Metrics = mp.Metrics()
+		}
+	}
+
+	return result
 }
 
 // resolveCollectors looks up collectors by name from the global registry.
