@@ -31,6 +31,7 @@ var (
 	scanNoLLM      bool
 	scanJSON       bool
 	scanMaxIssues  int
+	scanStrict     bool
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -53,6 +54,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanNoLLM, "no-llm", false, "skip LLM clustering pass (noop for MVP)")
 	scanCmd.Flags().BoolVar(&scanJSON, "json", false, "machine-readable output for --dry-run")
 	scanCmd.Flags().IntVar(&scanMaxIssues, "max-issues", 0, "cap output count (0 = unlimited)")
+	scanCmd.Flags().BoolVar(&scanStrict, "strict", false, "exit non-zero on any collector failure")
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
@@ -230,7 +232,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 
 	// 11. Determine exit code based on collector results.
-	exitCode := computeExitCode(result)
+	exitCode := computeExitCode(result, scanStrict)
 
 	// 12. Handle dry-run.
 	if scanDryRun {
@@ -272,7 +274,8 @@ func runScan(cmd *cobra.Command, args []string) error {
 }
 
 // computeExitCode returns the appropriate exit code based on collector results.
-func computeExitCode(result *signal.ScanResult) int {
+// When strict is true, partial failures return ExitPartialFailure instead of ExitOK.
+func computeExitCode(result *signal.ScanResult, strict bool) int {
 	if len(result.Results) == 0 {
 		return ExitOK
 	}
@@ -287,10 +290,13 @@ func computeExitCode(result *signal.ScanResult) int {
 	switch {
 	case failCount == 0:
 		return ExitOK
-	case failCount < len(result.Results):
+	case failCount == len(result.Results):
+		return ExitTotalFailure
+	case strict:
 		return ExitPartialFailure
 	default:
-		return ExitTotalFailure
+		// Non-strict: partial failures are OK, exit 0.
+		return ExitOK
 	}
 }
 
