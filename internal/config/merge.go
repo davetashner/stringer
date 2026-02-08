@@ -50,6 +50,12 @@ func Merge(fileCfg *Config, cliCfg signal.ScanConfig) signal.ScanConfig {
 			if co.GitSince == "" && fc.GitSince != "" {
 				co.GitSince = fc.GitSince
 			}
+			if !co.IncludeClosed && fc.IncludeClosed != nil && *fc.IncludeClosed {
+				co.IncludeClosed = true
+			}
+			if co.Anonymize == "" && fc.Anonymize != "" {
+				co.Anonymize = fc.Anonymize
+			}
 			result.CollectorOpts[name] = co
 		}
 	}

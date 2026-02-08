@@ -43,6 +43,8 @@ type githubAPI interface {
 	ListPullRequests(ctx context.Context, owner, repo string, opts *github.PullRequestListOptions) ([]*github.PullRequest, *github.Response, error)
 	ListReviews(ctx context.Context, owner, repo string, number int, opts *github.ListOptions) ([]*github.PullRequestReview, *github.Response, error)
 	ListReviewComments(ctx context.Context, owner, repo string, number int, opts *github.PullRequestListCommentsOptions) ([]*github.PullRequestComment, *github.Response, error)
+	ListPullRequestFiles(ctx context.Context, owner, repo string, number int, opts *github.ListOptions) ([]*github.CommitFile, *github.Response, error)
+	GetRepository(ctx context.Context, owner, repo string) (*github.Repository, *github.Response, error)
 }
 
 // realGitHubAPI wraps the real go-github client to implement githubAPI.
@@ -64,6 +66,14 @@ func (r *realGitHubAPI) ListReviews(ctx context.Context, owner, repo string, num
 
 func (r *realGitHubAPI) ListReviewComments(ctx context.Context, owner, repo string, number int, opts *github.PullRequestListCommentsOptions) ([]*github.PullRequestComment, *github.Response, error) {
 	return r.client.PullRequests.ListComments(ctx, owner, repo, number, opts)
+}
+
+func (r *realGitHubAPI) ListPullRequestFiles(ctx context.Context, owner, repo string, number int, opts *github.ListOptions) ([]*github.CommitFile, *github.Response, error) {
+	return r.client.PullRequests.ListFiles(ctx, owner, repo, number, opts)
+}
+
+func (r *realGitHubAPI) GetRepository(ctx context.Context, owner, repo string) (*github.Repository, *github.Response, error) {
+	return r.client.Repositories.Get(ctx, owner, repo)
 }
 
 // GitHubCollector imports open issues, pull requests, and actionable review
@@ -110,18 +120,19 @@ func (c *GitHubCollector) Collect(ctx context.Context, repoPath string, opts sig
 	// The actual config fields are on the CollectorConfig struct.
 	// For now, use defaults. Config integration happens via the pipeline.
 
+	includeClosed := opts.IncludeClosed
 	var signals []signal.RawSignal
 
-	// Fetch open issues.
-	issueSigs, err := fetchIssues(ctx, api, owner, repo, maxIssues)
+	// Fetch issues.
+	issueSigs, err := fetchIssues(ctx, api, owner, repo, maxIssues, includeClosed)
 	if err != nil {
 		return nil, fmt.Errorf("fetching issues: %w", err)
 	}
 	signals = append(signals, issueSigs...)
 
-	// Fetch open PRs.
+	// Fetch PRs.
 	if includePRs {
-		prSigs, prErr := fetchPullRequests(ctx, api, owner, repo, maxIssues, commentDepth)
+		prSigs, prErr := fetchPullRequests(ctx, api, owner, repo, maxIssues, commentDepth, includeClosed)
 		if prErr != nil {
 			return nil, fmt.Errorf("fetching pull requests: %w", prErr)
 		}
@@ -192,11 +203,17 @@ func parseGitHubURL(rawURL string) (owner, repo string, err error) {
 	return owner, repo, nil
 }
 
-// fetchIssues fetches open issues (excluding PRs) from GitHub.
-func fetchIssues(ctx context.Context, api githubAPI, owner, repo string, maxIssues int) ([]signal.RawSignal, error) {
+// fetchIssues fetches issues (excluding PRs) from GitHub. When includeClosed
+// is true, it fetches all issues (open and closed) and classifies closed ones
+// with dedicated kinds and lower confidence.
+func fetchIssues(ctx context.Context, api githubAPI, owner, repo string, maxIssues int, includeClosed bool) ([]signal.RawSignal, error) {
 	var signals []signal.RawSignal
+	state := "open"
+	if includeClosed {
+		state = "all"
+	}
 	opts := &github.IssueListByRepoOptions{
-		State:     "open",
+		State:     state,
 		Sort:      "created",
 		Direction: "desc",
 		ListOptions: github.ListOptions{
@@ -220,18 +237,39 @@ func fetchIssues(ctx context.Context, api githubAPI, owner, repo string, maxIssu
 				continue
 			}
 
-			kind, confidence := classifyIssue(issue)
+			var kind string
+			var confidence float64
+			var tags []string
+
+			if issue.GetState() == "closed" {
+				kind = "github-closed-issue"
+				confidence = 0.3
+				tags = []string{kind, "pre-closed", "stringer-generated"}
+			} else {
+				kind, confidence = classifyIssue(issue)
+				tags = []string{kind, "stringer-generated"}
+			}
+
+			desc := truncateBody(issue.GetBody(), 500)
+			if issue.GetState() == "closed" {
+				closedAt := ""
+				if issue.ClosedAt != nil {
+					closedAt = issue.ClosedAt.Format(time.RFC3339)
+				}
+				desc = fmt.Sprintf("Closed at: %s, Reason: %s\n%s", closedAt, issue.GetStateReason(), desc)
+			}
+
 			signals = append(signals, signal.RawSignal{
 				Source:      "github",
 				Kind:        kind,
 				FilePath:    fmt.Sprintf("github/issues/%d", issue.GetNumber()),
 				Line:        0,
 				Title:       issue.GetTitle(),
-				Description: truncateBody(issue.GetBody(), 500),
+				Description: desc,
 				Author:      issue.GetUser().GetLogin(),
 				Timestamp:   issue.GetCreatedAt().Time,
 				Confidence:  confidence,
-				Tags:        []string{kind, "stringer-generated"},
+				Tags:        tags,
 			})
 
 			if len(signals) >= maxIssues {
@@ -248,12 +286,17 @@ func fetchIssues(ctx context.Context, api githubAPI, owner, repo string, maxIssu
 	return signals, nil
 }
 
-// fetchPullRequests fetches open PRs with review state and actionable review
-// comments.
-func fetchPullRequests(ctx context.Context, api githubAPI, owner, repo string, maxIssues, commentDepth int) ([]signal.RawSignal, error) {
+// fetchPullRequests fetches PRs with review state and actionable review
+// comments. When includeClosed is true, it also fetches merged and
+// closed-not-merged PRs with dedicated kinds and lower confidence.
+func fetchPullRequests(ctx context.Context, api githubAPI, owner, repo string, maxIssues, commentDepth int, includeClosed bool) ([]signal.RawSignal, error) {
 	var signals []signal.RawSignal
+	state := "open"
+	if includeClosed {
+		state = "all"
+	}
 	opts := &github.PullRequestListOptions{
-		State:     "open",
+		State:     state,
 		Sort:      "created",
 		Direction: "desc",
 		ListOptions: github.ListOptions{
@@ -276,32 +319,59 @@ func fetchPullRequests(ctx context.Context, api githubAPI, owner, repo string, m
 				return nil, err
 			}
 
-			// Fetch reviews for this PR.
-			reviews, err := fetchAllReviews(ctx, api, owner, repo, pr.GetNumber())
-			if err != nil {
-				return nil, fmt.Errorf("listing reviews for PR #%d: %w", pr.GetNumber(), err)
+			var kind string
+			var confidence float64
+			var tags []string
+			desc := truncateBody(pr.GetBody(), 500)
+
+			if pr.GetState() == "closed" {
+				if pr.GetMerged() {
+					kind = "github-merged-pr"
+					confidence = 0.3
+					tags = []string{kind, "pre-closed", "stringer-generated"}
+				} else {
+					kind = "github-closed-pr"
+					confidence = 0.2
+					tags = []string{kind, "pre-closed", "stringer-generated"}
+				}
+				mergedAt := ""
+				if pr.MergedAt != nil {
+					mergedAt = pr.MergedAt.GetTime().Format(time.RFC3339)
+				}
+				closedAt := ""
+				if pr.ClosedAt != nil {
+					closedAt = pr.ClosedAt.GetTime().Format(time.RFC3339)
+				}
+				desc = fmt.Sprintf("Merged at: %s, Closed at: %s\n%s", mergedAt, closedAt, desc)
+			} else {
+				// Open PR: fetch reviews and classify.
+				reviews, reviewErr := fetchAllReviews(ctx, api, owner, repo, pr.GetNumber())
+				if reviewErr != nil {
+					return nil, fmt.Errorf("listing reviews for PR #%d: %w", pr.GetNumber(), reviewErr)
+				}
+				kind, confidence = classifyPR(pr, reviews)
+				tags = []string{kind, "stringer-generated"}
+
+				// Fetch actionable review comments for open PRs only.
+				commentSigs, commentErr := fetchActionableComments(ctx, api, owner, repo, pr.GetNumber(), commentDepth)
+				if commentErr != nil {
+					return nil, fmt.Errorf("listing review comments for PR #%d: %w", pr.GetNumber(), commentErr)
+				}
+				signals = append(signals, commentSigs...)
 			}
 
-			kind, confidence := classifyPR(pr, reviews)
 			signals = append(signals, signal.RawSignal{
 				Source:      "github",
 				Kind:        kind,
 				FilePath:    fmt.Sprintf("github/prs/%d", pr.GetNumber()),
 				Line:        0,
 				Title:       pr.GetTitle(),
-				Description: truncateBody(pr.GetBody(), 500),
+				Description: desc,
 				Author:      pr.GetUser().GetLogin(),
 				Timestamp:   pr.GetCreatedAt().Time,
 				Confidence:  confidence,
-				Tags:        []string{kind, "stringer-generated"},
+				Tags:        tags,
 			})
-
-			// Fetch actionable review comments.
-			commentSigs, err := fetchActionableComments(ctx, api, owner, repo, pr.GetNumber(), commentDepth)
-			if err != nil {
-				return nil, fmt.Errorf("listing review comments for PR #%d: %w", pr.GetNumber(), err)
-			}
-			signals = append(signals, commentSigs...)
 
 			if len(signals) >= maxIssues {
 				return signals, nil

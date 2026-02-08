@@ -2,10 +2,12 @@ package collectors
 
 import (
 	"context"
+	"net/http"
 	"testing"
 	"time"
 
 	gogit "github.com/go-git/go-git/v5"
+	"github.com/google/go-github/v68/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -365,4 +367,273 @@ func TestLotteryRiskCollector_ProgressCallback(t *testing.T) {
 
 	// Small repo may not trigger any progress (needs 100+ commits or 50+ blamed files).
 	// This test just ensures the callback doesn't cause errors.
+}
+
+// --- Review participation tests ---
+
+// reviewMockAPI implements githubAPI for lottery risk review tests.
+type reviewMockAPI struct {
+	prs     []*github.PullRequest
+	reviews map[int][]*github.PullRequestReview
+	files   map[int][]*github.CommitFile
+	repo    *github.Repository
+}
+
+func (m *reviewMockAPI) ListIssues(_ context.Context, _, _ string, _ *github.IssueListByRepoOptions) ([]*github.Issue, *github.Response, error) {
+	return nil, lrEmptyResponse(), nil
+}
+
+func (m *reviewMockAPI) ListPullRequests(_ context.Context, _, _ string, _ *github.PullRequestListOptions) ([]*github.PullRequest, *github.Response, error) {
+	return m.prs, lrEmptyResponse(), nil
+}
+
+func (m *reviewMockAPI) ListReviews(_ context.Context, _, _ string, number int, _ *github.ListOptions) ([]*github.PullRequestReview, *github.Response, error) {
+	return m.reviews[number], lrEmptyResponse(), nil
+}
+
+func (m *reviewMockAPI) ListReviewComments(_ context.Context, _, _ string, _ int, _ *github.PullRequestListCommentsOptions) ([]*github.PullRequestComment, *github.Response, error) {
+	return nil, lrEmptyResponse(), nil
+}
+
+func (m *reviewMockAPI) ListPullRequestFiles(_ context.Context, _, _ string, number int, _ *github.ListOptions) ([]*github.CommitFile, *github.Response, error) {
+	return m.files[number], lrEmptyResponse(), nil
+}
+
+func (m *reviewMockAPI) GetRepository(_ context.Context, _, _ string) (*github.Repository, *github.Response, error) {
+	if m.repo != nil {
+		return m.repo, lrEmptyResponse(), nil
+	}
+	return nil, lrEmptyResponse(), nil
+}
+
+func lrEmptyResponse() *github.Response {
+	return &github.Response{
+		Response: &http.Response{StatusCode: http.StatusOK},
+	}
+}
+
+func TestLotteryRiskCollector_ReviewConcentration(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
+	_, dir := initGoGitRepo(t, map[string]string{
+		"main.go":     "package main\n\nfunc main() {}\n",
+		"lib/util.go": "package lib\n\nfunc Util() {}\n",
+	})
+
+	now := time.Now()
+	mock := &reviewMockAPI{
+		prs: []*github.PullRequest{
+			makeMergedPR(1, "PR 1", now),
+			makeMergedPR(2, "PR 2", now),
+			makeMergedPR(3, "PR 3", now),
+			makeMergedPR(4, "PR 4", now),
+		},
+		reviews: map[int][]*github.PullRequestReview{
+			1: {makeReview("APPROVED")},
+			2: {makeReview("APPROVED")},
+			3: {makeReview("APPROVED")},
+			4: {{State: github.Ptr("APPROVED"), User: &github.User{Login: github.Ptr("other")}}},
+		},
+		files: map[int][]*github.CommitFile{
+			1: {{Filename: github.Ptr("main.go")}},
+			2: {{Filename: github.Ptr("main.go")}},
+			3: {{Filename: github.Ptr("main.go")}},
+			4: {{Filename: github.Ptr("main.go")}},
+		},
+	}
+
+	// Default review mock user is nil, so reviews from makeReview have nil user.
+	// Let's fix: makeReview doesn't set User, so GetUser().GetLogin() returns "".
+	// We need reviews with actual users. Override the reviews.
+	reviewer1 := &github.User{Login: github.Ptr("alice")}
+	reviewer2 := &github.User{Login: github.Ptr("bob")}
+	mock.reviews = map[int][]*github.PullRequestReview{
+		1: {{State: github.Ptr("APPROVED"), User: reviewer1}},
+		2: {{State: github.Ptr("APPROVED"), User: reviewer1}},
+		3: {{State: github.Ptr("APPROVED"), User: reviewer1}},
+		4: {{State: github.Ptr("APPROVED"), User: reviewer2}},
+	}
+
+	ghCtx := &githubContext{Owner: "testowner", Repo: "testrepo", API: mock}
+	c := &LotteryRiskCollector{ghCtx: ghCtx}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	reviewSigs := filterByKind(signals, "review-concentration")
+	require.NotEmpty(t, reviewSigs, "should produce review-concentration signals when one reviewer dominates")
+
+	for _, sig := range reviewSigs {
+		assert.Equal(t, "lotteryrisk", sig.Source)
+		assert.Contains(t, sig.Title, "alice")
+		assert.InDelta(t, 0.6, sig.Confidence, 0.001)
+		assert.Contains(t, sig.Tags, "review-concentration")
+	}
+}
+
+func TestLotteryRiskCollector_ReviewDiversity(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
+	_, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n\nfunc main() {}\n",
+	})
+
+	now := time.Now()
+	mock := &reviewMockAPI{
+		prs: []*github.PullRequest{
+			makeMergedPR(1, "PR 1", now),
+			makeMergedPR(2, "PR 2", now),
+			makeMergedPR(3, "PR 3", now),
+			makeMergedPR(4, "PR 4", now),
+		},
+		reviews: map[int][]*github.PullRequestReview{
+			1: {{State: github.Ptr("APPROVED"), User: &github.User{Login: github.Ptr("alice")}}},
+			2: {{State: github.Ptr("APPROVED"), User: &github.User{Login: github.Ptr("bob")}}},
+			3: {{State: github.Ptr("APPROVED"), User: &github.User{Login: github.Ptr("charlie")}}},
+			4: {{State: github.Ptr("APPROVED"), User: &github.User{Login: github.Ptr("dave")}}},
+		},
+		files: map[int][]*github.CommitFile{
+			1: {{Filename: github.Ptr("main.go")}},
+			2: {{Filename: github.Ptr("main.go")}},
+			3: {{Filename: github.Ptr("main.go")}},
+			4: {{Filename: github.Ptr("main.go")}},
+		},
+	}
+
+	ghCtx := &githubContext{Owner: "testowner", Repo: "testrepo", API: mock}
+	c := &LotteryRiskCollector{ghCtx: ghCtx}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	reviewSigs := filterByKind(signals, "review-concentration")
+	assert.Empty(t, reviewSigs, "diverse reviewers should not produce review-concentration signals")
+}
+
+func TestLotteryRiskCollector_ReviewParticipation_NoToken(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+
+	_, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n\nfunc main() {}\n",
+	})
+
+	c := &LotteryRiskCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	// Should still produce lottery risk signals but no review signals.
+	reviewSigs := filterByKind(signals, "review-concentration")
+	assert.Empty(t, reviewSigs, "no token means no review analysis")
+
+	lotterySigs := filterByKind(signals, "low-lottery-risk")
+	assert.NotEmpty(t, lotterySigs, "lottery risk signals should still be produced")
+}
+
+func TestBuildReviewConcentrationSignals(t *testing.T) {
+	reviewData := map[string]*reviewParticipation{
+		".": {
+			Reviewers: map[string]int{"alice": 8, "bob": 2},
+			Authors:   map[string]int{"charlie": 5, "dave": 5},
+		},
+	}
+
+	signals := buildReviewConcentrationSignals(reviewData, nil)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "review-concentration", signals[0].Kind)
+	assert.Contains(t, signals[0].Title, "alice")
+	assert.Contains(t, signals[0].Title, "80%")
+}
+
+func TestBuildReviewConcentrationSignals_TooFewReviews(t *testing.T) {
+	reviewData := map[string]*reviewParticipation{
+		".": {
+			Reviewers: map[string]int{"alice": 2},
+			Authors:   map[string]int{"bob": 2},
+		},
+	}
+
+	signals := buildReviewConcentrationSignals(reviewData, nil)
+	assert.Empty(t, signals, "fewer than 3 reviews should not produce signals")
+}
+
+// --- Anonymization tests ---
+
+func TestNameAnonymizer_Stable(t *testing.T) {
+	anon := newNameAnonymizer()
+	label1 := anon.anonymize("Alice")
+	label2 := anon.anonymize("Alice")
+	assert.Equal(t, label1, label2, "same name should produce same label")
+}
+
+func TestNameAnonymizer_Unique(t *testing.T) {
+	anon := newNameAnonymizer()
+	label1 := anon.anonymize("Alice")
+	label2 := anon.anonymize("Bob")
+	assert.NotEqual(t, label1, label2, "different names should produce different labels")
+}
+
+func TestContributorLabel(t *testing.T) {
+	tests := []struct {
+		id   int
+		want string
+	}{
+		{0, "Contributor A"},
+		{1, "Contributor B"},
+		{25, "Contributor Z"},
+		{26, "Contributor AA"},
+		{27, "Contributor AB"},
+		{51, "Contributor AZ"},
+		{52, "Contributor BA"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			assert.Equal(t, tt.want, contributorLabel(tt.id))
+		})
+	}
+}
+
+func TestResolveAnonymize_Always(t *testing.T) {
+	assert.True(t, resolveAnonymize(context.Background(), nil, "always"))
+}
+
+func TestResolveAnonymize_Never(t *testing.T) {
+	assert.False(t, resolveAnonymize(context.Background(), nil, "never"))
+}
+
+func TestResolveAnonymize_AutoPublic(t *testing.T) {
+	mock := &reviewMockAPI{
+		repo: &github.Repository{Private: github.Ptr(false)},
+	}
+	ghCtx := &githubContext{Owner: "o", Repo: "r", API: mock}
+	assert.True(t, resolveAnonymize(context.Background(), ghCtx, "auto"))
+}
+
+func TestResolveAnonymize_AutoPrivate(t *testing.T) {
+	mock := &reviewMockAPI{
+		repo: &github.Repository{Private: github.Ptr(true)},
+	}
+	ghCtx := &githubContext{Owner: "o", Repo: "r", API: mock}
+	assert.False(t, resolveAnonymize(context.Background(), ghCtx, "auto"))
+}
+
+func TestResolveAnonymize_AutoNoToken(t *testing.T) {
+	assert.False(t, resolveAnonymize(context.Background(), nil, "auto"))
+}
+
+func TestLotteryRiskCollector_AnonymizeAlways(t *testing.T) {
+	_, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n\nfunc main() {}\n",
+	})
+
+	c := &LotteryRiskCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		Anonymize: "always",
+	})
+	require.NoError(t, err)
+
+	lotterySigs := filterByKind(signals, "low-lottery-risk")
+	require.NotEmpty(t, lotterySigs)
+
+	for _, sig := range lotterySigs {
+		assert.Contains(t, sig.Title, "Contributor A", "anonymized name should appear in title")
+		assert.NotContains(t, sig.Title, "Test Author", "real name should not appear when anonymized")
+	}
 }

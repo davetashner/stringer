@@ -62,6 +62,12 @@ type CollectorOpts struct {
 
 	// ProgressFunc is called periodically with status messages during long operations.
 	ProgressFunc func(msg string)
+
+	// IncludeClosed includes closed/merged issues and PRs in the GitHub collector.
+	IncludeClosed bool
+
+	// Anonymize controls author name anonymization: "auto", "always", or "never".
+	Anonymize string
 }
 
 // ScanConfig holds the overall configuration for a scan operation.

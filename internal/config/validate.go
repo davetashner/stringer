@@ -60,6 +60,15 @@ func Validate(cfg *Config) error {
 		if cc.MaxIssuesPerCollector < 0 {
 			errs = append(errs, fmt.Sprintf("collectors.%s.max_issues_per_collector: must be non-negative, got %d", name, cc.MaxIssuesPerCollector))
 		}
+
+		if cc.Anonymize != "" {
+			switch cc.Anonymize {
+			case "auto", "always", "never":
+				// valid
+			default:
+				errs = append(errs, fmt.Sprintf("collectors.%s.anonymize: invalid value %q (must be auto, always, or never)", name, cc.Anonymize))
+			}
+		}
 	}
 
 	if len(errs) > 0 {
