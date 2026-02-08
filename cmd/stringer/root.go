@@ -34,5 +34,6 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable colored output")
 
 	rootCmd.AddCommand(scanCmd)
+	rootCmd.AddCommand(docsCmd)
 	rootCmd.AddCommand(versionCmd)
 }
