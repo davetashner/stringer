@@ -275,7 +275,7 @@ func detectRevert(commit *object.Commit) (signal.RawSignal, bool) {
 		Author:      commit.Author.Name,
 		Timestamp:   commit.Author.When,
 		Confidence:  0.7,
-		Tags:        []string{"revert", "stringer-generated"},
+		Tags:        []string{"revert"},
 	}, true
 }
 
@@ -301,7 +301,7 @@ func buildChurnSignals(fileChanges map[string]int, fileAuthors map[string]map[st
 			Description: fmt.Sprintf("File modified %d times in the last %d days.\nRecent authors: %s",
 				count, churnWindowDays, strings.Join(authors, ", ")),
 			Confidence: confidence,
-			Tags:       []string{"churn", "stringer-generated"},
+			Tags:       []string{"churn"},
 		})
 	}
 
@@ -375,7 +375,7 @@ func (c *GitlogCollector) detectStaleBranches(ctx context.Context, repo *git.Rep
 			Author:     commit.Author.Name,
 			Timestamp:  lastActivity,
 			Confidence: confidence,
-			Tags:       []string{"stale-branch", "stringer-generated"},
+			Tags:       []string{"stale-branch"},
 		})
 
 		return nil

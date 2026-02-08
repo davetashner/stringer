@@ -262,10 +262,10 @@ func fetchIssues(ctx context.Context, api githubAPI, owner, repo string, maxIssu
 			if issue.GetState() == "closed" {
 				kind = "github-closed-issue"
 				confidence = 0.3
-				tags = []string{kind, "pre-closed", "stringer-generated"}
+				tags = []string{kind, "pre-closed"}
 			} else {
 				kind, confidence = classifyIssue(issue)
-				tags = []string{kind, "stringer-generated"}
+				tags = []string{kind}
 			}
 
 			desc := truncateBody(issue.GetBody(), 500)
@@ -362,11 +362,11 @@ func fetchPullRequests(ctx context.Context, api githubAPI, owner, repo string, m
 				if pr.GetMerged() {
 					kind = "github-merged-pr"
 					confidence = 0.3
-					tags = []string{kind, "pre-closed", "stringer-generated"}
+					tags = []string{kind, "pre-closed"}
 				} else {
 					kind = "github-closed-pr"
 					confidence = 0.2
-					tags = []string{kind, "pre-closed", "stringer-generated"}
+					tags = []string{kind, "pre-closed"}
 				}
 				mergedAt := ""
 				if pr.MergedAt != nil {
@@ -392,7 +392,7 @@ func fetchPullRequests(ctx context.Context, api githubAPI, owner, repo string, m
 					return nil, fmt.Errorf("listing reviews for PR #%d: %w", pr.GetNumber(), reviewErr)
 				}
 				kind, confidence = classifyPR(pr, reviews)
-				tags = []string{kind, "stringer-generated"}
+				tags = []string{kind}
 
 				// Fetch actionable review comments for open PRs only.
 				commentSigs, commentErr := fetchActionableComments(ctx, api, owner, repo, pr.GetNumber(), commentDepth)
@@ -515,7 +515,7 @@ func fetchActionableComments(ctx context.Context, api githubAPI, owner, repo str
 				Author:      comment.GetUser().GetLogin(),
 				Timestamp:   comment.GetCreatedAt().Time,
 				Confidence:  confidence,
-				Tags:        []string{"github-review-todo", "stringer-generated"},
+				Tags:        []string{"github-review-todo"},
 			})
 		}
 

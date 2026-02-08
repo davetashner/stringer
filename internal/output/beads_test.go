@@ -774,7 +774,7 @@ func TestPreClosedSignal_StatusClosed(t *testing.T) {
 		Author:      "bob",
 		Timestamp:   time.Date(2026, 1, 10, 10, 0, 0, 0, time.UTC),
 		Confidence:  0.3,
-		Tags:        []string{"github-closed-issue", "pre-closed", "stringer-generated"},
+		Tags:        []string{"github-closed-issue", "pre-closed"},
 		ClosedAt:    closedAt,
 	}
 
@@ -800,7 +800,7 @@ func TestPreClosedSignal_MergedPR(t *testing.T) {
 		Author:     "alice",
 		Timestamp:  time.Date(2026, 1, 5, 8, 0, 0, 0, time.UTC),
 		Confidence: 0.3,
-		Tags:       []string{"github-merged-pr", "pre-closed", "stringer-generated"},
+		Tags:       []string{"github-merged-pr", "pre-closed"},
 		ClosedAt:   time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC),
 	}
 
@@ -821,7 +821,7 @@ func TestPreClosedSignal_ClosedPR(t *testing.T) {
 		FilePath:   "github/prs/50",
 		Title:      "Abandoned PR",
 		Confidence: 0.2,
-		Tags:       []string{"github-closed-pr", "pre-closed", "stringer-generated"},
+		Tags:       []string{"github-closed-pr", "pre-closed"},
 		ClosedAt:   time.Date(2026, 1, 18, 16, 0, 0, 0, time.UTC),
 	}
 
@@ -841,7 +841,7 @@ func TestSignalWithoutPreClosedTag_StaysOpen(t *testing.T) {
 		Kind:       "github-issue",
 		Title:      "Open issue",
 		Confidence: 0.5,
-		Tags:       []string{"github-issue", "stringer-generated"},
+		Tags:       []string{"github-issue"},
 	}
 
 	rec := NewBeadsFormatter().signalToBead(sig)
@@ -863,7 +863,7 @@ func TestPreClosedSignal_ZeroClosedAt(t *testing.T) {
 		Kind:       "github-closed-issue",
 		Title:      "Closed with no timestamp",
 		Confidence: 0.3,
-		Tags:       []string{"github-closed-issue", "pre-closed", "stringer-generated"},
+		Tags:       []string{"github-closed-issue", "pre-closed"},
 		// ClosedAt is zero value
 	}
 
@@ -887,7 +887,7 @@ func TestPreClosedSignal_JSONL(t *testing.T) {
 			Author:     "dev",
 			Timestamp:  time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 			Confidence: 0.3,
-			Tags:       []string{"github-closed-issue", "pre-closed", "stringer-generated"},
+			Tags:       []string{"github-closed-issue", "pre-closed"},
 			ClosedAt:   time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC),
 		},
 		testSignal(), // open signal for comparison
