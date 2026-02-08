@@ -36,6 +36,7 @@ func restoreFormatters() {
 	RegisterFormatter(NewBeadsFormatter())
 	RegisterFormatter(NewJSONFormatter())
 	RegisterFormatter(NewMarkdownFormatter())
+	RegisterFormatter(NewTasksFormatter())
 }
 
 func TestGetFormatter_Known(t *testing.T) {
