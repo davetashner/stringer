@@ -1,7 +1,11 @@
-# Stringer
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/hero-github-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/hero-github-light.png">
+  <img alt="Stringer" src="assets/hero-github-light.png">
+</picture>
 
 [![CI](https://github.com/davetashner/stringer/actions/workflows/ci.yml/badge.svg)](https://github.com/davetashner/stringer/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-55%25+-brightgreen)](https://github.com/davetashner/stringer/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-90%25+-brightgreen)](https://github.com/davetashner/stringer/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/davetashner/stringer)](https://goreportcard.com/report/github.com/davetashner/stringer)
 [![Release](https://img.shields.io/github/v/release/davetashner/stringer)](https://github.com/davetashner/stringer/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
