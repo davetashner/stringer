@@ -45,6 +45,14 @@ type CollectorOpts struct {
 	// ErrorMode controls how errors from this collector are handled.
 	// Default (zero value or empty string) is treated as ErrorModeWarn.
 	ErrorMode ErrorMode
+
+	// LargeFileThreshold overrides the default large-file line count.
+	// If zero, the default (1000 lines) is used.
+	LargeFileThreshold int
+
+	// GitRoot is the path to the .git directory root, which may differ
+	// from RepoPath when scanning a subdirectory.
+	GitRoot string
 }
 
 // ScanConfig holds the overall configuration for a scan operation.

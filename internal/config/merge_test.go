@@ -145,3 +145,36 @@ func TestMerge_FileCollectorOptsNewCollector(t *testing.T) {
 	assert.InDelta(t, 0.5, result.CollectorOpts["todos"].MinConfidence, 0.001)
 	assert.InDelta(t, 0.4, result.CollectorOpts["gitlog"].MinConfidence, 0.001)
 }
+
+func TestMerge_LargeFileThresholdFromFile(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"patterns": {
+				LargeFileThreshold: 500,
+			},
+		},
+	}
+	cliCfg := signal.ScanConfig{}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.Equal(t, 500, result.CollectorOpts["patterns"].LargeFileThreshold)
+}
+
+func TestMerge_LargeFileThresholdCLIOverride(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"patterns": {
+				LargeFileThreshold: 500,
+			},
+		},
+	}
+	cliCfg := signal.ScanConfig{
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"patterns": {LargeFileThreshold: 750},
+		},
+	}
+
+	result := Merge(fileCfg, cliCfg)
+	// CLI value should win.
+	assert.Equal(t, 750, result.CollectorOpts["patterns"].LargeFileThreshold)
+}

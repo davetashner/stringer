@@ -13,8 +13,9 @@ import (
 	"github.com/davetashner/stringer/internal/signal"
 )
 
-// Large-file threshold in lines. Files exceeding this are flagged.
-const largeFileThreshold = 500
+// defaultLargeFileThreshold is the default large-file threshold in lines.
+// Files exceeding this are flagged. Can be overridden via CollectorOpts.
+const defaultLargeFileThreshold = 1000
 
 // minSourceLinesForTestCheck is the minimum number of lines a source file must
 // have before we report a missing-test signal. Very small files (stubs, config)
@@ -95,6 +96,12 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 	// Detect parallel test directories before the walk.
 	c.detectTestRoots(repoPath)
 
+	// Determine large-file threshold (configurable via opts).
+	threshold := defaultLargeFileThreshold
+	if opts.LargeFileThreshold > 0 {
+		threshold = opts.LargeFileThreshold
+	}
+
 	var signals []signal.RawSignal
 
 	// Track per-directory file counts for test-ratio analysis.
@@ -163,15 +170,15 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 		}
 
 		// C3.1: Large file detection.
-		if lineCount > largeFileThreshold {
-			confidence := largeFileConfidence(lineCount)
+		if lineCount > threshold {
+			confidence := largeFileConfidence(lineCount, threshold)
 			signals = append(signals, signal.RawSignal{
 				Source:      "patterns",
 				Kind:        "large-file",
 				FilePath:    relPath,
 				Line:        0,
 				Title:       fmt.Sprintf("Large file: %s (%d lines)", relPath, lineCount),
-				Description: fmt.Sprintf("File exceeds %d-line threshold. Consider breaking it into smaller, focused modules.", largeFileThreshold),
+				Description: fmt.Sprintf("File exceeds %d-line threshold. Consider breaking it into smaller, focused modules.", threshold),
 				Confidence:  confidence,
 				Tags:        []string{"large-file", "stringer-generated"},
 			})
@@ -262,9 +269,9 @@ func countLines(path string) (int, error) {
 
 // largeFileConfidence scales confidence from 0.4 (just over threshold) to 0.8
 // (at 2x threshold or more).
-func largeFileConfidence(lineCount int) float64 {
+func largeFileConfidence(lineCount, threshold int) float64 {
 	// Linear interpolation from threshold..2*threshold → 0.4..0.8
-	ratio := float64(lineCount) / float64(largeFileThreshold)
+	ratio := float64(lineCount) / float64(threshold)
 	// ratio > 1.0 (since lineCount > threshold)
 	// At ratio=1.0 → 0.4, at ratio>=2.0 → 0.8
 	confidence := 0.4 + 0.4*(ratio-1.0)

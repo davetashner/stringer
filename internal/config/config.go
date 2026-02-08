@@ -23,6 +23,9 @@ type CollectorConfig struct {
 	DirectoryDepth       int `yaml:"directory_depth,omitempty"`
 	MaxBlameFiles        int `yaml:"max_blame_files,omitempty"`
 
+	// Patterns collector settings.
+	LargeFileThreshold int `yaml:"large_file_threshold,omitempty"`
+
 	// GitHub collector settings.
 	IncludePRs            *bool `yaml:"include_prs,omitempty"`
 	CommentDepth          int   `yaml:"comment_depth,omitempty"`
