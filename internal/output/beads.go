@@ -1,7 +1,6 @@
 package output
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -123,21 +122,13 @@ func deriveCloseReason(kind string) string {
 }
 
 // generateID produces a deterministic ID from signal content.
-// It hashes Source + Kind + FilePath + Line + Title using SHA-256,
-// truncates to 8 hex characters, and prefixes with "str-" (or the
-// convention prefix if set).
+// It delegates to the shared signalID helper and applies convention overrides.
 func (b *BeadsFormatter) generateID(sig signal.RawSignal) string {
-	h := sha256.New()
-	// Write each field separated by null bytes to avoid collisions
-	// from field concatenation (e.g., "ab"+"c" vs "a"+"bc").
-	// sha256.Hash.Write never returns an error per the hash.Hash contract.
-	_, _ = fmt.Fprintf(h, "%s\x00%s\x00%s\x00%d\x00%s", sig.Source, sig.Kind, sig.FilePath, sig.Line, sig.Title)
-	sum := h.Sum(nil)
 	prefix := "str-"
 	if b.conventions != nil && b.conventions.IDPrefix != "" {
 		prefix = b.conventions.IDPrefix
 	}
-	return fmt.Sprintf("%s%x", prefix, sum[:4])
+	return signalID(sig, prefix)
 }
 
 // mapKindToType maps a signal Kind to a bead type.

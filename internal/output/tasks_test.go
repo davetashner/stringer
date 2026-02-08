@@ -107,6 +107,27 @@ func TestTasksFormatter_ActiveForm(t *testing.T) {
 	}
 }
 
+func TestTasksFormatter_ActiveFormCamelCase(t *testing.T) {
+	f := newTestTasksFormatter()
+	sig := signal.RawSignal{
+		Source:     "todos",
+		Kind:       "todo",
+		Title:      "Add tests",
+		FilePath:   "main.go",
+		Line:       1,
+		Confidence: 0.5,
+	}
+
+	var buf bytes.Buffer
+	err := f.Format([]signal.RawSignal{sig}, &buf)
+	require.NoError(t, err)
+
+	// Verify the JSON uses camelCase "activeForm", not snake_case "active_form".
+	output := buf.String()
+	assert.Contains(t, output, `"activeForm"`)
+	assert.NotContains(t, output, `"active_form"`)
+}
+
 func TestTasksFormatter_Description(t *testing.T) {
 	t.Run("full_signal", func(t *testing.T) {
 		s := signal.RawSignal{
@@ -114,13 +135,18 @@ func TestTasksFormatter_Description(t *testing.T) {
 			Source:      "todos",
 			FilePath:    "main.go",
 			Line:        42,
+			Author:      "alice",
 			Confidence:  0.85,
+			Tags:        []string{"security", "performance"},
 		}
 		got := descriptionForSignal(s)
 		assert.Contains(t, got, "This needs fixing urgently")
 		assert.Contains(t, got, "Source: todos collector")
 		assert.Contains(t, got, "File: main.go:42")
+		assert.Contains(t, got, "Author: alice")
 		assert.Contains(t, got, "Confidence: 85%")
+		assert.Contains(t, got, "Priority: P1")
+		assert.Contains(t, got, "Tags: security, performance")
 	})
 
 	t.Run("no_description", func(t *testing.T) {
@@ -132,6 +158,8 @@ func TestTasksFormatter_Description(t *testing.T) {
 		assert.Contains(t, got, "Source: gitlog collector")
 		assert.Contains(t, got, "File: handler.go")
 		assert.NotContains(t, got, "Confidence:")
+		assert.NotContains(t, got, "Author:")
+		assert.NotContains(t, got, "Tags:")
 	})
 
 	t.Run("file_without_line", func(t *testing.T) {
@@ -149,6 +177,23 @@ func TestTasksFormatter_Description(t *testing.T) {
 		got := descriptionForSignal(s)
 		assert.Empty(t, got)
 	})
+
+	t.Run("priority_mapping", func(t *testing.T) {
+		tests := []struct {
+			confidence float64
+			wantP      string
+		}{
+			{0.85, "Priority: P1"},
+			{0.65, "Priority: P2"},
+			{0.45, "Priority: P3"},
+			{0.2, "Priority: P4"},
+		}
+		for _, tt := range tests {
+			s := signal.RawSignal{Confidence: tt.confidence}
+			got := descriptionForSignal(s)
+			assert.Contains(t, got, tt.wantP, "confidence %.2f should map to %s", tt.confidence, tt.wantP)
+		}
+	})
 }
 
 func TestTasksFormatter_Metadata(t *testing.T) {
@@ -159,6 +204,8 @@ func TestTasksFormatter_Metadata(t *testing.T) {
 		Line:       10,
 		Confidence: 0.9,
 		Tags:       []string{"security", "perf"},
+		Author:     "alice",
+		Timestamp:  time.Date(2026, 1, 15, 10, 30, 0, 0, time.UTC),
 	}
 
 	m := metadataForSignal(s)
@@ -168,6 +215,8 @@ func TestTasksFormatter_Metadata(t *testing.T) {
 	assert.Equal(t, "10", m["line"])
 	assert.Equal(t, "0.90", m["confidence"])
 	assert.Equal(t, "security,perf", m["tags"])
+	assert.Equal(t, "alice", m["author"])
+	assert.Equal(t, "2026-01-15T10:30:00Z", m["timestamp"])
 }
 
 func TestTasksFormatter_MetadataMinimal(t *testing.T) {
@@ -182,6 +231,69 @@ func TestTasksFormatter_MetadataMinimal(t *testing.T) {
 	assert.False(t, hasLine)
 	_, hasTags := m["tags"]
 	assert.False(t, hasTags)
+	_, hasAuthor := m["author"]
+	assert.False(t, hasAuthor)
+	_, hasTimestamp := m["timestamp"]
+	assert.False(t, hasTimestamp)
+	_, hasClosedAt := m["closed_at"]
+	assert.False(t, hasClosedAt)
+}
+
+func TestTasksFormatter_MetadataClosedAt(t *testing.T) {
+	closedTime := time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC)
+	s := signal.RawSignal{
+		Kind:     "github-closed-issue",
+		ClosedAt: closedTime,
+	}
+
+	m := metadataForSignal(s)
+	assert.Equal(t, "2026-02-01T12:00:00Z", m["closed_at"])
+}
+
+func TestTasksFormatter_ID(t *testing.T) {
+	t.Run("deterministic", func(t *testing.T) {
+		sig := testSignal()
+		task1 := signalToTask(sig)
+		task2 := signalToTask(sig)
+		assert.Equal(t, task1.ID, task2.ID, "same signal should produce the same task ID")
+	})
+
+	t.Run("format", func(t *testing.T) {
+		sig := testSignal()
+		task := signalToTask(sig)
+		assert.Regexp(t, `^str-[0-9a-f]{8}$`, task.ID, "task ID should be str- prefix + 8 hex chars")
+	})
+
+	t.Run("different_signals_different_ids", func(t *testing.T) {
+		sig1 := signal.RawSignal{Source: "todos", Kind: "todo", Title: "A", FilePath: "a.go", Line: 1}
+		sig2 := signal.RawSignal{Source: "todos", Kind: "todo", Title: "B", FilePath: "b.go", Line: 2}
+		task1 := signalToTask(sig1)
+		task2 := signalToTask(sig2)
+		assert.NotEqual(t, task1.ID, task2.ID)
+	})
+}
+
+func TestTasksFormatter_Status(t *testing.T) {
+	t.Run("pending_when_open", func(t *testing.T) {
+		sig := signal.RawSignal{
+			Source: "todos",
+			Kind:   "todo",
+			Title:  "Open task",
+		}
+		task := signalToTask(sig)
+		assert.Equal(t, "pending", task.Status)
+	})
+
+	t.Run("completed_when_closed", func(t *testing.T) {
+		sig := signal.RawSignal{
+			Source:   "github",
+			Kind:     "github-closed-issue",
+			Title:    "Closed issue",
+			ClosedAt: time.Date(2026, 2, 1, 12, 0, 0, 0, time.UTC),
+		}
+		task := signalToTask(sig)
+		assert.Equal(t, "completed", task.Status)
+	})
 }
 
 func TestTasksFormatter_SingleSignal(t *testing.T) {
@@ -198,18 +310,25 @@ func TestTasksFormatter_SingleSignal(t *testing.T) {
 	require.Len(t, envelope.Tasks, 1)
 	task := envelope.Tasks[0]
 
+	assert.Regexp(t, `^str-[0-9a-f]{8}$`, task.ID)
 	assert.Equal(t, "TODO: Add rate limiting", task.Subject)
 	assert.Equal(t, "Addressing Add rate limiting", task.ActiveForm)
+	assert.Equal(t, "pending", task.Status)
 	assert.Contains(t, task.Description, "This endpoint needs rate limiting before production")
 	assert.Contains(t, task.Description, "Source: todos collector")
 	assert.Contains(t, task.Description, "File: internal/server/handler.go:42")
+	assert.Contains(t, task.Description, "Author: alice")
 	assert.Contains(t, task.Description, "Confidence: 85%")
+	assert.Contains(t, task.Description, "Priority: P1")
+	assert.Contains(t, task.Description, "Tags: security, performance")
 
 	assert.Equal(t, "todo", task.Metadata["kind"])
 	assert.Equal(t, "todos", task.Metadata["collector"])
 	assert.Equal(t, "internal/server/handler.go", task.Metadata["file_path"])
 	assert.Equal(t, "42", task.Metadata["line"])
 	assert.Equal(t, "security,performance", task.Metadata["tags"])
+	assert.Equal(t, "alice", task.Metadata["author"])
+	assert.Equal(t, "2026-01-15T10:30:00Z", task.Metadata["timestamp"])
 }
 
 func TestTasksFormatter_MultipleSignals(t *testing.T) {
@@ -231,6 +350,14 @@ func TestTasksFormatter_MultipleSignals(t *testing.T) {
 	assert.Equal(t, "TODO: Task A", envelope.Tasks[0].Subject)
 	assert.Equal(t, "BUG: Task B", envelope.Tasks[1].Subject)
 	assert.Equal(t, "HACK: Task C", envelope.Tasks[2].Subject)
+
+	// Each task should have a unique ID.
+	ids := map[string]bool{}
+	for _, task := range envelope.Tasks {
+		assert.NotEmpty(t, task.ID)
+		assert.False(t, ids[task.ID], "duplicate task ID: %s", task.ID)
+		ids[task.ID] = true
+	}
 }
 
 func TestTasksFormatter_EnvelopeMetadata(t *testing.T) {

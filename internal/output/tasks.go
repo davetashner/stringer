@@ -17,9 +17,11 @@ func init() {
 
 // taskRecord represents a single Claude Code task.
 type taskRecord struct {
+	ID          string            `json:"id"`
 	Subject     string            `json:"subject"`
 	Description string            `json:"description"`
-	ActiveForm  string            `json:"active_form"`
+	ActiveForm  string            `json:"activeForm"`
+	Status      string            `json:"status"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 }
 
@@ -123,16 +125,18 @@ func (f *TasksFormatter) shouldCompact(w io.Writer) bool {
 
 // signalToTask converts a RawSignal to a taskRecord.
 func signalToTask(s signal.RawSignal) taskRecord {
-	subject := subjectForSignal(s)
-	activeForm := activeFormForSignal(s)
-	description := descriptionForSignal(s)
-	metadata := metadataForSignal(s)
+	status := "pending"
+	if !s.ClosedAt.IsZero() {
+		status = "completed"
+	}
 
 	return taskRecord{
-		Subject:     subject,
-		Description: description,
-		ActiveForm:  activeForm,
-		Metadata:    metadata,
+		ID:          signalID(s, "str-"),
+		Subject:     subjectForSignal(s),
+		Description: descriptionForSignal(s),
+		ActiveForm:  activeFormForSignal(s),
+		Status:      status,
+		Metadata:    metadataForSignal(s),
 	}
 }
 
@@ -183,8 +187,16 @@ func descriptionForSignal(s signal.RawSignal) string {
 			fmt.Fprintf(&b, "File: %s\n", s.FilePath)
 		}
 	}
+	if s.Author != "" {
+		fmt.Fprintf(&b, "Author: %s\n", s.Author)
+	}
 	if s.Confidence > 0 {
 		fmt.Fprintf(&b, "Confidence: %.0f%%\n", s.Confidence*100)
+		priority := mapConfidenceToPriority(s.Confidence)
+		fmt.Fprintf(&b, "Priority: P%d\n", priority)
+	}
+	if len(s.Tags) > 0 {
+		fmt.Fprintf(&b, "Tags: %s\n", strings.Join(s.Tags, ", "))
 	}
 
 	return strings.TrimRight(b.String(), "\n")
@@ -210,6 +222,15 @@ func metadataForSignal(s signal.RawSignal) map[string]string {
 	}
 	if len(s.Tags) > 0 {
 		m["tags"] = strings.Join(s.Tags, ",")
+	}
+	if s.Author != "" {
+		m["author"] = s.Author
+	}
+	if !s.Timestamp.IsZero() {
+		m["timestamp"] = s.Timestamp.UTC().Format("2006-01-02T15:04:05Z")
+	}
+	if !s.ClosedAt.IsZero() {
+		m["closed_at"] = s.ClosedAt.UTC().Format("2006-01-02T15:04:05Z")
 	}
 
 	return m

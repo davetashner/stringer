@@ -39,6 +39,14 @@ But most real work happens on **existing codebases**. When an agent boots up on 
 
 Stringer solves the cold-start problem. It mines signals already present in your repo and produces structured Beads issues that agents can immediately orient around.
 
+## Why Stringer?
+
+**Static analysis on your laptop, not your token budget.** Stringer runs locally — no API keys, no network calls, no per-request costs. It extracts signals that are already sitting in your codebase using deterministic static analysis.
+
+**Pre-process the easy stuff so agents start informed.** Without Stringer, an AI agent boots up on a new codebase and has to discover TODOs, stale branches, risky bus-factor modules, and open GitHub issues on its own — burning inference tokens on mechanical work. Stringer does that extraction up front on local CPU, so agents begin with structured context instead of a blank slate.
+
+**LLM-optional by design.** Core scanning needs zero API keys. The planned LLM pass (signal clustering, dependency inference) adds intelligence on top but is never required. You control where the money goes.
+
 ## What It Does Today
 
 ### Collectors
@@ -84,12 +92,12 @@ Stringer solves the cold-start problem. It mines signals already present in your
                     │ Validation │
                     └──────┬─────┘
                            │
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-         ┌─────────┐ ┌─────────┐ ┌─────────┐
-         │  Beads  │ │  JSON   │ │Markdown │
-         │  JSONL  │ │         │ │         │
-         └─────────┘ └─────────┘ └─────────┘
+         ┌────────────┼────────────┬────────────┐
+         ▼            ▼            ▼            ▼
+    ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
+    │  Beads  │ │  JSON   │ │Markdown │ │  Tasks  │
+    │  JSONL  │ │         │ │         │ │         │
+    └─────────┘ └─────────┘ └─────────┘ └─────────┘
 ```
 
 ## What to Expect
