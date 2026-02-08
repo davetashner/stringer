@@ -45,5 +45,8 @@ Thumbs.db
 *.swo
 *~
 
+# Stringer state
+.stringer/
+
 # Beads lock
 .beads/.jsonl.lock
