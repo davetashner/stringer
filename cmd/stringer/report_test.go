@@ -35,6 +35,10 @@ func resetReportFlags() {
 	if h := reportCmd.Flags().Lookup("help"); h != nil {
 		_ = h.Value.Set("false")
 	}
+
+	// Reset slices AFTER VisitAll — pflag's StringSlice.Set("[]") appends a
+	// literal "[]" entry rather than clearing.
+	reportPaths = nil
 }
 
 func TestReportCmd_Exists(t *testing.T) {
@@ -132,6 +136,7 @@ func TestReportCmd_FlagsRegistered(t *testing.T) {
 		{"git-depth", ""},
 		{"git-since", ""},
 		{"anonymize", ""},
+		{"paths", ""},
 	}
 
 	for _, ff := range flags {

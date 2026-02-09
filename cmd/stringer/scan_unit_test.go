@@ -37,7 +37,6 @@ func resetScanFlags() {
 	scanStrict = false
 	scanGitDepth = 0
 	scanGitSince = ""
-	scanExclude = nil
 	scanExcludeCollectors = ""
 
 	// Reset cobra flag "Changed" state and values to avoid test contamination.
@@ -49,6 +48,12 @@ func resetScanFlags() {
 		f.Changed = false
 		_ = f.Value.Set(f.DefValue)
 	})
+
+	// Reset slices AFTER VisitAll — pflag's StringSlice.Set("[]") appends a
+	// literal "[]" entry rather than clearing, so we must nil out explicitly
+	// after the VisitAll loop.
+	scanExclude = nil
+	scanPaths = nil
 }
 
 // fixtureDir returns the testdata/fixtures/sample-repo path (a small directory
@@ -803,6 +808,7 @@ func TestScanCmd_FlagsRegistered(t *testing.T) {
 		{"git-since", ""},
 		{"exclude", "e"},
 		{"exclude-collectors", "x"},
+		{"paths", ""},
 	}
 
 	for _, ff := range flags {
@@ -1198,6 +1204,86 @@ func TestScanCmd_ExcludeCollectorsFlagRegistered(t *testing.T) {
 	s := scanCmd.Flags().ShorthandLookup("x")
 	require.NotNil(t, s, "shorthand -x not registered")
 	assert.Equal(t, "exclude-collectors", s.Name)
+}
+
+// -----------------------------------------------------------------------
+// --paths flag tests
+// -----------------------------------------------------------------------
+
+func TestScanCmd_PathsFlag_RegisteredAndDefaults(t *testing.T) {
+	f := scanCmd.Flags().Lookup("paths")
+	require.NotNil(t, f, "flag --paths not registered")
+	assert.Equal(t, "[]", f.DefValue)
+
+	// Should not have a shorthand.
+	s := scanCmd.Flags().ShorthandLookup("p")
+	if s != nil {
+		assert.NotEqual(t, "paths", s.Name, "--paths should not use -p shorthand")
+	}
+}
+
+func TestScanCmd_PathsFlag_SinglePath(t *testing.T) {
+	resetScanFlags()
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "src"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "src", "main.go"),
+		[]byte("package main\n// TODO: fix this\n"), 0o600))
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--paths=src/main.go", "--dry-run", "--quiet", "--collectors=todos"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "signal(s) found")
+}
+
+func TestScanCmd_PathsFlag_MultiplePaths(t *testing.T) {
+	resetScanFlags()
+	dir := t.TempDir()
+	for _, sub := range []string{"cmd", "internal"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, sub), 0o750))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, sub, "file.go"),
+			[]byte("package x\n// TODO: something\n"), 0o600))
+	}
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--paths=cmd/**,internal/**", "--dry-run", "--quiet", "--collectors=todos"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "signal(s) found")
+}
+
+func TestScanCmd_PathsFlag_Integration(t *testing.T) {
+	binary := buildBinary(t)
+
+	// Create a temp directory with source files containing TODOs in two directories.
+	dir := t.TempDir()
+	fooDir := filepath.Join(dir, "foo")
+	bazDir := filepath.Join(dir, "baz")
+	require.NoError(t, os.MkdirAll(fooDir, 0o750))
+	require.NoError(t, os.MkdirAll(bazDir, 0o750))
+
+	require.NoError(t, os.WriteFile(filepath.Join(fooDir, "bar.go"),
+		[]byte("package foo\n// TODO: fix this\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(bazDir, "qux.go"),
+		[]byte("package baz\n// TODO: fix that\n"), 0o600))
+
+	// Scan with --paths=foo/**: should only find the foo/bar.go TODO.
+	cmd := exec.Command(binary, "scan", dir, "--dry-run", "--json", "--quiet", //nolint:gosec // test helper
+		"--collectors=todos", "--paths=foo/**")
+	stdout, err := cmd.Output()
+	require.NoError(t, err, "stderr: %s", stderr(cmd))
+
+	var result struct {
+		TotalSignals int `json:"total_signals"`
+	}
+	require.NoError(t, json.Unmarshal(stdout, &result), "output: %s", stdout)
+	assert.Equal(t, 1, result.TotalSignals, "expected 1 signal with --paths=foo/**")
 }
 
 // stderr is a helper that captures stderr from a failed exec.Command.
