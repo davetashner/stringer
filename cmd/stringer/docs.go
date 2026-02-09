@@ -39,17 +39,17 @@ func runDocs(cmd *cobra.Command, args []string) error {
 		repoPath = args[0]
 	}
 
-	absPath, err := filepath.Abs(repoPath)
+	absPath, err := cmdFS.Abs(repoPath)
 	if err != nil {
 		return fmt.Errorf("stringer: cannot resolve path %q (%v)", repoPath, err)
 	}
 
-	absPath, err = filepath.EvalSymlinks(absPath)
+	absPath, err = cmdFS.EvalSymlinks(absPath)
 	if err != nil {
 		return fmt.Errorf("stringer: cannot resolve path %q (%v)", repoPath, err)
 	}
 
-	info, err := os.Stat(absPath)
+	info, err := cmdFS.Stat(absPath)
 	if err != nil {
 		return fmt.Errorf("stringer: path %q does not exist", repoPath)
 	}
@@ -72,13 +72,13 @@ func runDocs(cmd *cobra.Command, args []string) error {
 
 	if docsUpdate {
 		existingPath := filepath.Join(absPath, "AGENTS.md")
-		if _, err := os.Stat(existingPath); os.IsNotExist(err) {
+		if _, err := cmdFS.Stat(existingPath); os.IsNotExist(err) {
 			return fmt.Errorf("stringer: no existing AGENTS.md found at %s (remove --update to generate a new one)", existingPath)
 		}
 
 		w := cmd.OutOrStdout()
 		if docsOutput != "" {
-			f, err := os.Create(docsOutput) //nolint:gosec // user-specified output path
+			f, err := cmdFS.Create(docsOutput)
 			if err != nil {
 				return fmt.Errorf("stringer: cannot create output file %q (%v)", docsOutput, err)
 			}
@@ -96,7 +96,7 @@ func runDocs(cmd *cobra.Command, args []string) error {
 
 	w := cmd.OutOrStdout()
 	if docsOutput != "" {
-		f, err := os.Create(docsOutput) //nolint:gosec // user-specified output path
+		f, err := cmdFS.Create(docsOutput)
 		if err != nil {
 			return fmt.Errorf("stringer: cannot create output file %q (%v)", docsOutput, err)
 		}

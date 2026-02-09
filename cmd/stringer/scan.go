@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -89,18 +88,18 @@ func runScan(cmd *cobra.Command, args []string) error {
 		repoPath = args[0]
 	}
 
-	absPath, err := filepath.Abs(repoPath)
+	absPath, err := cmdFS.Abs(repoPath)
 	if err != nil {
 		return exitError(ExitInvalidArgs, "stringer: cannot resolve path %q (%v)", repoPath, err)
 	}
 
 	// Resolve symlinks to prevent path traversal outside the intended tree.
-	absPath, err = filepath.EvalSymlinks(absPath)
+	absPath, err = cmdFS.EvalSymlinks(absPath)
 	if err != nil {
 		return exitError(ExitInvalidArgs, "stringer: cannot resolve path %q (%v)", repoPath, err)
 	}
 
-	info, err := os.Stat(absPath)
+	info, err := cmdFS.Stat(absPath)
 	if err != nil {
 		return exitError(ExitInvalidArgs, "stringer: path %q does not exist (check the path and try again)", repoPath)
 	}
@@ -111,7 +110,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	// Walk up to find .git root for subdirectory scans.
 	gitRoot := absPath
 	for {
-		if _, err := os.Stat(filepath.Join(gitRoot, ".git")); err == nil {
+		if _, err := cmdFS.Stat(filepath.Join(gitRoot, ".git")); err == nil {
 			break
 		}
 		parent := filepath.Dir(gitRoot)
@@ -429,7 +428,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	w := cmd.OutOrStdout()
 	if scanOutput != "" {
-		f, err := os.Create(scanOutput) //nolint:gosec // user-specified output path
+		f, err := cmdFS.Create(scanOutput)
 		if err != nil {
 			return exitError(ExitInvalidArgs, "stringer: cannot create output file %q (%v)", scanOutput, err)
 		}

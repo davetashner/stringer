@@ -49,7 +49,7 @@ format, and filtering. Run ` + "`stringer init --force`" + ` to regenerate defau
 func AppendAgentSnippet(repoPath string) (Action, error) {
 	agentsPath := filepath.Join(repoPath, "AGENTS.md")
 
-	content, err := os.ReadFile(agentsPath) //nolint:gosec // repo-local file
+	content, err := FS.ReadFile(agentsPath)
 	if err != nil && !os.IsNotExist(err) {
 		return Action{}, fmt.Errorf("reading AGENTS.md: %w", err)
 	}
@@ -70,7 +70,7 @@ func AppendAgentSnippet(repoPath string) (Action, error) {
 	if os.IsNotExist(err) {
 		// No AGENTS.md — create one.
 		newContent := "# AGENTS.md\n\n" + wrapped
-		if writeErr := os.WriteFile(agentsPath, []byte(newContent), 0o644); writeErr != nil { //nolint:gosec // documentation file
+		if writeErr := FS.WriteFile(agentsPath, []byte(newContent), 0o644); writeErr != nil {
 			return Action{}, fmt.Errorf("creating AGENTS.md: %w", writeErr)
 		}
 		return Action{
@@ -86,7 +86,7 @@ func AppendAgentSnippet(repoPath string) (Action, error) {
 		separator = "\n\n"
 	}
 	newContent := existingContent + separator + wrapped
-	if writeErr := os.WriteFile(agentsPath, []byte(newContent), 0o644); writeErr != nil { //nolint:gosec // documentation file
+	if writeErr := FS.WriteFile(agentsPath, []byte(newContent), 0o644); writeErr != nil {
 		return Action{}, fmt.Errorf("updating AGENTS.md: %w", writeErr)
 	}
 

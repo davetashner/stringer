@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -30,6 +29,10 @@ const stateFile = "last-scan.json"
 
 // schemaVersion is the current state file schema version.
 const schemaVersion = "2"
+
+// FS is the file system implementation used by this package.
+// Override in tests with a testable.MockFileSystem.
+var FS testable.FileSystem = testable.DefaultFS
 
 // SignalMeta stores metadata about a signal for diff output.
 type SignalMeta struct {
@@ -75,7 +78,7 @@ type AnnotatedSignal struct {
 // If the file does not exist, it returns (nil, nil).
 func Load(repoPath string) (*ScanState, error) {
 	path := filepath.Join(repoPath, stateDir, stateFile)
-	data, err := os.ReadFile(path) //nolint:gosec // user-provided repo path
+	data, err := FS.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
@@ -94,7 +97,7 @@ func Load(repoPath string) (*ScanState, error) {
 // It creates the .stringer directory if it does not exist.
 func Save(repoPath string, s *ScanState) error {
 	dir := filepath.Join(repoPath, stateDir)
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+	if err := FS.MkdirAll(dir, 0o750); err != nil {
 		return err
 	}
 
@@ -103,7 +106,7 @@ func Save(repoPath string, s *ScanState) error {
 		return err
 	}
 
-	return os.WriteFile(filepath.Join(dir, stateFile), data, 0o644) //nolint:gosec // state file, not secret
+	return FS.WriteFile(filepath.Join(dir, stateFile), data, 0o644)
 }
 
 // FilterNew returns only the signals whose hashes are not present in prev.
@@ -285,7 +288,7 @@ func AnnotateRemovedSignals(repoPath string, removed []SignalMeta) []AnnotatedSi
 			continue
 		}
 		fullPath := filepath.Join(repoPath, m.FilePath)
-		if _, err := os.Stat(fullPath); errors.Is(err, fs.ErrNotExist) {
+		if _, err := FS.Stat(fullPath); errors.Is(err, fs.ErrNotExist) {
 			annotated[i].Resolution = "file_deleted"
 		}
 	}

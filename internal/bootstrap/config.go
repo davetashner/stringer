@@ -3,7 +3,6 @@ package bootstrap
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"path/filepath"
 	"text/template"
 
@@ -65,7 +64,7 @@ func GenerateConfig(repoPath string, hasGitHub bool, force bool) (Action, error)
 
 	// Check if config already exists.
 	if !force {
-		if _, err := os.Stat(configPath); err == nil {
+		if _, err := FS.Stat(configPath); err == nil {
 			return Action{
 				File:        config.FileName,
 				Operation:   "skipped",
@@ -85,7 +84,7 @@ func GenerateConfig(repoPath string, hasGitHub bool, force bool) (Action, error)
 		return Action{}, fmt.Errorf("rendering config template: %w", err)
 	}
 
-	if err := os.WriteFile(configPath, buf.Bytes(), 0o644); err != nil { //nolint:gosec // config file needs to be readable
+	if err := FS.WriteFile(configPath, buf.Bytes(), 0o644); err != nil {
 		return Action{}, fmt.Errorf("writing %s: %w", config.FileName, err)
 	}
 

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 )
 
@@ -28,7 +27,7 @@ func Update(existingPath string, analysis *RepoAnalysis, w io.Writer) error {
 	freshSections := parseAutoSections(freshBuf.String())
 
 	// Read existing file.
-	existingContent, err := os.ReadFile(existingPath) //nolint:gosec // user-specified path
+	existingContent, err := FS.ReadFile(existingPath)
 	if err != nil {
 		return fmt.Errorf("read existing file: %w", err)
 	}

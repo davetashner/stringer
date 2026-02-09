@@ -1,10 +1,16 @@
 package docs
 
 import (
-	"os"
+	"io/fs"
 	"path/filepath"
 	"strings"
+
+	"github.com/davetashner/stringer/internal/testable"
 )
+
+// FS is the file system implementation used by this package.
+// Override in tests with a testable.MockFileSystem.
+var FS testable.FileSystem = testable.DefaultFS
 
 // DirEntry represents a directory or file in the repo tree.
 type DirEntry struct {
@@ -53,10 +59,10 @@ func Analyze(repoPath string) (*RepoAnalysis, error) {
 	}
 
 	// Check for existing files.
-	if _, err := os.Stat(filepath.Join(repoPath, "README.md")); err == nil {
+	if _, err := FS.Stat(filepath.Join(repoPath, "README.md")); err == nil {
 		analysis.HasREADME = true
 	}
-	if _, err := os.Stat(filepath.Join(repoPath, "AGENTS.md")); err == nil {
+	if _, err := FS.Stat(filepath.Join(repoPath, "AGENTS.md")); err == nil {
 		analysis.HasAGENTSMD = true
 	}
 
@@ -90,7 +96,7 @@ func buildDirectoryTree(repoPath string, maxDepth int) []DirEntry {
 		".stringer": true, ".beads": true, "dist": true, "build": true,
 	}
 
-	_ = filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
+	_ = FS.WalkDir(repoPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // skip errors
 		}
@@ -102,7 +108,7 @@ func buildDirectoryTree(repoPath string, maxDepth int) []DirEntry {
 
 		depth := len(strings.Split(rel, string(filepath.Separator)))
 		if depth > maxDepth {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
@@ -111,13 +117,13 @@ func buildDirectoryTree(repoPath string, maxDepth int) []DirEntry {
 		name := filepath.Base(path)
 		// Skip hidden files/dirs (except at root level for important ones).
 		if strings.HasPrefix(name, ".") && depth > 1 {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
-		if info.IsDir() {
+		if d.IsDir() {
 			if skipDirs[name] {
 				return filepath.SkipDir
 			}
@@ -153,19 +159,19 @@ func detectPatterns(repoPath string, detections []Detection) []CodePattern {
 		}
 	}
 
-	if _, err := os.Stat(filepath.Join(repoPath, "internal")); err == nil {
+	if _, err := FS.Stat(filepath.Join(repoPath, "internal")); err == nil {
 		patterns = append(patterns, CodePattern{
 			Name:        "Go Internal Packages",
 			Description: "Uses Go internal/ directory for private packages",
 		})
 	}
-	if _, err := os.Stat(filepath.Join(repoPath, "docs", "decisions")); err == nil {
+	if _, err := FS.Stat(filepath.Join(repoPath, "docs", "decisions")); err == nil {
 		patterns = append(patterns, CodePattern{
 			Name:        "Decision Records",
 			Description: "Uses architectural decision records in docs/decisions/",
 		})
 	}
-	if _, err := os.Stat(filepath.Join(repoPath, ".github", "workflows")); err == nil {
+	if _, err := FS.Stat(filepath.Join(repoPath, ".github", "workflows")); err == nil {
 		patterns = append(patterns, CodePattern{
 			Name:        "GitHub Actions CI",
 			Description: "Uses GitHub Actions for CI/CD",

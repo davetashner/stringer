@@ -15,7 +15,12 @@ import (
 	"github.com/davetashner/stringer/internal/collector"
 	"github.com/davetashner/stringer/internal/gitcli"
 	"github.com/davetashner/stringer/internal/signal"
+	"github.com/davetashner/stringer/internal/testable"
 )
+
+// FS is the file system implementation used by this package.
+// Override in tests with a testable.MockFileSystem.
+var FS testable.FileSystem = testable.DefaultFS
 
 // todoKeyword maps a recognized keyword to its base confidence score per DR-004.
 var todoKeyword = map[string]float64{
@@ -115,7 +120,7 @@ func (c *TodoCollector) Collect(ctx context.Context, repoPath string, opts signa
 	var signals []signal.RawSignal
 	var fileCount int
 
-	err := filepath.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error {
+	err := FS.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil // skip unreadable entries
 		}
@@ -143,7 +148,7 @@ func (c *TodoCollector) Collect(ctx context.Context, repoPath string, opts signa
 
 		// Skip symlinks that resolve outside the repo tree to prevent traversal.
 		if d.Type()&os.ModeSymlink != 0 {
-			resolved, resolveErr := filepath.EvalSymlinks(path)
+			resolved, resolveErr := FS.EvalSymlinks(path)
 			if resolveErr != nil {
 				return nil // skip unresolvable symlinks
 			}
@@ -212,7 +217,7 @@ func (c *TodoCollector) Collect(ctx context.Context, repoPath string, opts signa
 
 // scanFile reads a file line by line and extracts TODO-style signals.
 func scanFile(absPath, relPath string) ([]signal.RawSignal, error) {
-	f, err := os.Open(absPath) //nolint:gosec // path is from filepath.WalkDir
+	f, err := FS.Open(absPath)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +284,7 @@ func enrichWithBlame(ctx context.Context, gitDir string, relPath string, sig *si
 
 	if err != nil || bl == nil {
 		// Blame failed — fall back to file mtime.
-		if info, statErr := os.Stat(absPath); statErr == nil {
+		if info, statErr := FS.Stat(absPath); statErr == nil {
 			sig.Timestamp = info.ModTime()
 			sig.Tags = append(sig.Tags, "estimated-timestamp")
 		}
@@ -294,7 +299,7 @@ func enrichWithBlame(ctx context.Context, gitDir string, relPath string, sig *si
 
 // isGitRepo returns true if dir contains a .git directory or file.
 func isGitRepo(dir string) bool {
-	_, err := os.Stat(filepath.Join(dir, ".git"))
+	_, err := FS.Stat(filepath.Join(dir, ".git"))
 	return err == nil
 }
 
@@ -398,7 +403,7 @@ func mergeExcludes(userPatterns []string) []string {
 // isBinaryFile returns true if the file appears to contain binary content.
 // It reads the first 512 bytes and checks for null bytes.
 func isBinaryFile(path string) bool {
-	f, err := os.Open(path) //nolint:gosec // path is from filepath.WalkDir
+	f, err := FS.Open(path)
 	if err != nil {
 		return true // treat unreadable as binary to skip
 	}
