@@ -18,6 +18,7 @@ import (
 	"github.com/davetashner/stringer/internal/collector"
 	"github.com/davetashner/stringer/internal/gitcli"
 	"github.com/davetashner/stringer/internal/signal"
+	"github.com/davetashner/stringer/internal/testable"
 )
 
 // defaultLotteryRiskThreshold is the lottery risk threshold below or at which a
@@ -84,6 +85,10 @@ type LotteryRiskCollector struct {
 
 	// metrics stores structured ownership data for all analyzed directories.
 	metrics *LotteryRiskMetrics
+
+	// GitOpener is the opener used to access the git repository.
+	// If nil, testable.DefaultGitOpener is used.
+	GitOpener testable.GitOpener
 }
 
 // authorStats tracks per-author contribution metrics within a directory.
@@ -111,7 +116,11 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 	if opts.GitRoot != "" {
 		gitRoot = opts.GitRoot
 	}
-	repo, err := git.PlainOpen(gitRoot)
+	opener := c.GitOpener
+	if opener == nil {
+		opener = testable.DefaultGitOpener
+	}
+	repo, err := opener.PlainOpen(gitRoot)
 	if err != nil {
 		return nil, fmt.Errorf("opening repo: %w", err)
 	}
@@ -370,7 +379,7 @@ func blameDirectories(ctx context.Context, gitDir string, repoPath string, owner
 
 // walkCommitsForOwnership iterates commits and applies recency-weighted
 // attribution to directories based on changed files.
-func walkCommitsForOwnership(ctx context.Context, repo *git.Repository, repoPath string, ownership map[string]*dirOwnership, opts signal.CollectorOpts) error {
+func walkCommitsForOwnership(ctx context.Context, repo testable.GitRepository, repoPath string, ownership map[string]*dirOwnership, opts signal.CollectorOpts) error {
 	head, err := repo.Head()
 	if err != nil {
 		return nil // empty repo
