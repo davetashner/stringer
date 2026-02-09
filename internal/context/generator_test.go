@@ -2,6 +2,7 @@ package context
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -209,6 +210,21 @@ func TestRenderDirectoryTree_Empty(t *testing.T) {
 	assert.Equal(t, "proj/\n", result)
 }
 
+func TestRenderDirectoryTree_NestedDepth(t *testing.T) {
+	entries := []docs.DirEntry{
+		{Path: "cmd", IsDir: true, Depth: 1},
+		{Path: "cmd/stringer", IsDir: true, Depth: 2},
+		{Path: "internal", IsDir: true, Depth: 1},
+	}
+
+	result := renderDirectoryTree(entries, "myproject")
+	assert.Contains(t, result, "myproject/")
+	assert.Contains(t, result, "cmd/")
+	assert.Contains(t, result, "│   ")
+	assert.Contains(t, result, "stringer/")
+	assert.Contains(t, result, "internal/")
+}
+
 func TestLastPathElement(t *testing.T) {
 	assert.Equal(t, "file.go", lastPathElement("internal/output/file.go"))
 	assert.Equal(t, "file.go", lastPathElement("file.go"))
@@ -380,6 +396,52 @@ func TestCommitIndicators(t *testing.T) {
 			assert.Equal(t, tt.want, commitIndicators(tt.commit))
 		})
 	}
+}
+
+func TestGenerate_WriteError(t *testing.T) {
+	analysis := &docs.RepoAnalysis{
+		Name:     "myproject",
+		Language: "Go",
+	}
+
+	w := &errWriter{}
+	err := Generate(analysis, nil, nil, w)
+	require.Error(t, err)
+}
+
+// errWriter always returns an error on Write.
+type errWriter struct{}
+
+func (e *errWriter) Write(_ []byte) (int, error) {
+	return 0, errors.New("write error")
+}
+
+func TestGenWriter_ErrorShortCircuits(t *testing.T) {
+	// After the first write error, subsequent print/printf calls should be no-ops.
+	w := &countWriter{failAfter: 1}
+	g := &genWriter{w: w}
+
+	g.print("first")             // succeeds
+	g.printf("second %s", "val") // fails (2nd write)
+	g.print("third")             // should be skipped
+	g.printf("fourth %s", "val") // should be skipped
+
+	require.Error(t, g.err)
+	assert.Equal(t, 2, w.calls, "should have stopped writing after the error")
+}
+
+// countWriter counts writes and fails after failAfter successful calls.
+type countWriter struct {
+	failAfter int
+	calls     int
+}
+
+func (cw *countWriter) Write(p []byte) (int, error) {
+	cw.calls++
+	if cw.calls > cw.failAfter {
+		return 0, errors.New("write error")
+	}
+	return len(p), nil
 }
 
 func TestGenerate_MilestonesSectionOrder(t *testing.T) {

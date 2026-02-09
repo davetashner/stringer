@@ -100,6 +100,25 @@ func TestLoadBeads_BlankLinesSkipped(t *testing.T) {
 	require.Len(t, beads, 2)
 }
 
+func TestLoadBeads_PermissionError(t *testing.T) {
+	dir := t.TempDir()
+	beadsDir := filepath.Join(dir, BeadsDir)
+	require.NoError(t, os.MkdirAll(beadsDir, 0o750))
+	filePath := filepath.Join(beadsDir, IssuesFile)
+	require.NoError(t, os.WriteFile(filePath, []byte(`{"id":"a","title":"Test","status":"open","priority":1}`+"\n"), 0o600))
+
+	// Remove read permission.
+	require.NoError(t, os.Chmod(filePath, 0o000))
+	t.Cleanup(func() {
+		_ = os.Chmod(filePath, 0o600) // restore for cleanup
+	})
+
+	beads, err := LoadBeads(dir)
+	assert.Error(t, err, "should fail when file is unreadable")
+	assert.Nil(t, beads)
+	assert.Contains(t, err.Error(), "open beads file")
+}
+
 func TestLoadBeads_IssueTypeField(t *testing.T) {
 	dir := t.TempDir()
 	beadsDir := filepath.Join(dir, BeadsDir)

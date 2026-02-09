@@ -112,6 +112,7 @@ func TestKindToTypeMapping(t *testing.T) {
 		{"BUG", "bug"},
 		{"fixme", "bug"},
 		{"FIXME", "bug"},
+		{"github-bug", "bug"},
 		{"todo", "task"},
 		{"TODO", "task"},
 		{"hack", "chore"},
@@ -120,6 +121,13 @@ func TestKindToTypeMapping(t *testing.T) {
 		{"XXX", "chore"},
 		{"optimize", "chore"},
 		{"OPTIMIZE", "chore"},
+		{"low-lottery-risk", "chore"},
+		{"github-feature", "task"},
+		{"github-issue", "task"},
+		{"github-pr-changes", "task"},
+		{"github-pr-approved", "task"},
+		{"github-pr-pending", "task"},
+		{"github-review-todo", "task"},
 		{"unknown", "task"},
 		{"", "task"},
 	}
@@ -952,6 +960,35 @@ func TestClosedKindToTypeMapping(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBeadsFormatter_WriteFailure(t *testing.T) {
+	f := NewBeadsFormatter()
+	signals := []signal.RawSignal{
+		{Source: "test", Kind: "todo", Title: "Task", FilePath: "a.go", Confidence: 0.5},
+	}
+
+	t.Run("fail_on_data_write", func(t *testing.T) {
+		w := &failWriter{failAfter: 0}
+		err := f.Format(signals, w)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "write signal") {
+			t.Errorf("expected 'write signal' in error, got: %s", err.Error())
+		}
+	})
+
+	t.Run("fail_on_newline_write", func(t *testing.T) {
+		w := &failWriter{failAfter: 1}
+		err := f.Format(signals, w)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "write newline") {
+			t.Errorf("expected 'write newline' in error, got: %s", err.Error())
+		}
+	})
 }
 
 func TestDeriveCloseReason(t *testing.T) {
