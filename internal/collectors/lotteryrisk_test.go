@@ -635,3 +635,26 @@ func TestLotteryRiskCollector_AnonymizeAlways(t *testing.T) {
 		assert.NotContains(t, sig.Title, "Test Author", "real name should not appear when anonymized")
 	}
 }
+
+// --- Timestamp enrichment tests ---
+
+func TestLotteryRiskCollector_TimestampsEnriched(t *testing.T) {
+	_, dir := initGoGitRepo(t, map[string]string{
+		"main.go":     "package main\n\nfunc main() {}\n",
+		"lib/util.go": "package lib\n\nfunc Util() {}\n",
+	})
+
+	c := &LotteryRiskCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	lotterySigs := filterByKind(signals, "low-lottery-risk")
+	require.NotEmpty(t, lotterySigs)
+
+	for _, sig := range lotterySigs {
+		assert.False(t, sig.Timestamp.IsZero(),
+			"low-lottery-risk signal for %s should have non-zero timestamp", sig.FilePath)
+		assert.WithinDuration(t, time.Now(), sig.Timestamp, 10*time.Minute,
+			"timestamp for %s should be recent", sig.FilePath)
+	}
+}

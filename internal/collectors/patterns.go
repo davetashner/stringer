@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/davetashner/stringer/internal/collector"
+	"github.com/davetashner/stringer/internal/gitcli"
 	"github.com/davetashner/stringer/internal/signal"
 )
 
@@ -296,6 +298,13 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 		DirectoryTestRatios: dirRatios,
 	}
 
+	// Enrich signals with timestamps from git log.
+	gitRoot := opts.GitRoot
+	if gitRoot == "" {
+		gitRoot = repoPath
+	}
+	enrichTimestamps(ctx, gitRoot, signals)
+
 	return signals, nil
 }
 
@@ -461,6 +470,23 @@ func hasTestCounterpart(absPath, relPath, repoPath string, testRoots []string) b
 
 // Metrics returns structured metrics from the patterns analysis.
 func (c *PatternsCollector) Metrics() any { return c.metrics }
+
+// enrichTimestamps sets the Timestamp field on signals that have a zero
+// timestamp by querying git for the most recent commit touching that path.
+// Errors are logged and silently skipped.
+func enrichTimestamps(ctx context.Context, gitRoot string, signals []signal.RawSignal) {
+	for i := range signals {
+		if !signals[i].Timestamp.IsZero() {
+			continue
+		}
+		t, err := gitcli.LastCommitTime(ctx, gitRoot, signals[i].FilePath)
+		if err != nil {
+			slog.Debug("enrichTimestamps: git log failed", "path", signals[i].FilePath, "error", err)
+			continue
+		}
+		signals[i].Timestamp = t
+	}
+}
 
 // Compile-time interface checks.
 var _ collector.Collector = (*PatternsCollector)(nil)

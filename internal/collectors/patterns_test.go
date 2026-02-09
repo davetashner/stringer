@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1004,4 +1005,45 @@ func TestDetectTestRoots_OnlyRunsOnce(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "test"), 0o750))
 	c.detectTestRoots(dir)
 	assert.Len(t, c.testRoots, 1, "detectTestRoots should only run once")
+}
+
+// --- Timestamp enrichment tests ---
+
+func TestPatterns_TimestampsEnriched(t *testing.T) {
+	// Use a git repo so enrichTimestamps can call git log.
+	_, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n" + strings.Repeat("func f() {}\n", 1100),
+	})
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	largeFile := filterByKind(signals, "large-file")
+	require.NotEmpty(t, largeFile, "should detect large file")
+
+	for _, sig := range largeFile {
+		assert.False(t, sig.Timestamp.IsZero(), "large-file signal should have non-zero timestamp")
+		assert.WithinDuration(t, time.Now(), sig.Timestamp, 10*time.Minute,
+			"timestamp should be recent for a freshly committed file")
+	}
+}
+
+func TestPatterns_TimestampsGracefulWithoutGit(t *testing.T) {
+	// Non-git directory: timestamps should remain zero without errors.
+	dir := t.TempDir()
+	content := strings.Repeat("package main\n", 1100)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "big.go"), []byte(content), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	largeFile := filterByKind(signals, "large-file")
+	require.NotEmpty(t, largeFile)
+
+	// Timestamps should be zero since there's no git repo.
+	for _, sig := range largeFile {
+		assert.True(t, sig.Timestamp.IsZero(), "timestamp should be zero without git")
+	}
 }
