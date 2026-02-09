@@ -16,7 +16,12 @@ Stringer follows strict semver at all versions — breaking changes always requi
 
 - Ensure `main` is clean and CI is green
 - Review merged PRs since the last release for changelog accuracy
-- Update README if new collectors or formats were added
+- Update README.md:
+  - Status line version and feature summary
+  - Usage reference table (new flags)
+  - Other Commands section (new commands)
+  - Current Limitations (remove shipped items, add new ones)
+  - Roadmap (update planned features)
 - Verify `go build ./cmd/stringer && go test -race ./... && golangci-lint run ./...` passes
 
 ### 2. Tag
@@ -86,6 +91,4 @@ brew install davetashner/tap/stringer
 
 ## Release History
 
-| Version | Date | Highlights |
-|---------|------|-----------|
-| v0.2.0 | 2026-02-07 | 3 collectors (todos, gitlog, patterns), 3 output formats (beads, json, markdown), parallel pipeline, signal dedup, full CI |
+See [GitHub Releases](https://github.com/davetashner/stringer/releases) for the full changelog.

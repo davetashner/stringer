@@ -12,7 +12,7 @@
 [![Release](https://img.shields.io/github/v/release/davetashner/stringer)](https://github.com/davetashner/stringer/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-> **Status: v0.4.0.** Five collectors, four output formats, parallel pipeline with signal deduplication, delta scanning, pre-closed beads, and beads-aware dedup. See [Current Limitations](#current-limitations) for what's not here yet.
+> **Status: v0.5.0.** Five collectors, four output formats, report command with health analysis, parallel pipeline with signal deduplication, delta scanning, per-collector timeouts, and beads-aware dedup. See [Current Limitations](#current-limitations) for what's not here yet.
 
 **Codebase archaeology for [Beads](https://github.com/steveyegge/beads).** Mine your repo for actionable work items, output them as Beads-formatted issues, and give your AI agents instant situational awareness.
 
@@ -187,11 +187,13 @@ stringer scan [path] [flags]
 | `--strict`         |       |         | Exit non-zero on any collector failure                    |
 | `--git-depth`      |       | `0`     | Max commits to examine (default 1000)                     |
 | `--git-since`      |       |         | Only examine commits after this duration (e.g., 90d, 6m)  |
-| `--exclude`        | `-e`  |         | Glob patterns to exclude from scanning                    |
-| `--include-closed` |       |         | Include closed/merged issues and PRs from GitHub          |
-| `--history-depth`  |       |         | Filter closed items older than this duration (e.g., 90d)  |
-| `--anonymize`      |       | `auto`  | Anonymize author names: auto, always, or never            |
-| `--no-llm`         |       |         | Skip LLM clustering pass (noop — reserved for future use) |
+| `--exclude`             | `-e`  |         | Glob patterns to exclude from scanning                    |
+| `--exclude-collectors`  | `-x`  |         | Comma-separated list of collectors to skip                |
+| `--include-closed`      |       |         | Include closed/merged issues and PRs from GitHub          |
+| `--history-depth`       |       |         | Filter closed items older than this duration (e.g., 90d)  |
+| `--anonymize`           |       | `auto`  | Anonymize author names: auto, always, or never            |
+| `--collector-timeout`   |       |         | Per-collector timeout (e.g. 60s, 2m); 0 = no timeout      |
+| `--no-llm`              |       |         | Skip LLM clustering pass (noop — reserved for future use) |
 
 **Global flags:** `--quiet` (`-q`), `--verbose` (`-v`), `--no-color`, `--help` (`-h`)
 
@@ -233,6 +235,16 @@ collectors:
 If no config file exists, stringer uses its built-in defaults (all collectors enabled, beads format, no issue cap).
 
 ## Other Commands
+
+### `stringer report`
+
+Generates a repository health report with analysis sections for lottery risk, code churn, TODO age distribution, coverage gaps, and actionable recommendations.
+
+```bash
+stringer report .              # print to stdout
+stringer report . -o report.txt # write to file
+stringer report . --sections lottery-risk,churn  # specific sections only
+```
 
 ### `stringer docs`
 
@@ -320,6 +332,7 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 ## Current Limitations
 
 - **No LLM clustering.** The `--no-llm` flag exists but is a noop. There is no LLM pass to cluster related signals or infer dependencies.
+- **No dependency health scanning.** No detection of archived, deprecated, or vulnerable dependencies (planned as C6/C7 collectors).
 - **No global config.** Per-repo `.stringer.yaml` is supported, but there is no global `~/.stringer.yaml`.
 - **Line-sensitive hashing.** Moving a TODO to a different line changes its ID, which means `bd import` sees it as a new issue. Delta scanning (`--delta`) detects moved signals but doesn't update beads IDs.
 - **No monorepo support.** Scanning targets a single repository root. Per-workspace scanning is planned.
@@ -328,7 +341,8 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 
 Planned for future releases:
 
-- **`stringer report`** — Summary reports with lottery risk, churn/stability, TODO age distribution, and coverage gap sections
+- **Dependency health collector** — Detect archived, deprecated, and unmaintained Go module dependencies
+- **Vulnerability scanner** — CVE detection via govulncheck integration
 - **LLM clustering pass** — Group related signals, infer dependencies, prioritize
 - **Monorepo support** — Per-workspace scanning and scoped output
 
