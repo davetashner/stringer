@@ -74,6 +74,7 @@ jobs:
         with:
           go-version: "1.25"
       - run: go mod tidy
+      - run: go mod verify
       - name: Check for changes
         run: git diff --exit-code go.mod
 
