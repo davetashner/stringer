@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"testing"
 	"time"
 
@@ -507,6 +508,30 @@ func TestTasksFormatter_WriteFailure(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "write tasks json trailing newline")
 	})
+}
+
+func TestTasksFormatter_ShouldCompact(t *testing.T) {
+	t.Run("compact_true_always_compact", func(t *testing.T) {
+		f := &TasksFormatter{Compact: true}
+		var buf bytes.Buffer
+		assert.True(t, f.shouldCompact(&buf))
+	})
+
+	t.Run("non_file_writer_defaults_pretty", func(t *testing.T) {
+		f := &TasksFormatter{Compact: false}
+		var buf bytes.Buffer
+		assert.False(t, f.shouldCompact(&buf))
+	})
+}
+
+func TestTasksFormatter_AutoDetectPipe(t *testing.T) {
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	defer func() { _ = r.Close() }()
+	defer func() { _ = w.Close() }()
+
+	f := &TasksFormatter{Compact: false, nowFunc: fixedNow}
+	assert.True(t, f.shouldCompact(w))
 }
 
 // --- Helpers ---

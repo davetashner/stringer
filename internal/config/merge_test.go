@@ -361,6 +361,60 @@ func TestMerge_IncludeDemoPathsDefaultFalse(t *testing.T) {
 	assert.False(t, result.CollectorOpts["patterns"].IncludeDemoPaths)
 }
 
+func TestMerge_IncludeClosedFromFile(t *testing.T) {
+	boolTrue := true
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {IncludeClosed: &boolTrue},
+		},
+	}
+	cliCfg := signal.ScanConfig{}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.True(t, result.CollectorOpts["github"].IncludeClosed)
+}
+
+func TestMerge_IncludeClosedFalseNotOverridden(t *testing.T) {
+	boolFalse := false
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {IncludeClosed: &boolFalse},
+		},
+	}
+	cliCfg := signal.ScanConfig{}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.False(t, result.CollectorOpts["github"].IncludeClosed)
+}
+
+func TestMerge_AnonymizeFromFile(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {Anonymize: "always"},
+		},
+	}
+	cliCfg := signal.ScanConfig{}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.Equal(t, "always", result.CollectorOpts["github"].Anonymize)
+}
+
+func TestMerge_AnonymizeCLIOverridesFile(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {Anonymize: "always"},
+		},
+	}
+	cliCfg := signal.ScanConfig{
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"github": {Anonymize: "never"},
+		},
+	}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.Equal(t, "never", result.CollectorOpts["github"].Anonymize)
+}
+
 func TestMerge_TimeoutInvalidDurationIgnored(t *testing.T) {
 	fileCfg := &Config{
 		Collectors: map[string]CollectorConfig{

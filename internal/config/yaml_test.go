@@ -60,6 +60,22 @@ func TestLoad_EmptyFile(t *testing.T) {
 	assert.Empty(t, cfg.OutputFormat)
 }
 
+func TestLoad_PermissionError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, FileName)
+	require.NoError(t, os.WriteFile(path, []byte("output_format: json"), 0o600))
+
+	// Remove read permission.
+	require.NoError(t, os.Chmod(path, 0o000))
+	t.Cleanup(func() {
+		_ = os.Chmod(path, 0o600) // restore for cleanup
+	})
+
+	cfg, err := Load(dir)
+	assert.Error(t, err, "should fail when file is unreadable")
+	assert.Nil(t, cfg)
+}
+
 func TestWrite(t *testing.T) {
 	enabled := true
 	cfg := &Config{

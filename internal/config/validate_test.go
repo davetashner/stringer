@@ -279,3 +279,26 @@ func TestValidate_MaxBlameFiles_ValidRange(t *testing.T) {
 		assert.NoError(t, Validate(cfg), "max_blame_files=%d should be valid", val)
 	}
 }
+
+func TestValidate_InvalidAnonymize(t *testing.T) {
+	cfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {Anonymize: "sometimes"},
+		},
+	}
+	err := Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "anonymize")
+	assert.Contains(t, err.Error(), "sometimes")
+}
+
+func TestValidate_ValidAnonymizeValues(t *testing.T) {
+	for _, val := range []string{"auto", "always", "never"} {
+		cfg := &Config{
+			Collectors: map[string]CollectorConfig{
+				"github": {Anonymize: val},
+			},
+		}
+		assert.NoError(t, Validate(cfg), "anonymize=%q should be valid", val)
+	}
+}

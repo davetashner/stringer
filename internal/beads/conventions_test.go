@@ -149,6 +149,31 @@ func TestDetectLabelStyle_MixedPreferSnake(t *testing.T) {
 	assert.Equal(t, "snake_case", style, "more underscores than hyphens means snake_case")
 }
 
+func TestDetectConventions_ZeroPriorityNormalization(t *testing.T) {
+	// All beads have priority=0. MinPriority will never update from 999 sentinel,
+	// and MaxPriority will never update from -1 sentinel, triggering normalization.
+	existing := []Bead{
+		{ID: "a-1", Priority: 0},
+		{ID: "b-2", Priority: 0},
+	}
+
+	c := DetectConventions(existing)
+	require.NotNil(t, c)
+	assert.Equal(t, 0, c.MinPriority, "zero-priority should normalize MinPriority from 999 to 0")
+	assert.Equal(t, 0, c.MaxPriority, "zero-priority should track MaxPriority as 0")
+}
+
+func TestDetectConventions_NoIDHyphen(t *testing.T) {
+	// Beads without hyphens in IDs should yield empty prefix.
+	existing := []Bead{
+		{ID: "nohyphen", Priority: 1},
+	}
+
+	c := DetectConventions(existing)
+	require.NotNil(t, c)
+	assert.Equal(t, "", c.IDPrefix, "ID without hyphen should yield empty prefix")
+}
+
 func TestDetectLabelStyle_Equal(t *testing.T) {
 	existing := []Bead{
 		{ID: "a", Priority: 1, Labels: []string{"my-label", "my_label"}},

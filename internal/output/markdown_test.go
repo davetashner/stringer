@@ -487,6 +487,59 @@ func TestMarkdownFormat_WriteFailure_SignalLine(t *testing.T) {
 	assert.Contains(t, err.Error(), "write failed")
 }
 
+func TestMarkdownFormat_WriteFailure_PriorityTableSeparator(t *testing.T) {
+	f := NewMarkdownFormatter()
+	signals := []signal.RawSignal{
+		{Source: "todos", Kind: "todo", Title: "A", FilePath: "a.go", Line: 1, Confidence: 0.5},
+	}
+
+	// heading(1) + summary(1) + table_header(1) + separator(1) = fail on 4th
+	w := &mdFailWriter{failAfter: 3}
+	err := f.Format(signals, w)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "write failed")
+}
+
+func TestMarkdownFormat_WriteFailure_PriorityTableRow(t *testing.T) {
+	f := NewMarkdownFormatter()
+	signals := []signal.RawSignal{
+		{Source: "todos", Kind: "todo", Title: "A", FilePath: "a.go", Line: 1, Confidence: 0.5},
+	}
+
+	// heading(1) + summary(1) + table_header(1) + separator(1) + row1(1) = fail on 5th
+	w := &mdFailWriter{failAfter: 4}
+	err := f.Format(signals, w)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "write failed")
+}
+
+func TestMarkdownFormat_WriteFailure_PriorityTableTrailingNewline(t *testing.T) {
+	f := NewMarkdownFormatter()
+	signals := []signal.RawSignal{
+		{Source: "todos", Kind: "todo", Title: "A", FilePath: "a.go", Line: 1, Confidence: 0.5},
+	}
+
+	// heading(1) + summary(1) + table_header(1) + separator(1) + 4 rows(4) + trailing_newline(1) = fail on 9th
+	w := &mdFailWriter{failAfter: 8}
+	err := f.Format(signals, w)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "write failed")
+}
+
+func TestMarkdownFormat_WriteFailure_SectionEnd(t *testing.T) {
+	f := NewMarkdownFormatter()
+	signals := []signal.RawSignal{
+		{Source: "todos", Kind: "todo", Title: "A", FilePath: "a.go", Line: 1, Confidence: 0.5},
+	}
+
+	// heading(1) + summary(1) + 7 prio writes + section_heading(1) + signal(1) + section_end(1) = 12
+	// fail on 12th write (section trailing newline)
+	w := &mdFailWriter{failAfter: 11}
+	err := f.Format(signals, w)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "write failed")
+}
+
 // --- Confidence formatting ---
 
 func TestMarkdownFormat_ConfidenceFormatting(t *testing.T) {

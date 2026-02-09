@@ -1,6 +1,7 @@
 package context
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -251,6 +252,65 @@ func TestAnalyzeHistory_MergeCommit(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestCollectTags_TruncatesAt10(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	// Create 12 tagged commits.
+	for i := 0; i < 12; i++ {
+		dateISO := fmt.Sprintf("2026-01-%02dT12:00:00Z", i+1)
+		addCommitAt(t, dir, fmt.Sprintf("commit-%d", i), "alice", dateISO)
+		run(t, dir, "git", "tag", fmt.Sprintf("v1.%d.0", i))
+	}
+
+	history, err := analyzeHistoryWithNow(dir, 52, time.Date(2026, 2, 5, 12, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+
+	assert.LessOrEqual(t, len(history.Milestones), 10, "milestones should be capped at 10")
+	// Newest first: v1.11.0 should be first.
+	assert.Equal(t, "v1.11.0", history.Milestones[0].Name)
+}
+
+func TestCollectTags_AnnotatedTag(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	addCommitAt(t, dir, "initial commit", "alice", "2026-02-04T12:00:00Z")
+
+	// Create an annotated tag.
+	runAt(t, dir, "2026-02-04T12:00:00Z", "git",
+		"-c", "user.name=alice",
+		"-c", "user.email=alice@test.com",
+		"tag", "-a", "v2.0.0", "-m", "Release v2.0.0")
+
+	history, err := analyzeHistoryWithNow(dir, 52, time.Date(2026, 2, 5, 12, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+
+	require.Len(t, history.Milestones, 1)
+	assert.Equal(t, "v2.0.0", history.Milestones[0].Name)
+}
+
+func TestAnalyzeHistory_CommitsOutsideWindow(t *testing.T) {
+	dir := setupTestRepo(t)
+
+	// Create an old commit outside the 1-week window.
+	addCommitAt(t, dir, "old commit", "alice", "2025-01-01T12:00:00Z")
+	// Create a recent commit inside the window.
+	addCommitAt(t, dir, "recent commit", "bob", "2026-02-04T12:00:00Z")
+
+	// Use a 1-week window from 2026-02-05.
+	history, err := analyzeHistoryWithNow(dir, 1, time.Date(2026, 2, 5, 12, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+
+	// Both commits should be counted in total.
+	assert.Equal(t, 2, history.TotalCommits)
+
+	// Only the recent commit should appear in weeks.
+	recentCount := 0
+	for _, week := range history.RecentWeeks {
+		recentCount += len(week.Commits)
+	}
+	assert.Equal(t, 1, recentCount, "only 1 commit should be in the recent weeks window")
 }
 
 // --- Test Helpers ---
