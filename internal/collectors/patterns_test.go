@@ -3,6 +3,7 @@ package collectors
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/davetashner/stringer/internal/signal"
+	"github.com/davetashner/stringer/internal/testable"
 )
 
 // --- Large file detection tests ---
@@ -1139,5 +1141,215 @@ func TestPatterns_TimestampsGracefulWithoutGit(t *testing.T) {
 	// Timestamps should be zero since there's no git repo.
 	for _, sig := range largeFile {
 		assert.True(t, sig.Timestamp.IsZero(), "timestamp should be zero without git")
+	}
+}
+
+// --- Mock-based tests ---
+
+func TestPatternsCollector_Metrics(t *testing.T) {
+	c := &PatternsCollector{}
+	// Before collecting, metrics should be nil.
+	assert.Nil(t, c.Metrics())
+
+	dir := t.TempDir()
+	content := strings.Repeat("package main\n", 1100)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "big.go"), []byte(content), 0o600))
+
+	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	m := c.Metrics()
+	require.NotNil(t, m)
+
+	metrics, ok := m.(*PatternsMetrics)
+	require.True(t, ok, "Metrics() should return *PatternsMetrics")
+	assert.Equal(t, 1, metrics.LargeFiles)
+}
+
+func TestPatternsCollector_MetricsWithTestRatios(t *testing.T) {
+	dir := t.TempDir()
+	subdir := filepath.Join(dir, "pkg")
+	require.NoError(t, os.MkdirAll(subdir, 0o750))
+
+	// Create 3 source files and 1 test.
+	for i := 0; i < 3; i++ {
+		require.NoError(t, os.WriteFile(
+			filepath.Join(subdir, fmt.Sprintf("file%d.go", i)),
+			[]byte("package pkg\n"), 0o600))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(subdir, "file0_test.go"),
+		[]byte("package pkg\n"), 0o600))
+
+	c := &PatternsCollector{}
+	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	m := c.Metrics()
+	require.NotNil(t, m)
+	metrics := m.(*PatternsMetrics)
+	assert.NotEmpty(t, metrics.DirectoryTestRatios)
+
+	// Find pkg directory ratio.
+	var found bool
+	for _, r := range metrics.DirectoryTestRatios {
+		if r.Path == "pkg" {
+			found = true
+			assert.Equal(t, 3, r.SourceFiles)
+			assert.Equal(t, 1, r.TestFiles)
+			assert.InDelta(t, 1.0/3.0, r.Ratio, 0.01)
+		}
+	}
+	assert.True(t, found, "pkg directory should appear in metrics")
+}
+
+func TestPatternsCollector_WalkDirError(t *testing.T) {
+	oldFS := FS
+	defer func() { FS = oldFS }()
+
+	FS = &testable.MockFileSystem{
+		WalkDirFn: func(root string, fn fs.WalkDirFunc) error {
+			return fmt.Errorf("walk error")
+		},
+	}
+
+	c := &PatternsCollector{}
+	_, err := c.Collect(context.Background(), "/tmp/fake", signal.CollectorOpts{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "walking repo")
+	assert.Contains(t, err.Error(), "walk error")
+}
+
+func TestPatternsCollector_EvalSymlinksFailure(t *testing.T) {
+	oldFS := FS
+	defer func() { FS = oldFS }()
+
+	dir := t.TempDir()
+	targetPath := filepath.Join(dir, "target.go")
+	content := strings.Repeat("package main\n", 1100)
+	require.NoError(t, os.WriteFile(targetPath, []byte(content), 0o600))
+
+	symlinkPath := filepath.Join(dir, "link.go")
+	if err := os.Symlink(targetPath, symlinkPath); err != nil {
+		t.Skip("symlinks not supported")
+	}
+
+	FS = &testable.MockFileSystem{
+		EvalSymlinksFn: func(path string) (string, error) {
+			return "", fmt.Errorf("symlink error")
+		},
+	}
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	// The symlink should be skipped, only the target may be detected.
+	for _, sig := range signals {
+		assert.NotEqual(t, "link.go", sig.FilePath,
+			"symlink with failed EvalSymlinks should be skipped")
+	}
+}
+
+func TestPatternsCollector_OpenFailure(t *testing.T) {
+	oldFS := FS
+	defer func() { FS = oldFS }()
+
+	FS = &testable.MockFileSystem{
+		OpenFn: func(name string) (*os.File, error) {
+			return nil, fmt.Errorf("permission denied")
+		},
+	}
+
+	dir := t.TempDir()
+	content := strings.Repeat("package main\n", 1100)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "big.go"), []byte(content), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	// Can't open files via mock, so binary check fails and files are skipped.
+	assert.Empty(t, signals)
+}
+
+func TestPatternsCollector_CountLinesOpenFailure(t *testing.T) {
+	oldFS := FS
+	defer func() { FS = oldFS }()
+
+	callCount := 0
+	FS = &testable.MockFileSystem{
+		OpenFn: func(name string) (*os.File, error) {
+			callCount++
+			// Let isBinaryFile succeed (first call) but countLines fail (second call).
+			if callCount <= 1 {
+				return os.Open(name) //nolint:gosec
+			}
+			return nil, fmt.Errorf("second open failed")
+		},
+	}
+
+	dir := t.TempDir()
+	content := strings.Repeat("package main\n", 1100)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "big.go"), []byte(content), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	// countLines fails, file is skipped — no signals.
+	assert.Empty(t, signals)
+}
+
+func TestPatternsCollector_StatFailureInDetectTestRoots(t *testing.T) {
+	oldFS := FS
+	defer func() { FS = oldFS }()
+
+	FS = &testable.MockFileSystem{
+		StatFn: func(name string) (os.FileInfo, error) {
+			// Make all stat calls fail — test roots won't be detected.
+			return nil, fmt.Errorf("stat error")
+		},
+	}
+
+	c := &PatternsCollector{}
+	c.detectTestRoots("/tmp/fake")
+	assert.True(t, c.testRootsInit)
+	assert.Empty(t, c.testRoots)
+}
+
+func TestEnrichTimestamps_NonGitDir(t *testing.T) {
+	dir := t.TempDir()
+	signals := []signal.RawSignal{
+		{FilePath: "some/path.go"},
+	}
+	enrichTimestamps(context.Background(), dir, signals)
+	assert.True(t, signals[0].Timestamp.IsZero(),
+		"timestamp should remain zero when git log fails")
+}
+
+func TestEnrichTimestamps_AlreadyHasTimestamp(t *testing.T) {
+	now := time.Now()
+	signals := []signal.RawSignal{
+		{FilePath: "some/path.go", Timestamp: now},
+	}
+	enrichTimestamps(context.Background(), "/nonexistent", signals)
+	assert.Equal(t, now, signals[0].Timestamp,
+		"timestamp should not be overwritten when already set")
+}
+
+func TestPatternsCollector_GitRootForTimestamps(t *testing.T) {
+	_, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n" + strings.Repeat("func f() {}\n", 1100),
+	})
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		GitRoot: dir,
+	})
+	require.NoError(t, err)
+
+	largeFile := filterByKind(signals, "large-file")
+	require.NotEmpty(t, largeFile)
+	for _, sig := range largeFile {
+		assert.False(t, sig.Timestamp.IsZero(),
+			"signal should have non-zero timestamp when GitRoot is set")
 	}
 }

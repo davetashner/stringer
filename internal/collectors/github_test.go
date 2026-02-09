@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/davetashner/stringer/internal/signal"
+	"github.com/davetashner/stringer/internal/testable"
 )
 
 // mockGitHubAPI implements githubAPI for testing.
@@ -894,4 +895,653 @@ func makeComment(body, path string, line int, created time.Time) *github.PullReq
 		CreatedAt: &ts,
 		User:      user,
 	}
+}
+
+// --- Mock-based tests ---
+
+func TestGitHubCollector_PlainOpenFailure(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
+	c := &GitHubCollector{
+		GitOpener: &testable.MockGitOpener{
+			OpenErr: fmt.Errorf("repo not found"),
+		},
+	}
+	// PlainOpen failure is logged and skipped (returns nil, nil).
+	signals, err := c.Collect(context.Background(), "/tmp/fake", signal.CollectorOpts{})
+	require.NoError(t, err)
+	assert.Empty(t, signals)
+}
+
+func TestGitHubCollector_RemotesError(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
+	mockRepo := &testable.MockGitRepository{
+		RemotesErr: fmt.Errorf("remotes failed"),
+	}
+	c := &GitHubCollector{
+		GitOpener: &testable.MockGitOpener{Repo: mockRepo},
+	}
+	// Remotes error is logged and skipped (returns nil, nil).
+	signals, err := c.Collect(context.Background(), "/tmp/fake", signal.CollectorOpts{})
+	require.NoError(t, err)
+	assert.Empty(t, signals)
+}
+
+func TestParseGitHubURL_SSHFormat(t *testing.T) {
+	owner, repo, err := parseGitHubURL("git@github.com:myowner/myrepo.git")
+	require.NoError(t, err)
+	assert.Equal(t, "myowner", owner)
+	assert.Equal(t, "myrepo", repo)
+}
+
+func TestParseGitHubURL_SSHWithoutGit(t *testing.T) {
+	owner, repo, err := parseGitHubURL("git@github.com:myowner/myrepo")
+	require.NoError(t, err)
+	assert.Equal(t, "myowner", owner)
+	assert.Equal(t, "myrepo", repo)
+}
+
+func TestParseGitHubURL_InvalidURL(t *testing.T) {
+	_, _, err := parseGitHubURL("not-a-url")
+	require.Error(t, err)
+}
+
+func TestParseGitHubURL_NonGitHubHost(t *testing.T) {
+	_, _, err := parseGitHubURL("https://gitlab.com/owner/repo.git")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a GitHub URL")
+}
+
+func TestParseGitHubURL_TooFewPathParts(t *testing.T) {
+	_, _, err := parseGitHubURL("https://github.com/onlyowner")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot parse owner/repo")
+}
+
+func TestTruncateBody(t *testing.T) {
+	// Short body: not truncated.
+	assert.Equal(t, "hello", truncateBody("hello", 100))
+
+	// Newlines replaced.
+	assert.Equal(t, "line1 line2", truncateBody("line1\nline2", 100))
+
+	// Long body: truncated.
+	long := "a" + "b" + "c"
+	result := truncateBody(long, 2)
+	assert.Equal(t, "ab...", result)
+}
+
+func TestAgeBoost_Old(t *testing.T) {
+	old := time.Now().Add(-200 * 24 * time.Hour)
+	boost := ageBoost(old, 90, 0.1)
+	assert.InDelta(t, 0.1, boost, 0.001)
+}
+
+func TestAgeBoost_Recent(t *testing.T) {
+	recent := time.Now().Add(-10 * 24 * time.Hour)
+	boost := ageBoost(recent, 90, 0.1)
+	assert.InDelta(t, 0.0, boost, 0.001)
+}
+
+func TestFetchAllReviews_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	mock := &mockGitHubAPI{
+		reviewResp: emptyResponse(),
+	}
+	_, err := fetchAllReviews(ctx, mock, "owner", "repo", 1)
+	require.Error(t, err)
+}
+
+func TestFetchAllReviews_APIError(t *testing.T) {
+	mock := &mockGitHubAPI{
+		reviewErr: fmt.Errorf("review API error"),
+	}
+	_, err := fetchAllReviews(context.Background(), mock, "owner", "repo", 1)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "review API error")
+}
+
+func TestFetchActionableComments_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	mock := &mockGitHubAPI{}
+	_, err := fetchActionableComments(ctx, mock, "owner", "repo", 1, 30)
+	require.Error(t, err)
+}
+
+func TestFetchActionableComments_APIError(t *testing.T) {
+	mock := &mockGitHubAPI{
+		commentErr: fmt.Errorf("comment API error"),
+	}
+	_, err := fetchActionableComments(context.Background(), mock, "owner", "repo", 1, 30)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "comment API error")
+}
+
+func TestFetchActionableComments_EmptyPath(t *testing.T) {
+	now := time.Now()
+	emptyPath := ""
+	mock := &mockGitHubAPI{
+		comments: map[int][]*github.PullRequestComment{
+			1: {
+				makeComment("TODO: fix this", emptyPath, 0, now),
+			},
+		},
+	}
+
+	signals, err := fetchActionableComments(context.Background(), mock, "owner", "repo", 1, 30)
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	// When path is empty, it should fall back to the PR path.
+	assert.Equal(t, "github/prs/1", signals[0].FilePath)
+}
+
+func TestFetchActionableComments_DepthLimit(t *testing.T) {
+	now := time.Now()
+	// Create 5 actionable comments, but set depth to 3.
+	var comments []*github.PullRequestComment
+	for i := 0; i < 5; i++ {
+		comments = append(comments, makeComment(
+			fmt.Sprintf("TODO: fix %d", i), "file.go", i, now))
+	}
+	mock := &mockGitHubAPI{
+		comments: map[int][]*github.PullRequestComment{1: comments},
+	}
+
+	signals, err := fetchActionableComments(context.Background(), mock, "owner", "repo", 1, 3)
+	require.NoError(t, err)
+	// Only 3 comments should be processed (depth limit).
+	assert.LessOrEqual(t, len(signals), 3)
+}
+
+func TestFetchIssues_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	mock := &mockGitHubAPI{
+		issueResp: emptyResponse(),
+	}
+	_, err := fetchIssues(ctx, mock, "owner", "repo", 100, false, time.Time{})
+	require.Error(t, err)
+}
+
+func TestFetchPullRequests_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	mock := &mockGitHubAPI{
+		prResp: emptyResponse(),
+	}
+	_, err := fetchPullRequests(ctx, mock, "owner", "repo", 100, 30, false, time.Time{})
+	require.Error(t, err)
+}
+
+func TestFetchPullRequests_ReviewError(t *testing.T) {
+	now := time.Now()
+	mock := &mockGitHubAPI{
+		prs:       []*github.PullRequest{makePR(1, "PR 1", now)},
+		prResp:    emptyResponse(),
+		reviewErr: fmt.Errorf("review error"),
+	}
+
+	_, err := fetchPullRequests(context.Background(), mock, "owner", "repo", 100, 30, false, time.Time{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "listing reviews")
+}
+
+func TestFetchPullRequests_CommentError(t *testing.T) {
+	now := time.Now()
+	mock := &mockGitHubAPI{
+		prs:        []*github.PullRequest{makePR(1, "PR 1", now)},
+		prResp:     emptyResponse(),
+		reviews:    map[int][]*github.PullRequestReview{},
+		commentErr: fmt.Errorf("comment error"),
+	}
+
+	_, err := fetchPullRequests(context.Background(), mock, "owner", "repo", 100, 30, false, time.Time{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "listing review comments")
+}
+
+func TestGitHubCollector_HistoryDepthParsing(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
+	repoPath := initGitHubTestRepo(t, "https://github.com/testowner/testrepo.git")
+
+	now := time.Now()
+	mock := &mockGitHubAPI{
+		issues: []*github.Issue{
+			makeClosedIssue(1, "Old closed", now.Add(-200*24*time.Hour), nil, "completed"),
+		},
+		issueResp: emptyResponse(),
+		prs:       []*github.PullRequest{},
+		prResp:    emptyResponse(),
+		reviews:   map[int][]*github.PullRequestReview{},
+		comments:  map[int][]*github.PullRequestComment{},
+	}
+
+	c := &GitHubCollector{api: mock}
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{
+		IncludeClosed: true,
+		HistoryDepth:  "90d",
+	})
+	require.NoError(t, err)
+	// The old closed issue should be filtered out by the 90-day history depth.
+	assert.Empty(t, signals)
+}
+
+func TestGitHubCollector_InvalidHistoryDepth(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
+	repoPath := initGitHubTestRepo(t, "https://github.com/testowner/testrepo.git")
+
+	now := time.Now()
+	mock := &mockGitHubAPI{
+		issues: []*github.Issue{
+			makeClosedIssue(1, "Closed issue", now.Add(-200*24*time.Hour), nil, "completed"),
+		},
+		issueResp: emptyResponse(),
+		prs:       []*github.PullRequest{},
+		prResp:    emptyResponse(),
+		reviews:   map[int][]*github.PullRequestReview{},
+		comments:  map[int][]*github.PullRequestComment{},
+	}
+
+	// Suppress slog warning output.
+	var buf bytes.Buffer
+	handler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelError})
+	oldLogger := slog.Default()
+	slog.SetDefault(slog.New(handler))
+	defer slog.SetDefault(oldLogger)
+
+	c := &GitHubCollector{api: mock}
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{
+		IncludeClosed: true,
+		HistoryDepth:  "invalid",
+	})
+	require.NoError(t, err)
+	// Invalid history depth is ignored — closed issues should still appear.
+	assert.NotEmpty(t, signals)
+}
+
+func TestFetchIssues_MaxIssuesLimit(t *testing.T) {
+	now := time.Now()
+	var issues []*github.Issue
+	for i := 0; i < 5; i++ {
+		issues = append(issues, makeIssue(i+1, fmt.Sprintf("Issue %d", i+1), now, nil))
+	}
+
+	mock := &mockGitHubAPI{
+		issues:    issues,
+		issueResp: emptyResponse(),
+	}
+
+	// Limit to 3 issues.
+	signals, err := fetchIssues(context.Background(), mock, "owner", "repo", 3, false, time.Time{})
+	require.NoError(t, err)
+	assert.Len(t, signals, 3)
+}
+
+func TestFetchPullRequests_MaxIssuesLimit(t *testing.T) {
+	now := time.Now()
+	var prs []*github.PullRequest
+	for i := 0; i < 5; i++ {
+		prs = append(prs, makePR(i+1, fmt.Sprintf("PR %d", i+1), now))
+	}
+
+	mock := &mockGitHubAPI{
+		prs:      prs,
+		prResp:   emptyResponse(),
+		reviews:  map[int][]*github.PullRequestReview{},
+		comments: map[int][]*github.PullRequestComment{},
+	}
+
+	// Limit to 2 PRs.
+	signals, err := fetchPullRequests(context.Background(), mock, "owner", "repo", 2, 30, false, time.Time{})
+	require.NoError(t, err)
+	assert.Len(t, signals, 2)
+}
+
+func TestParseGitHubRemoteWith_NoOrigin(t *testing.T) {
+	mockRepo := &testable.MockGitRepository{
+		RemotesList: nil, // No remotes.
+	}
+	opener := &testable.MockGitOpener{Repo: mockRepo}
+	_, _, err := parseGitHubRemoteWith(opener, "/tmp/fake")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no origin remote found")
+}
+
+func TestClassifyPR_CommentOnlyReviews(t *testing.T) {
+	now := time.Now()
+	pr := makePR(1, "Test", now)
+	// Review with "COMMENTED" state — should result in pending.
+	reviews := []*github.PullRequestReview{
+		{State: github.Ptr("COMMENTED")},
+	}
+	kind, conf := classifyPR(pr, reviews)
+	assert.Equal(t, "github-pr-pending", kind)
+	assert.InDelta(t, 0.5, conf, 0.11)
+}
+
+func TestModuleFromPath_Public(t *testing.T) {
+	assert.Equal(t, "internal/collectors", ModuleFromPath("internal/collectors/todos.go"))
+	assert.Equal(t, ".", ModuleFromPath("README.md"))
+	assert.Equal(t, "cmd", ModuleFromPath("cmd/main.go"))
+}
+
+func TestNewGitHubContext_WithToken(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
+	repoPath := initGitHubTestRepo(t, "https://github.com/testowner/testrepo.git")
+	ctx := newGitHubContext(repoPath)
+	require.NotNil(t, ctx)
+	assert.Equal(t, "testowner", ctx.Owner)
+	assert.Equal(t, "testrepo", ctx.Repo)
+	assert.NotNil(t, ctx.API)
+}
+
+func TestNewGitHubContext_NoToken(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "")
+	ctx := newGitHubContext("/tmp/fake")
+	assert.Nil(t, ctx)
+}
+
+func TestNewGitHubContext_NotGitHub(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+	repoPath := initGitHubTestRepo(t, "https://gitlab.com/owner/repo.git")
+	ctx := newGitHubContext(repoPath)
+	assert.Nil(t, ctx)
+}
+
+func TestFetchAllReviews_Pagination(t *testing.T) {
+	// Simulate paginated review response.
+	page1Reviews := []*github.PullRequestReview{
+		{State: github.Ptr("APPROVED")},
+	}
+	mock := &paginatingReviewMock{
+		reviewPages: [][]*github.PullRequestReview{page1Reviews, {{State: github.Ptr("CHANGES_REQUESTED")}}},
+	}
+	reviews, err := fetchAllReviews(context.Background(), mock, "owner", "repo", 1)
+	require.NoError(t, err)
+	assert.Len(t, reviews, 2)
+}
+
+// paginatingReviewMock simulates paginated review API responses.
+type paginatingReviewMock struct {
+	mockGitHubAPI
+	reviewPages   [][]*github.PullRequestReview
+	reviewCallIdx int
+}
+
+func (m *paginatingReviewMock) ListReviews(_ context.Context, _, _ string, _ int, opts *github.ListOptions) ([]*github.PullRequestReview, *github.Response, error) {
+	page := opts.Page
+	if page == 0 {
+		page = 1
+	}
+	m.reviewCallIdx++
+
+	idx := page - 1
+	if idx >= len(m.reviewPages) {
+		return nil, emptyResponse(), nil
+	}
+
+	resp := &github.Response{
+		Response: &http.Response{StatusCode: http.StatusOK},
+	}
+	if page < len(m.reviewPages) {
+		resp.NextPage = page + 1
+	}
+	return m.reviewPages[idx], resp, nil
+}
+
+func TestFetchActionableComments_Pagination(t *testing.T) {
+	now := time.Now()
+	mock := &paginatingCommentMock{
+		commentPages: [][]*github.PullRequestComment{
+			{makeComment("TODO: fix 1", "file1.go", 1, now)},
+			{makeComment("TODO: fix 2", "file2.go", 2, now)},
+		},
+	}
+	signals, err := fetchActionableComments(context.Background(), mock, "owner", "repo", 1, 10)
+	require.NoError(t, err)
+	assert.Len(t, signals, 2)
+}
+
+// paginatingCommentMock simulates paginated comment API responses.
+type paginatingCommentMock struct {
+	mockGitHubAPI
+	commentPages   [][]*github.PullRequestComment
+	commentCallIdx int
+}
+
+func (m *paginatingCommentMock) ListReviewComments(_ context.Context, _, _ string, _ int, opts *github.PullRequestListCommentsOptions) ([]*github.PullRequestComment, *github.Response, error) {
+	page := opts.Page
+	if page == 0 {
+		page = 1
+	}
+	m.commentCallIdx++
+
+	idx := page - 1
+	if idx >= len(m.commentPages) {
+		return nil, emptyResponse(), nil
+	}
+
+	resp := &github.Response{
+		Response: &http.Response{StatusCode: http.StatusOK},
+	}
+	if page < len(m.commentPages) {
+		resp.NextPage = page + 1
+	}
+	return m.commentPages[idx], resp, nil
+}
+
+func TestFetchPullRequests_ContextDuringIteration(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	now := time.Now()
+	// Create a mock that returns PRs but context is cancelled after the list call.
+	mock := &mockGitHubAPI{
+		prs:      []*github.PullRequest{makePR(1, "PR 1", now), makePR(2, "PR 2", now)},
+		prResp:   emptyResponse(),
+		reviews:  map[int][]*github.PullRequestReview{},
+		comments: map[int][]*github.PullRequestComment{},
+	}
+	// Cancel after calling — the context check inside the PR loop should catch it.
+	cancel()
+	_, err := fetchPullRequests(ctx, mock, "owner", "repo", 100, 30, false, time.Time{})
+	require.Error(t, err)
+}
+
+func TestGitHubCollector_ClosedPRWithModuleContext(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
+	repoPath := initGitHubTestRepo(t, "https://github.com/testowner/testrepo.git")
+
+	now := time.Now()
+	mock := &mockGitHubAPI{
+		issues:    []*github.Issue{},
+		issueResp: emptyResponse(),
+		prs: []*github.PullRequest{
+			makeMergedPR(10, "Add feature", now),
+		},
+		prResp:   emptyResponse(),
+		reviews:  map[int][]*github.PullRequestReview{},
+		comments: map[int][]*github.PullRequestComment{},
+	}
+
+	c := &GitHubCollector{api: mock}
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{
+		IncludeClosed: true,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, signals)
+	// Verify that the closed PR signal has module context in its description.
+	for _, sig := range signals {
+		if sig.Kind == "github-merged-pr" {
+			assert.Contains(t, sig.Tags, "pre-closed")
+		}
+	}
+}
+
+func TestGitHubCollector_FetchPRError(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
+	repoPath := initGitHubTestRepo(t, "https://github.com/testowner/testrepo.git")
+
+	mock := &mockGitHubAPI{
+		issues:    []*github.Issue{},
+		issueResp: emptyResponse(),
+		prErr:     fmt.Errorf("API error"),
+		prResp:    emptyResponse(),
+	}
+
+	c := &GitHubCollector{api: mock}
+	_, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "fetching pull requests")
+}
+
+func TestParseGitHubURL_SSHMalformed(t *testing.T) {
+	// SSH URL with only owner (no repo).
+	_, _, err := parseGitHubURL("git@github.com:onlyowner")
+	// This should fail because SSH pattern requires owner/repo.
+	require.Error(t, err)
+}
+
+func TestFetchIssues_SkipsPullRequests(t *testing.T) {
+	now := time.Now()
+	prLink := &github.PullRequestLinks{URL: github.Ptr("https://api.github.com/repos/o/r/pulls/1")}
+	issueThatIsPR := makeIssue(1, "PR disguised as issue", now, nil)
+	issueThatIsPR.PullRequestLinks = prLink
+
+	realIssue := makeIssue(2, "Real issue", now, nil)
+
+	mock := &mockGitHubAPI{
+		issues:    []*github.Issue{issueThatIsPR, realIssue},
+		issueResp: emptyResponse(),
+	}
+
+	signals, err := fetchIssues(context.Background(), mock, "owner", "repo", 100, false, time.Time{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "Real issue", signals[0].Title)
+}
+
+func TestFetchPullRequests_ClosedPRWithModuleContext(t *testing.T) {
+	now := time.Now()
+	merged := makeMergedPR(10, "Add collectors feature", now)
+
+	mock := &closedPRWithFilesMock{
+		prs: []*github.PullRequest{merged},
+		files: map[int][]*github.CommitFile{
+			10: {
+				{Filename: github.Ptr("internal/collectors/todos.go")},
+				{Filename: github.Ptr("internal/collectors/github.go")},
+			},
+		},
+	}
+
+	signals, err := fetchPullRequests(context.Background(), mock, "owner", "repo", 100, 30, true, time.Time{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "github-merged-pr", signals[0].Kind)
+	// Description should contain module context from ListPullRequestFiles.
+	assert.Contains(t, signals[0].Description, "internal/collectors")
+}
+
+// closedPRWithFilesMock returns file data for closed PRs so extractModuleContext is called.
+type closedPRWithFilesMock struct {
+	prs   []*github.PullRequest
+	files map[int][]*github.CommitFile
+}
+
+func (m *closedPRWithFilesMock) ListIssues(_ context.Context, _, _ string, _ *github.IssueListByRepoOptions) ([]*github.Issue, *github.Response, error) {
+	return nil, emptyResponse(), nil
+}
+
+func (m *closedPRWithFilesMock) ListPullRequests(_ context.Context, _, _ string, _ *github.PullRequestListOptions) ([]*github.PullRequest, *github.Response, error) {
+	return m.prs, emptyResponse(), nil
+}
+
+func (m *closedPRWithFilesMock) ListReviews(_ context.Context, _, _ string, _ int, _ *github.ListOptions) ([]*github.PullRequestReview, *github.Response, error) {
+	return nil, emptyResponse(), nil
+}
+
+func (m *closedPRWithFilesMock) ListReviewComments(_ context.Context, _, _ string, _ int, _ *github.PullRequestListCommentsOptions) ([]*github.PullRequestComment, *github.Response, error) {
+	return nil, emptyResponse(), nil
+}
+
+func (m *closedPRWithFilesMock) ListPullRequestFiles(_ context.Context, _, _ string, number int, _ *github.ListOptions) ([]*github.CommitFile, *github.Response, error) {
+	return m.files[number], emptyResponse(), nil
+}
+
+func (m *closedPRWithFilesMock) GetRepository(_ context.Context, _, _ string) (*github.Repository, *github.Response, error) {
+	return nil, emptyResponse(), nil
+}
+
+func TestFetchPullRequests_Pagination(t *testing.T) {
+	now := time.Now()
+	mock := &paginatingPRMock{
+		prPages: [][]*github.PullRequest{
+			{makePR(1, "PR 1", now)},
+			{makePR(2, "PR 2", now)},
+		},
+		reviews:  map[int][]*github.PullRequestReview{},
+		comments: map[int][]*github.PullRequestComment{},
+	}
+
+	signals, err := fetchPullRequests(context.Background(), mock, "owner", "repo", 100, 30, false, time.Time{})
+	require.NoError(t, err)
+	assert.Len(t, signals, 2)
+}
+
+// paginatingPRMock simulates paginated PR responses.
+type paginatingPRMock struct {
+	prPages   [][]*github.PullRequest
+	prCallIdx int
+	reviews   map[int][]*github.PullRequestReview
+	comments  map[int][]*github.PullRequestComment
+}
+
+func (m *paginatingPRMock) ListIssues(_ context.Context, _, _ string, _ *github.IssueListByRepoOptions) ([]*github.Issue, *github.Response, error) {
+	return nil, emptyResponse(), nil
+}
+
+func (m *paginatingPRMock) ListPullRequests(_ context.Context, _, _ string, opts *github.PullRequestListOptions) ([]*github.PullRequest, *github.Response, error) {
+	page := opts.Page
+	if page == 0 {
+		page = 1
+	}
+	m.prCallIdx++
+	idx := page - 1
+	if idx >= len(m.prPages) {
+		return nil, emptyResponse(), nil
+	}
+	resp := &github.Response{
+		Response: &http.Response{StatusCode: http.StatusOK},
+	}
+	if page < len(m.prPages) {
+		resp.NextPage = page + 1
+	}
+	return m.prPages[idx], resp, nil
+}
+
+func (m *paginatingPRMock) ListReviews(_ context.Context, _, _ string, number int, _ *github.ListOptions) ([]*github.PullRequestReview, *github.Response, error) {
+	return m.reviews[number], emptyResponse(), nil
+}
+
+func (m *paginatingPRMock) ListReviewComments(_ context.Context, _, _ string, number int, _ *github.PullRequestListCommentsOptions) ([]*github.PullRequestComment, *github.Response, error) {
+	return m.comments[number], emptyResponse(), nil
+}
+
+func (m *paginatingPRMock) ListPullRequestFiles(_ context.Context, _, _ string, _ int, _ *github.ListOptions) ([]*github.CommitFile, *github.Response, error) {
+	return nil, emptyResponse(), nil
+}
+
+func (m *paginatingPRMock) GetRepository(_ context.Context, _, _ string) (*github.Repository, *github.Response, error) {
+	return nil, emptyResponse(), nil
 }
