@@ -12,7 +12,7 @@ var versionCmd = &cobra.Command{
 	Short: "Print version information",
 	Long:  "Print the version of the stringer binary.",
 	Args:  cobra.NoArgs,
-	Run: func(_ *cobra.Command, _ []string) {
-		fmt.Printf("stringer %s\n", Version)
+	Run: func(cmd *cobra.Command, _ []string) {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "stringer %s\n", Version)
 	},
 }
