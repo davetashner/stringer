@@ -62,6 +62,19 @@ brews:
     install: |
       bin.install "stringer"
 
+sboms:
+  - artifacts: archive
+
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    output: true
+    args:
+      - sign-blob
+      - --yes
+      - --output-signature=${signature}
+      - ${artifact}
+
 release:
   github:
     owner: davetashner
@@ -69,3 +82,5 @@ release:
   draft: false
   prerelease: auto
   name_template: "{{.Tag}}"
+  extra_files:
+    - glob: "*.sbom.json"
