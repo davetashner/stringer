@@ -24,20 +24,15 @@ func ResolvePath(path string) (*PathInfo, error) {
 	}
 
 	absPath, err := filepath.Abs(path)
+	if err == nil {
+		absPath, err = filepath.EvalSymlinks(absPath)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("cannot resolve path %q: %w", path, err)
 	}
 
-	absPath, err = filepath.EvalSymlinks(absPath)
-	if err != nil {
-		return nil, fmt.Errorf("cannot resolve path %q: %w", path, err)
-	}
-
-	info, err := os.Stat(absPath)
-	if err != nil {
-		return nil, fmt.Errorf("path %q does not exist", path)
-	}
-	if !info.IsDir() {
+	info, statErr := os.Stat(absPath)
+	if statErr != nil || !info.IsDir() {
 		return nil, fmt.Errorf("%q is not a directory", path)
 	}
 
