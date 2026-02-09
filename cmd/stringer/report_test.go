@@ -72,7 +72,7 @@ func TestReportCmd_DefaultPath(t *testing.T) {
 
 func TestReportCmd_ExplicitPath(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", root, "--quiet"})
@@ -111,7 +111,7 @@ func TestReportCmd_FileNotDir(t *testing.T) {
 
 func TestReportCmd_OutputFile(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 	outFile := filepath.Join(t.TempDir(), "report.txt")
 
 	cmd, _, _ := newTestCmd()
@@ -173,7 +173,7 @@ func TestReportCmd_Help(t *testing.T) {
 
 func TestReportCmd_UnknownCollector(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, _, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", root, "-c", "nonexistent"})
@@ -186,7 +186,7 @@ func TestReportCmd_UnknownCollector(t *testing.T) {
 
 func TestReportCmd_SingleCollector(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", root, "-c", "todos", "--quiet"})
@@ -213,7 +213,7 @@ func TestReportCmd_InRootHelp(t *testing.T) {
 
 func TestReportCmd_SectionsFilter(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", root, "--sections=lottery-risk", "--quiet"})
@@ -230,7 +230,7 @@ func TestReportCmd_SectionsFilter(t *testing.T) {
 
 func TestReportCmd_UnknownSection(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", root, "--sections=nonexistent", "--quiet"})
@@ -245,7 +245,7 @@ func TestReportCmd_UnknownSection(t *testing.T) {
 
 func TestReportCmd_SectionSkipWhenCollectorNotRun(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	// Run only the todos collector, but request the lottery-risk section.
 	cmd, stdout, _ := newTestCmd()
@@ -260,7 +260,7 @@ func TestReportCmd_SectionSkipWhenCollectorNotRun(t *testing.T) {
 
 func TestReportCmd_AllSectionsDefault(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", root, "--quiet"})
@@ -327,7 +327,7 @@ func TestResolveSections_EmptyReturnsAll(t *testing.T) {
 
 func TestReportCmd_FormatJSON(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", root, "--format", "json", "--quiet"})
@@ -360,7 +360,7 @@ func TestReportCmd_FormatJSON(t *testing.T) {
 
 func TestReportCmd_FormatInvalid(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, _, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", root, "--format", "xml"})
@@ -450,7 +450,7 @@ func TestApplyReportCollectorExclusions_ExcludeAll(t *testing.T) {
 
 func TestReportCmd_ExcludeCollectors(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", root, "--exclude-collectors=github,lotteryrisk", "--quiet"})
@@ -465,7 +465,7 @@ func TestReportCmd_ExcludeCollectors(t *testing.T) {
 
 func TestReportCmd_GitDepthFlag(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", root, "--git-depth=50", "--quiet", "-c", "gitlog"})
@@ -478,7 +478,7 @@ func TestReportCmd_GitDepthFlag(t *testing.T) {
 
 func TestReportCmd_GitSinceFlag(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", root, "--git-since=30d", "--quiet", "-c", "gitlog"})
@@ -491,7 +491,7 @@ func TestReportCmd_GitSinceFlag(t *testing.T) {
 
 func TestReportCmd_CollectorTimeout(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", root, "--collector-timeout=5m", "--quiet", "-c", "todos"})
@@ -504,7 +504,7 @@ func TestReportCmd_CollectorTimeout(t *testing.T) {
 
 func TestReportCmd_AnonymizeFlag(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", root, "--anonymize=always", "--quiet", "-c", "todos"})
@@ -517,7 +517,7 @@ func TestReportCmd_AnonymizeFlag(t *testing.T) {
 
 func TestReportCmd_PathsFlag(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", root, "--paths=cmd/**", "--quiet", "-c", "todos"})
@@ -530,7 +530,7 @@ func TestReportCmd_PathsFlag(t *testing.T) {
 
 func TestReportCmd_OutputFileError(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, _, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", root, "-o", "/nonexistent/dir/report.txt", "--quiet", "-c", "todos"})
@@ -642,7 +642,7 @@ func TestRenderReport_WithCollectorError(t *testing.T) {
 
 func TestReportCmd_JSONWithSections(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", root, "--format", "json", "--sections=churn", "--quiet", "-c", "gitlog"})
@@ -707,10 +707,13 @@ func TestRenderReportJSON_CollectorWithError(t *testing.T) {
 
 func TestReportCmd_SubdirectoryPath(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
-	// Point at a subdirectory within the repo.
-	subDir := filepath.Join(root, "cmd", "stringer")
+	// Create a subdirectory with a TODO so reporting on it works.
+	subDir := filepath.Join(root, "sub")
+	require.NoError(t, os.MkdirAll(subDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(subDir, "file.go"), []byte("package sub\n// TODO: sub task\n"), 0o600))
+
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"report", subDir, "--quiet", "-c", "todos", "--sections=todo-age"})
 
@@ -721,7 +724,7 @@ func TestReportCmd_SubdirectoryPath(t *testing.T) {
 
 func TestReportCmd_ExcludeCollectorsFromEmpty(t *testing.T) {
 	resetReportFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	// Exclude github without specifying --collectors (starts from full registry).
 	cmd, stdout, _ := newTestCmd()
