@@ -9,6 +9,8 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+
+	"github.com/davetashner/stringer/internal/testable"
 )
 
 // TagInfo holds metadata about a version tag.
@@ -53,6 +55,10 @@ type GitHistory struct {
 	Milestones   []TagInfo // all version tags, newest first, max 10
 }
 
+// GitOpener is the opener used to access git repositories in the context package.
+// Defaults to testable.DefaultGitOpener. Tests can replace this to inject mocks.
+var GitOpener testable.GitOpener = testable.DefaultGitOpener
+
 // AnalyzeHistory walks the git log and groups commits by week.
 // weeks controls how many weeks of history to include (default: 4).
 func AnalyzeHistory(repoPath string, weeks int) (*GitHistory, error) {
@@ -65,7 +71,7 @@ func analyzeHistoryWithNow(repoPath string, weeks int, now time.Time) (*GitHisto
 		weeks = 4
 	}
 
-	repo, err := git.PlainOpen(repoPath)
+	repo, err := GitOpener.PlainOpen(repoPath)
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +181,7 @@ func analyzeHistoryWithNow(repoPath string, weeks int, now time.Time) (*GitHisto
 }
 
 // collectTags returns semver-matching tags sorted newest-first, capped at 10.
-func collectTags(repo *git.Repository) []TagInfo {
+func collectTags(repo testable.GitRepository) []TagInfo {
 	tagRefs, err := repo.Tags()
 	if err != nil {
 		return nil

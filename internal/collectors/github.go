@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-git/v5"
 	"github.com/google/go-github/v68/github"
 
 	"github.com/davetashner/stringer/internal/collector"
 	"github.com/davetashner/stringer/internal/signal"
+	"github.com/davetashner/stringer/internal/testable"
 )
 
 // Default configuration values for the GitHub collector.
@@ -82,6 +82,10 @@ type GitHubCollector struct {
 	// api is the GitHub API client (nil means use real client).
 	// Exported for testing only via the setAPI helper.
 	api githubAPI
+
+	// GitOpener is the opener used to access the git repository.
+	// If nil, testable.DefaultGitOpener is used.
+	GitOpener testable.GitOpener
 }
 
 // Name returns the collector name used for registration and filtering.
@@ -98,7 +102,11 @@ func (c *GitHubCollector) Collect(ctx context.Context, repoPath string, opts sig
 	}
 
 	// Parse owner/repo from git remote.
-	owner, repo, err := parseGitHubRemote(repoPath)
+	opener := c.GitOpener
+	if opener == nil {
+		opener = testable.DefaultGitOpener
+	}
+	owner, repo, err := parseGitHubRemoteWith(opener, repoPath)
 	if err != nil {
 		slog.Info("cannot determine GitHub remote, skipping GitHub collector", "error", err)
 		return nil, nil
@@ -161,8 +169,15 @@ func (c *GitHubCollector) Collect(ctx context.Context, repoPath string, opts sig
 
 // parseGitHubRemote extracts the owner and repo name from the git remote
 // origin URL. Supports both HTTPS and SSH formats.
+// Uses the default git opener.
 func parseGitHubRemote(repoPath string) (owner, repo string, err error) {
-	gitRepo, err := git.PlainOpen(repoPath)
+	return parseGitHubRemoteWith(testable.DefaultGitOpener, repoPath)
+}
+
+// parseGitHubRemoteWith extracts the owner and repo name using the provided
+// GitOpener. This allows tests to inject a mock opener.
+func parseGitHubRemoteWith(opener testable.GitOpener, repoPath string) (owner, repo string, err error) {
+	gitRepo, err := opener.PlainOpen(repoPath)
 	if err != nil {
 		return "", "", fmt.Errorf("opening repo: %w", err)
 	}

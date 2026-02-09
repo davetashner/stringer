@@ -18,6 +18,7 @@ import (
 
 	"github.com/davetashner/stringer/internal/collector"
 	"github.com/davetashner/stringer/internal/signal"
+	"github.com/davetashner/stringer/internal/testable"
 )
 
 // maxCommitWalk is the upper bound on commits examined per scan.
@@ -72,6 +73,10 @@ type FileChurn struct {
 // stale branches.
 type GitlogCollector struct {
 	metrics *GitlogMetrics
+
+	// GitOpener is the opener used to access the git repository.
+	// If nil, testable.DefaultGitOpener is used.
+	GitOpener testable.GitOpener
 }
 
 // Name returns the collector name used for registration and filtering.
@@ -84,7 +89,11 @@ func (c *GitlogCollector) Collect(ctx context.Context, repoPath string, opts sig
 	if opts.GitRoot != "" {
 		gitRoot = opts.GitRoot
 	}
-	repo, err := git.PlainOpen(gitRoot)
+	opener := c.GitOpener
+	if opener == nil {
+		opener = testable.DefaultGitOpener
+	}
+	repo, err := opener.PlainOpen(gitRoot)
 	if err != nil {
 		return nil, fmt.Errorf("opening repo: %w", err)
 	}
@@ -135,7 +144,7 @@ func (c *GitlogCollector) Collect(ctx context.Context, repoPath string, opts sig
 
 // walkCommits iterates over the most recent commits and returns revert signals,
 // churn signals, and the raw file-change/author maps for metrics.
-func (c *GitlogCollector) walkCommits(ctx context.Context, repo *git.Repository, opts signal.CollectorOpts) ([]signal.RawSignal, []signal.RawSignal, map[string]int, map[string]map[string]bool, error) {
+func (c *GitlogCollector) walkCommits(ctx context.Context, repo testable.GitRepository, opts signal.CollectorOpts) ([]signal.RawSignal, []signal.RawSignal, map[string]int, map[string]map[string]bool, error) {
 	head, err := repo.Head()
 	if err != nil {
 		// Empty repo or detached HEAD with no commits.
@@ -323,7 +332,7 @@ func churnConfidence(count int) float64 {
 }
 
 // detectStaleBranches returns signals for branches with no recent activity.
-func (c *GitlogCollector) detectStaleBranches(ctx context.Context, repo *git.Repository) ([]signal.RawSignal, error) {
+func (c *GitlogCollector) detectStaleBranches(ctx context.Context, repo testable.GitRepository) ([]signal.RawSignal, error) {
 	refs, err := repo.References()
 	if err != nil {
 		return nil, fmt.Errorf("listing references: %w", err)

@@ -8,7 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/go-git/go-git/v5"
+	"github.com/davetashner/stringer/internal/testable"
 )
 
 // GitHubRemote holds the parsed owner/repo from a GitHub remote URL.
@@ -20,11 +20,15 @@ type GitHubRemote struct {
 // sshPattern matches git@github.com:owner/repo.git SSH URLs.
 var sshPattern = regexp.MustCompile(`^git@github\.com:([^/]+)/([^/]+?)(?:\.git)?$`)
 
+// GitOpener is the opener used to access git repositories in the bootstrap package.
+// Defaults to testable.DefaultGitOpener. Tests can replace this to inject mocks.
+var GitOpener testable.GitOpener = testable.DefaultGitOpener
+
 // DetectGitHubRemote opens the git repository at repoPath and checks whether
 // the origin remote points to GitHub. Returns nil (not an error) when the
 // directory is not a git repo or the remote is not GitHub.
 func DetectGitHubRemote(repoPath string) *GitHubRemote {
-	repo, err := git.PlainOpen(repoPath)
+	repo, err := GitOpener.PlainOpen(repoPath)
 	if err != nil {
 		return nil
 	}
