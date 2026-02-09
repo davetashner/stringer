@@ -1286,6 +1286,277 @@ func TestScanCmd_PathsFlag_Integration(t *testing.T) {
 	assert.Equal(t, 1, result.TotalSignals, "expected 1 signal with --paths=foo/**")
 }
 
+// -----------------------------------------------------------------------
+// --include-demo-paths flag tests
+// -----------------------------------------------------------------------
+
+func TestRunScan_IncludeDemoPathsFlag(t *testing.T) {
+	resetScanFlags()
+	dir := fixtureDir(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--include-demo-paths", "--dry-run", "--quiet", "--collectors=todos"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "signal(s) found")
+}
+
+// -----------------------------------------------------------------------
+// --collector-timeout flag tests
+// -----------------------------------------------------------------------
+
+func TestRunScan_CollectorTimeoutFlag(t *testing.T) {
+	resetScanFlags()
+	dir := fixtureDir(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--collector-timeout=5m", "--dry-run", "--quiet", "--collectors=todos"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "signal(s) found")
+}
+
+// -----------------------------------------------------------------------
+// --include-closed and --history-depth flag tests
+// -----------------------------------------------------------------------
+
+func TestRunScan_IncludeClosedFlag(t *testing.T) {
+	resetScanFlags()
+	dir := fixtureDir(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--include-closed", "--dry-run", "--quiet", "--collectors=todos"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "signal(s) found")
+}
+
+func TestRunScan_HistoryDepthFlag(t *testing.T) {
+	resetScanFlags()
+	dir := fixtureDir(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--history-depth=90d", "--dry-run", "--quiet", "--collectors=todos"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "signal(s) found")
+}
+
+// -----------------------------------------------------------------------
+// --anonymize flag tests
+// -----------------------------------------------------------------------
+
+func TestRunScan_AnonymizeFlag(t *testing.T) {
+	resetScanFlags()
+	dir := fixtureDir(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--anonymize=always", "--dry-run", "--quiet", "--collectors=todos"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "signal(s) found")
+}
+
+// -----------------------------------------------------------------------
+// Output format variation tests
+// -----------------------------------------------------------------------
+
+func TestRunScan_JSONFormatInProcess(t *testing.T) {
+	resetScanFlags()
+	dir := fixtureDir(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--format=json", "--quiet", "--collectors=todos"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	// JSON output should be valid JSON.
+	var result json.RawMessage
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+}
+
+func TestRunScan_MarkdownFormatInProcess(t *testing.T) {
+	resetScanFlags()
+	dir := fixtureDir(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--format=markdown", "--quiet", "--collectors=todos"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "#")
+}
+
+func TestRunScan_TasksFormatInProcess(t *testing.T) {
+	resetScanFlags()
+	dir := fixtureDir(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--format=tasks", "--quiet", "--collectors=todos"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.NotEmpty(t, stdout.String())
+}
+
+// -----------------------------------------------------------------------
+// --strict flag integration tests
+// -----------------------------------------------------------------------
+
+func TestRunScan_StrictWithAllSuccess(t *testing.T) {
+	resetScanFlags()
+	dir := fixtureDir(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--strict", "--dry-run", "--quiet", "--collectors=todos"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "signal(s) found")
+}
+
+// -----------------------------------------------------------------------
+// --delta flag tests
+// -----------------------------------------------------------------------
+
+func TestRunScan_DeltaFlagFirstRun(t *testing.T) {
+	resetScanFlags()
+	dir := t.TempDir()
+
+	// Create a file with a TODO.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"),
+		[]byte("package main\n// TODO: first run\n"), 0o600))
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--delta", "--dry-run", "--quiet", "--collectors=todos"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "signal(s) found")
+}
+
+func TestRunScan_DeltaSecondRun(t *testing.T) {
+	resetScanFlags()
+	dir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"),
+		[]byte("package main\n// TODO: delta test\n"), 0o600))
+
+	// First scan to establish state.
+	cmd1, _, _ := newTestCmd()
+	cmd1.SetArgs([]string{"scan", dir, "--delta", "--quiet", "--collectors=todos", "-o", filepath.Join(t.TempDir(), "out1.jsonl")})
+	require.NoError(t, cmd1.Execute())
+
+	// Second scan — same signals should be filtered out.
+	resetScanFlags()
+	cmd2, stdout2, _ := newTestCmd()
+	cmd2.SetArgs([]string{"scan", dir, "--delta", "--dry-run", "--quiet", "--collectors=todos"})
+
+	err := cmd2.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, stdout2.String(), "0 signal(s) found")
+}
+
+// -----------------------------------------------------------------------
+// --delta with state mismatch test
+// -----------------------------------------------------------------------
+
+func TestRunScan_DeltaCollectorMismatch(t *testing.T) {
+	resetScanFlags()
+	dir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"),
+		[]byte("package main\n// TODO: mismatch test\n"), 0o600))
+
+	// First scan with todos only to establish state.
+	cmd1, _, _ := newTestCmd()
+	cmd1.SetArgs([]string{"scan", dir, "--delta", "--quiet", "--collectors=todos", "-o", filepath.Join(t.TempDir(), "out.jsonl")})
+	require.NoError(t, cmd1.Execute())
+
+	// Second scan with different collectors — should warn about mismatch.
+	resetScanFlags()
+	cmd2, stdout2, _ := newTestCmd()
+	cmd2.SetArgs([]string{"scan", dir, "--delta", "--dry-run", "--quiet", "--collectors=todos,patterns"})
+
+	err := cmd2.Execute()
+	require.NoError(t, err)
+	// With collector mismatch, all signals should be treated as new.
+	assert.Contains(t, stdout2.String(), "signal(s) found")
+}
+
+// -----------------------------------------------------------------------
+// Beads-aware dedup path tests
+// -----------------------------------------------------------------------
+
+func TestRunScan_BeadsAwareDedup(t *testing.T) {
+	resetScanFlags()
+	dir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"),
+		[]byte("package main\n// TODO: beads test\n"), 0o600))
+
+	// Create a .beads directory with an existing issue.
+	beadsDir := filepath.Join(dir, ".beads")
+	require.NoError(t, os.MkdirAll(beadsDir, 0o750))
+	beadsContent := `{"id":"str-12345678","title":"beads test","status":"open","type":"task"}` + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(beadsDir, "issues.jsonl"), []byte(beadsContent), 0o600))
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--dry-run", "--quiet", "--collectors=todos"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "signal(s) found")
+}
+
+// -----------------------------------------------------------------------
+// Config file disabled collector tests
+// -----------------------------------------------------------------------
+
+func TestRunScan_DisabledCollectorInConfig(t *testing.T) {
+	resetScanFlags()
+	dir := t.TempDir()
+
+	// Create a config with github disabled.
+	configContent := `collectors:
+  github:
+    enabled: false
+  todos:
+    enabled: true
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".stringer.yaml"), []byte(configContent), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"),
+		[]byte("package main\n// TODO: config test\n"), 0o600))
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--dry-run", "--json", "--quiet"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	var parsed struct {
+		Collectors []struct {
+			Name string `json:"name"`
+		} `json:"collectors"`
+	}
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &parsed), "output: %s", stdout.String())
+
+	// github should not appear in collectors.
+	for _, c := range parsed.Collectors {
+		assert.NotEqual(t, "github", c.Name, "github collector should be disabled via config")
+	}
+}
+
 // stderr is a helper that captures stderr from a failed exec.Command.
 // It returns an empty string if the command has not been run yet.
 func stderr(cmd *exec.Cmd) string {

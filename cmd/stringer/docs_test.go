@@ -275,6 +275,29 @@ func TestDocsCmd_SymlinkPath(t *testing.T) {
 	assert.NotEmpty(t, stdout.String())
 }
 
+func TestDocsCmd_UpdateWithInvalidOutputFile(t *testing.T) {
+	resetDocsFlags()
+	dir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n\ngo 1.22\n"), 0o600))
+
+	existing := `# AGENTS.md
+
+<!-- stringer:auto:start:techstack -->
+## Tech Stack
+- Old
+<!-- stringer:auto:end:techstack -->
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(existing), 0o600))
+
+	cmd, _, _ := newTestCmd()
+	cmd.SetArgs([]string{"docs", dir, "--update", "-o", "/nonexistent/dir/agents.md", "--quiet"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot create output file")
+}
+
 func TestDocsCmd_InRootHelp(t *testing.T) {
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
