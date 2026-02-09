@@ -121,8 +121,10 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 		return nil, err
 	}
 
+	excludes := mergeExcludes(opts.ExcludePatterns)
+
 	// Discover directories up to the configured depth.
-	dirs, err := discoverDirectories(ctx, repoPath, defaultDirectoryDepth)
+	dirs, err := discoverDirectories(ctx, repoPath, defaultDirectoryDepth, excludes, opts.IncludeDemoPaths)
 	if err != nil {
 		return nil, fmt.Errorf("discovering directories: %w", err)
 	}
@@ -140,7 +142,7 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 	}
 
 	// Blame source files and attribute lines to directories.
-	if err := blameDirectories(ctx, gitRoot, repoPath, ownership, defaultMaxBlameFiles, opts); err != nil {
+	if err := blameDirectories(ctx, gitRoot, repoPath, ownership, defaultMaxBlameFiles, excludes, opts); err != nil {
 		return nil, fmt.Errorf("blaming files: %w", err)
 	}
 
@@ -210,8 +212,8 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 
 // discoverDirectories walks the repo and returns unique directory paths
 // up to the given depth (relative to repoPath). The root directory "." is
-// included.
-func discoverDirectories(ctx context.Context, repoPath string, maxDepth int) ([]string, error) {
+// included. Directories matching excludes or demo patterns are skipped.
+func discoverDirectories(ctx context.Context, repoPath string, maxDepth int, excludes []string, includeDemoPaths bool) ([]string, error) {
 	dirSet := make(map[string]bool)
 	dirSet["."] = true
 
@@ -232,12 +234,19 @@ func discoverDirectories(ctx context.Context, repoPath string, maxDepth int) ([]
 			return nil
 		}
 
-		// Skip hidden directories and known non-source directories.
+		// Skip hidden directories.
 		base := filepath.Base(path)
 		if strings.HasPrefix(base, ".") && relPath != "." {
 			return filepath.SkipDir
 		}
-		if base == "vendor" || base == "node_modules" {
+
+		// Skip directories matching exclude patterns.
+		if shouldExclude(relPath, excludes) {
+			return filepath.SkipDir
+		}
+
+		// Skip demo paths unless opted in.
+		if !includeDemoPaths && isDemoPath(relPath) {
 			return filepath.SkipDir
 		}
 
@@ -268,7 +277,7 @@ func discoverDirectories(ctx context.Context, repoPath string, maxDepth int) ([]
 // blameDirectories blames source files and attributes line counts to their
 // containing directories. It caps blame at maxFiles per directory.
 // Uses native git CLI for blame (DR-011) for performance.
-func blameDirectories(ctx context.Context, gitDir string, repoPath string, ownership map[string]*dirOwnership, maxFiles int, opts signal.CollectorOpts) error {
+func blameDirectories(ctx context.Context, gitDir string, repoPath string, ownership map[string]*dirOwnership, maxFiles int, excludes []string, opts signal.CollectorOpts) error {
 	// Count files per directory to respect the cap.
 	dirFileCount := make(map[string]int)
 	totalFiles := 0
@@ -289,7 +298,11 @@ func blameDirectories(ctx context.Context, gitDir string, repoPath string, owner
 					return filepath.SkipDir
 				}
 			}
-			if base == "vendor" || base == "node_modules" {
+			relPath, _ := filepath.Rel(repoPath, path)
+			if shouldExclude(relPath, excludes) {
+				return filepath.SkipDir
+			}
+			if !opts.IncludeDemoPaths && isDemoPath(relPath) {
 				return filepath.SkipDir
 			}
 			return nil

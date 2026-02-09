@@ -318,6 +318,49 @@ func TestMerge_TimeoutCLIOverridesFile(t *testing.T) {
 	assert.Equal(t, 30*time.Second, result.CollectorOpts["todos"].Timeout)
 }
 
+func TestMerge_IncludeDemoPathsFromFile(t *testing.T) {
+	boolTrue := true
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"patterns": {IncludeDemoPaths: &boolTrue},
+		},
+	}
+	cliCfg := signal.ScanConfig{}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.True(t, result.CollectorOpts["patterns"].IncludeDemoPaths)
+}
+
+func TestMerge_IncludeDemoPathsCLIOverridesFile(t *testing.T) {
+	boolTrue := true
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"patterns": {IncludeDemoPaths: &boolTrue},
+		},
+	}
+	cliCfg := signal.ScanConfig{
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"patterns": {IncludeDemoPaths: true},
+		},
+	}
+
+	result := Merge(fileCfg, cliCfg)
+	// CLI already true, should remain true.
+	assert.True(t, result.CollectorOpts["patterns"].IncludeDemoPaths)
+}
+
+func TestMerge_IncludeDemoPathsDefaultFalse(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"patterns": {},
+		},
+	}
+	cliCfg := signal.ScanConfig{}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.False(t, result.CollectorOpts["patterns"].IncludeDemoPaths)
+}
+
 func TestMerge_TimeoutInvalidDurationIgnored(t *testing.T) {
 	fileCfg := &Config{
 		Collectors: map[string]CollectorConfig{

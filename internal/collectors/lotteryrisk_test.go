@@ -636,6 +636,61 @@ func TestLotteryRiskCollector_AnonymizeAlways(t *testing.T) {
 	}
 }
 
+// --- Demo path filtering tests ---
+
+func TestLotteryRiskCollector_DemoPathsSuppressed(t *testing.T) {
+	// Create a repo where all source is in examples/ — should produce no signals.
+	_, dir := initGoGitRepo(t, map[string]string{
+		"examples/basic/main.go": "package main\n\nfunc main() {}\n",
+	})
+
+	c := &LotteryRiskCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	for _, sig := range signals {
+		if sig.Kind == "low-lottery-risk" && sig.FilePath != "." {
+			t.Errorf("low-lottery-risk should be suppressed in examples/, got signal for %s", sig.FilePath)
+		}
+	}
+}
+
+func TestLotteryRiskCollector_DemoPathsIncludedWithOptIn(t *testing.T) {
+	_, dir := initGoGitRepo(t, map[string]string{
+		"examples/basic/main.go": "package main\n\nfunc main() {}\n",
+	})
+
+	c := &LotteryRiskCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		IncludeDemoPaths: true,
+	})
+	require.NoError(t, err)
+
+	lotterySigs := filterByKind(signals, "low-lottery-risk")
+	// With IncludeDemoPaths, examples/ directories should be analyzed.
+	// At minimum root "." should appear (single-author repo).
+	require.NotEmpty(t, lotterySigs, "IncludeDemoPaths=true should include examples/ in lottery risk analysis")
+}
+
+func TestLotteryRiskCollector_ExcludePatternsRespected(t *testing.T) {
+	_, dir := initGoGitRepo(t, map[string]string{
+		"main.go":    "package main\n\nfunc main() {}\n",
+		"gen/gen.go": "package gen\n\nfunc Gen() {}\n",
+	})
+
+	c := &LotteryRiskCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		ExcludePatterns: []string{"gen/**"},
+	})
+	require.NoError(t, err)
+
+	for _, sig := range signals {
+		if sig.FilePath == "gen" {
+			t.Errorf("ExcludePatterns should suppress signals from gen/, got signal for %s", sig.FilePath)
+		}
+	}
+}
+
 // --- Timestamp enrichment tests ---
 
 func TestLotteryRiskCollector_TimestampsEnriched(t *testing.T) {

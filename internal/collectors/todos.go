@@ -55,6 +55,26 @@ var defaultExcludePatterns = []string{
 	"testdata/**",
 }
 
+// defaultDemoPatterns are directory globs for demo/example/tutorial paths.
+// Noise-prone signal kinds (missing-tests, low-test-ratio, low-lottery-risk)
+// are suppressed in these paths by default unless IncludeDemoPaths is set.
+var defaultDemoPatterns = []string{
+	"examples/**",
+	"example/**",
+	"tutorials/**",
+	"tutorial/**",
+	"demos/**",
+	"demo/**",
+	"samples/**",
+	"sample/**",
+	"_examples/**",
+}
+
+// isDemoPath returns true if relPath falls under a demo/example/tutorial directory.
+func isDemoPath(relPath string) bool {
+	return shouldExclude(relPath, defaultDemoPatterns)
+}
+
 func init() {
 	collector.Register(&TodoCollector{})
 }

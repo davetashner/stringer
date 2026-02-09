@@ -1029,6 +1029,100 @@ func TestPatterns_TimestampsEnriched(t *testing.T) {
 	}
 }
 
+// --- Demo path filtering tests ---
+
+func TestPatterns_MissingTestsSuppressedInExamples(t *testing.T) {
+	dir := t.TempDir()
+	exDir := filepath.Join(dir, "examples", "basic")
+	require.NoError(t, os.MkdirAll(exDir, 0o750))
+
+	// Create a source file with enough lines in examples/ — should NOT produce missing-tests.
+	content := strings.Repeat("func foo() {}\n", 25)
+	require.NoError(t, os.WriteFile(filepath.Join(exDir, "main.go"), []byte("package main\n"+content), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	for _, s := range signals {
+		if s.Kind == "missing-tests" {
+			t.Errorf("missing-tests signal should be suppressed in examples/, got: %s", s.FilePath)
+		}
+	}
+}
+
+func TestPatterns_MissingTestsIncludeDemoPathsOptIn(t *testing.T) {
+	dir := t.TempDir()
+	exDir := filepath.Join(dir, "examples", "basic")
+	require.NoError(t, os.MkdirAll(exDir, 0o750))
+
+	content := strings.Repeat("func foo() {}\n", 25)
+	require.NoError(t, os.WriteFile(filepath.Join(exDir, "main.go"), []byte("package main\n"+content), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		IncludeDemoPaths: true,
+	})
+	require.NoError(t, err)
+
+	var missingTests []signal.RawSignal
+	for _, s := range signals {
+		if s.Kind == "missing-tests" {
+			missingTests = append(missingTests, s)
+		}
+	}
+	require.NotEmpty(t, missingTests, "IncludeDemoPaths=true should re-enable missing-tests in examples/")
+}
+
+func TestPatterns_LowTestRatioSuppressedInExamples(t *testing.T) {
+	dir := t.TempDir()
+	exDir := filepath.Join(dir, "examples")
+	require.NoError(t, os.MkdirAll(exDir, 0o750))
+
+	// Create 5 source files in examples/ — should NOT produce low-test-ratio.
+	for i := 0; i < 5; i++ {
+		require.NoError(t, os.WriteFile(
+			filepath.Join(exDir, fmt.Sprintf("file%d.go", i)),
+			[]byte("package examples\n"), 0o600))
+	}
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	for _, s := range signals {
+		if s.Kind == "low-test-ratio" && strings.HasPrefix(s.FilePath, "examples") {
+			t.Errorf("low-test-ratio signal should be suppressed in examples/, got: %s", s.FilePath)
+		}
+	}
+}
+
+func TestPatterns_LowTestRatioIncludeDemoPathsOptIn(t *testing.T) {
+	dir := t.TempDir()
+	exDir := filepath.Join(dir, "examples")
+	require.NoError(t, os.MkdirAll(exDir, 0o750))
+
+	for i := 0; i < 5; i++ {
+		require.NoError(t, os.WriteFile(
+			filepath.Join(exDir, fmt.Sprintf("file%d.go", i)),
+			[]byte("package examples\n"), 0o600))
+	}
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		IncludeDemoPaths: true,
+	})
+	require.NoError(t, err)
+
+	var ratioSignals []signal.RawSignal
+	for _, s := range signals {
+		if s.Kind == "low-test-ratio" && strings.HasPrefix(s.FilePath, "examples") {
+			ratioSignals = append(ratioSignals, s)
+		}
+	}
+	require.NotEmpty(t, ratioSignals, "IncludeDemoPaths=true should re-enable low-test-ratio in examples/")
+}
+
 func TestPatterns_TimestampsGracefulWithoutGit(t *testing.T) {
 	// Non-git directory: timestamps should remain zero without errors.
 	dir := t.TempDir()

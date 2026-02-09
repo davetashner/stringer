@@ -1047,6 +1047,41 @@ func TestCollect_SubdirectoryScanWithGitRoot(t *testing.T) {
 	}
 }
 
+func TestIsDemoPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		relPath string
+		want    bool
+	}{
+		{name: "examples_root", relPath: "examples", want: true},
+		{name: "examples_nested", relPath: "examples/basic/main.go", want: true},
+		{name: "example_root", relPath: "example", want: true},
+		{name: "example_nested", relPath: "example/hello/main.go", want: true},
+		{name: "tutorials_nested", relPath: "tutorials/intro/step1.go", want: true},
+		{name: "tutorial_nested", relPath: "tutorial/basics/main.go", want: true},
+		{name: "demos_nested", relPath: "demos/showcase/app.go", want: true},
+		{name: "demo_nested", relPath: "demo/widget/main.go", want: true},
+		{name: "samples_nested", relPath: "samples/quickstart/main.go", want: true},
+		{name: "sample_nested", relPath: "sample/hello/main.go", want: true},
+		{name: "_examples_nested", relPath: "_examples/advanced/main.go", want: true},
+		{name: "src_not_demo", relPath: "src/main.go", want: false},
+		{name: "internal_not_demo", relPath: "internal/handler.go", want: false},
+		{name: "cmd_not_demo", relPath: "cmd/app/main.go", want: false},
+		{name: "filename_example_no_match", relPath: "example.go", want: false},
+		{name: "filename_examples_no_match", relPath: "examples.go", want: false},
+		{name: "sub_example_no_match", relPath: "pkg/example.go", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isDemoPath(tt.relPath)
+			if got != tt.want {
+				t.Errorf("isDemoPath(%q) = %v, want %v", tt.relPath, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCollect_SubdirectoryScanWithoutGitRoot(t *testing.T) {
 	// Create a git repo with a subdirectory containing a TODO.
 	repoPath := initTestGitRepo(t, map[string]string{

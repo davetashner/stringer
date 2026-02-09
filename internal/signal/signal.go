@@ -73,6 +73,10 @@ type CollectorOpts struct {
 	// Anonymize controls author name anonymization: "auto", "always", or "never".
 	Anonymize string
 
+	// IncludeDemoPaths disables the default suppression of noise-prone signals
+	// (missing-tests, low-test-ratio, low-lottery-risk) in demo/example/tutorial paths.
+	IncludeDemoPaths bool
+
 	// Timeout is the per-collector timeout. 0 means no timeout.
 	Timeout time.Duration
 }
