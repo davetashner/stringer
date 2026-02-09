@@ -303,7 +303,7 @@ func TestVersionCmd_InProcess(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// renderContextJSON with milestones and tags (covers context.go:227-241)
+// strcontext.RenderJSON with milestones and tags (covers context.go:227-241)
 // -----------------------------------------------------------------------
 
 func TestRenderContextJSON_WithMilestonesAndTags(t *testing.T) {
@@ -345,10 +345,10 @@ func TestRenderContextJSON_WithMilestonesAndTags(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := renderContextJSON(analysis, history, nil, &buf)
+	err := strcontext.RenderJSON(analysis, history, nil, &buf)
 	require.NoError(t, err)
 
-	var result contextJSON
+	var result strcontext.ContextJSON
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
 
 	assert.Equal(t, "test-milestones", result.Name)
@@ -373,7 +373,7 @@ func TestRenderContextJSON_WithMilestonesAndTags(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// renderContextJSON with empty scan state (no signal metas)
+// strcontext.RenderJSON with empty scan state (no signal metas)
 // -----------------------------------------------------------------------
 
 func TestRenderContextJSON_WithEmptyScanState(t *testing.T) {
@@ -389,10 +389,10 @@ func TestRenderContextJSON_WithEmptyScanState(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := renderContextJSON(analysis, nil, scanState, &buf)
+	err := strcontext.RenderJSON(analysis, nil, scanState, &buf)
 	require.NoError(t, err)
 
-	var result contextJSON
+	var result strcontext.ContextJSON
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
 	assert.Nil(t, result.TechDebt, "empty SignalMetas should not create TechDebt")
 }
