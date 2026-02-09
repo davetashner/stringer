@@ -34,6 +34,7 @@ var (
 	reportAnonymize         string
 	reportExcludeCollectors string
 	reportCollectorTimeout  string
+	reportPaths             []string
 )
 
 // reportCmd is the subcommand for generating a repository health report.
@@ -56,6 +57,7 @@ func init() {
 	reportCmd.Flags().StringVar(&reportAnonymize, "anonymize", "auto", "anonymize author names: auto, always, or never")
 	reportCmd.Flags().StringVarP(&reportExcludeCollectors, "exclude-collectors", "x", "", "comma-separated list of collectors to skip")
 	reportCmd.Flags().StringVar(&reportCollectorTimeout, "collector-timeout", "", "per-collector timeout (e.g. 60s, 2m); 0 or empty = no timeout")
+	reportCmd.Flags().StringSliceVar(&reportPaths, "paths", nil, "restrict scanning to specific files or directories (comma-separated)")
 }
 
 func runReport(cmd *cobra.Command, args []string) error {
@@ -194,6 +196,18 @@ func runReport(cmd *cobra.Command, args []string) error {
 				}
 				scanCfg.CollectorOpts[name] = co
 			}
+		}
+	}
+
+	// Apply --paths as IncludePatterns for file-scoped scanning.
+	if len(reportPaths) > 0 {
+		if scanCfg.CollectorOpts == nil {
+			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
+		}
+		for _, name := range collector.List() {
+			co := scanCfg.CollectorOpts[name]
+			co.IncludePatterns = append(co.IncludePatterns, reportPaths...)
+			scanCfg.CollectorOpts[name] = co
 		}
 	}
 

@@ -44,6 +44,7 @@ var (
 	scanCollectorTimeout  string
 	scanExcludeCollectors string
 	scanIncludeDemoPaths  bool
+	scanPaths             []string
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -78,6 +79,7 @@ func init() {
 	scanCmd.Flags().StringVar(&scanCollectorTimeout, "collector-timeout", "", "per-collector timeout (e.g. 60s, 2m); 0 or empty = no timeout")
 	scanCmd.Flags().StringVarP(&scanExcludeCollectors, "exclude-collectors", "x", "", "comma-separated list of collectors to skip")
 	scanCmd.Flags().BoolVar(&scanIncludeDemoPaths, "include-demo-paths", false, "include demo/example/tutorial paths in noise-prone signals")
+	scanCmd.Flags().StringSliceVar(&scanPaths, "paths", nil, "restrict scanning to specific files or directories (comma-separated)")
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
@@ -281,6 +283,19 @@ func runScan(cmd *cobra.Command, args []string) error {
 				}
 				scanCfg.CollectorOpts[name] = co
 			}
+		}
+	}
+
+	// Apply --paths as IncludePatterns for file-scoped scanning.
+	if len(scanPaths) > 0 {
+		if scanCfg.CollectorOpts == nil {
+			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
+		}
+		for _, name := range collector.List() {
+			co := scanCfg.CollectorOpts[name]
+			// Merge with existing include patterns rather than overwriting.
+			co.IncludePatterns = append(co.IncludePatterns, scanPaths...)
+			scanCfg.CollectorOpts[name] = co
 		}
 	}
 
