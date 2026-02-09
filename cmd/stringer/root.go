@@ -35,6 +35,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "suppress non-essential output")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable colored output")
 
+	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(scanCmd)
 	rootCmd.AddCommand(docsCmd)
 	rootCmd.AddCommand(contextCmd)
