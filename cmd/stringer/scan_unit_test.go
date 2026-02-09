@@ -745,7 +745,7 @@ func TestRunScan_SymlinkPath(t *testing.T) {
 
 func TestRunScan_GitDepthFlag(t *testing.T) {
 	resetScanFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"scan", root, "--git-depth=50", "--dry-run", "--quiet", "--collectors=gitlog"})
@@ -759,7 +759,7 @@ func TestRunScan_GitDepthFlag(t *testing.T) {
 
 func TestRunScan_GitSinceFlag(t *testing.T) {
 	resetScanFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"scan", root, "--git-since=30d", "--dry-run", "--quiet", "--collectors=gitlog"})
@@ -773,7 +773,7 @@ func TestRunScan_GitSinceFlag(t *testing.T) {
 
 func TestRunScan_GitDepthAndGitSinceTogether(t *testing.T) {
 	resetScanFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"scan", root, "--git-depth=100", "--git-since=90d", "--dry-run", "--quiet", "--collectors=gitlog"})
