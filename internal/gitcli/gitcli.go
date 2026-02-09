@@ -8,14 +8,29 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/davetashner/stringer/internal/testable"
 )
 
 // DefaultTimeout is the per-file blame timeout per DR-011.
 const DefaultTimeout = 5 * time.Second
+
+// executor is the package-level CommandExecutor used by Available and Exec.
+// It defaults to the real os/exec implementation.
+var executor testable.CommandExecutor = testable.DefaultExecutor()
+
+// SetExecutor replaces the package-level CommandExecutor. Pass nil to restore
+// the default production executor. This is intended for testing.
+func SetExecutor(e testable.CommandExecutor) {
+	if e == nil {
+		executor = testable.DefaultExecutor()
+		return
+	}
+	executor = e
+}
 
 // BlameLine holds attribution data for a single source line.
 type BlameLine struct {
@@ -31,7 +46,7 @@ type commitInfo struct {
 
 // Available returns nil if git is on PATH, or an error otherwise.
 func Available() error {
-	_, err := exec.LookPath("git")
+	_, err := executor.LookPath("git")
 	if err != nil {
 		return fmt.Errorf("git not found on PATH: %w", err)
 	}
@@ -40,7 +55,7 @@ func Available() error {
 
 // Exec runs git with the given arguments in repoDir and returns combined stdout.
 func Exec(ctx context.Context, repoDir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...) //nolint:gosec // args are controlled by callers within this package
+	cmd := executor.CommandContext(ctx, "git", args...)
 	cmd.Dir = repoDir
 	out, err := cmd.Output()
 	if err != nil {

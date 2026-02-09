@@ -16,8 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-git/go-git/v5"
-
 	"github.com/davetashner/stringer/internal/pipeline"
 	"github.com/davetashner/stringer/internal/signal"
 	"github.com/davetashner/stringer/internal/testable"
@@ -441,9 +439,13 @@ func moduleFromFilePath(path string) string {
 	}
 }
 
+// GitOpener is the opener used to access git repositories in the state package.
+// Defaults to testable.DefaultGitOpener. Tests can replace this to inject mocks.
+var GitOpener testable.GitOpener = testable.DefaultGitOpener
+
 // resolveHead returns the git HEAD commit hash, or empty string if not a git repo.
 func resolveHead(repoPath string) string {
-	repo, err := git.PlainOpen(repoPath)
+	repo, err := GitOpener.PlainOpen(repoPath)
 	if err != nil {
 		return ""
 	}
