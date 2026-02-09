@@ -38,6 +38,7 @@ func resetScanFlags() {
 	scanGitDepth = 0
 	scanGitSince = ""
 	scanExclude = nil
+	scanExcludeCollectors = ""
 
 	// Reset cobra flag "Changed" state and values to avoid test contamination.
 	scanCmd.Flags().VisitAll(func(f *pflag.Flag) {
@@ -801,6 +802,7 @@ func TestScanCmd_FlagsRegistered(t *testing.T) {
 		{"git-depth", ""},
 		{"git-since", ""},
 		{"exclude", "e"},
+		{"exclude-collectors", "x"},
 	}
 
 	for _, ff := range flags {
@@ -1112,6 +1114,90 @@ func TestRunScan_ExcludeMultiplePatterns(t *testing.T) {
 	require.NoError(t, json.Unmarshal(stdout, &result), "output: %s", stdout)
 	// docs/** and extra/** are excluded. Only src/file.go should remain.
 	assert.Equal(t, 1, result.TotalSignals, "expected 1 signal with multiple excludes")
+}
+
+// -----------------------------------------------------------------------
+// --exclude-collectors flag tests
+// -----------------------------------------------------------------------
+
+func TestApplyCollectorExclusions_EmptyExclude(t *testing.T) {
+	result := applyCollectorExclusions([]string{"todos", "gitlog"}, "")
+	assert.Equal(t, []string{"todos", "gitlog"}, result)
+}
+
+func TestApplyCollectorExclusions_EmptyInclude(t *testing.T) {
+	// When include is empty, starts from collector.List() and removes excluded.
+	result := applyCollectorExclusions(nil, "github")
+	assert.NotContains(t, result, "github")
+	assert.Greater(t, len(result), 0)
+}
+
+func TestApplyCollectorExclusions_ExcludeFromInclude(t *testing.T) {
+	result := applyCollectorExclusions([]string{"todos", "gitlog", "patterns"}, "gitlog")
+	assert.Equal(t, []string{"todos", "patterns"}, result)
+}
+
+func TestApplyCollectorExclusions_MultipleExcludes(t *testing.T) {
+	result := applyCollectorExclusions([]string{"todos", "gitlog", "patterns"}, "gitlog,patterns")
+	assert.Equal(t, []string{"todos"}, result)
+}
+
+func TestApplyCollectorExclusions_WhitespaceHandling(t *testing.T) {
+	result := applyCollectorExclusions([]string{"todos", "gitlog"}, " gitlog , ")
+	assert.Equal(t, []string{"todos"}, result)
+}
+
+func TestScan_ExcludeCollectors(t *testing.T) {
+	resetScanFlags()
+	dir := fixtureDir(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--exclude-collectors=github", "--dry-run", "--json", "--quiet"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	var parsed struct {
+		Collectors []struct {
+			Name string `json:"name"`
+		} `json:"collectors"`
+	}
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &parsed), "output: %s", stdout.String())
+
+	for _, c := range parsed.Collectors {
+		assert.NotEqual(t, "github", c.Name, "github collector should be excluded")
+	}
+}
+
+func TestScan_ExcludeWithInclude(t *testing.T) {
+	resetScanFlags()
+	dir := fixtureDir(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--collectors=todos,gitlog", "-x", "gitlog", "--dry-run", "--json", "--quiet"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	var parsed struct {
+		Collectors []struct {
+			Name string `json:"name"`
+		} `json:"collectors"`
+	}
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &parsed), "output: %s", stdout.String())
+
+	require.Len(t, parsed.Collectors, 1)
+	assert.Equal(t, "todos", parsed.Collectors[0].Name)
+}
+
+func TestScanCmd_ExcludeCollectorsFlagRegistered(t *testing.T) {
+	f := scanCmd.Flags().Lookup("exclude-collectors")
+	require.NotNil(t, f, "flag --exclude-collectors not registered")
+	assert.Equal(t, "", f.DefValue)
+
+	s := scanCmd.Flags().ShorthandLookup("x")
+	require.NotNil(t, s, "shorthand -x not registered")
+	assert.Equal(t, "exclude-collectors", s.Name)
 }
 
 // stderr is a helper that captures stderr from a failed exec.Command.

@@ -28,9 +28,14 @@ RESULT_DIR="$SCRIPT_DIR/results/${OWNER}-${REPO}"
 REPO_DIR="$RESULT_DIR/repo"
 STRINGER_BIN="$SCRIPT_DIR/results/.stringer-bin"
 
+# Configurable timeouts
+EVAL_CMD_TIMEOUT="${EVAL_CMD_TIMEOUT:-300}"
+COLLECTOR_TIMEOUT="${COLLECTOR_TIMEOUT:-60s}"
+
 echo "=== Stringer Evaluation Harness ==="
 echo "Target:  $TARGET"
 echo "Results: $RESULT_DIR"
+echo "Cmd timeout: ${EVAL_CMD_TIMEOUT}s  Collector timeout: $COLLECTOR_TIMEOUT"
 echo ""
 
 # --- Prerequisites ---
@@ -72,7 +77,7 @@ else
 fi
 echo ""
 
-# --- Helper: run a command with timing ---
+# --- Helper: run a command with timing and wall-clock timeout ---
 TIMING_FILE="$RESULT_DIR/timing.txt"
 : > "$TIMING_FILE"
 
@@ -81,14 +86,28 @@ run_timed() {
     local outfile="$2"
     local errfile="$3"
     shift 3
+    local max_seconds="${EVAL_CMD_TIMEOUT}"
     local start end elapsed
     start=$(date +%s)
-    "$@" > "$outfile" 2> "$errfile" || true
+
+    # Run command in background with watchdog kill (macOS-compatible, no timeout binary)
+    "$@" > "$outfile" 2> "$errfile" &
+    local pid=$!
+    ( sleep "$max_seconds" && kill "$pid" 2>/dev/null ) &
+    local watchdog=$!
+    wait "$pid" 2>/dev/null || true
     local exit_code=$?
+    kill "$watchdog" 2>/dev/null || true
+    wait "$watchdog" 2>/dev/null || true
+
     end=$(date +%s)
     elapsed=$((end - start))
     echo "$label: ${elapsed}s" >> "$TIMING_FILE"
-    echo "  $label: ${elapsed}s (exit $exit_code)"
+    if [[ "$elapsed" -ge "$max_seconds" ]]; then
+        echo "  $label: ${elapsed}s (TIMEOUT after ${max_seconds}s, exit $exit_code)"
+    else
+        echo "  $label: ${elapsed}s (exit $exit_code)"
+    fi
     return 0
 }
 
@@ -103,30 +122,30 @@ echo "--- Running stringer scan ---"
 
 # Beads format
 run_timed "scan-beads" "$RESULT_DIR/scan-beads.jsonl" "$RESULT_DIR/stderr-scan-beads.log" \
-    "$STRINGER_BIN" scan $COLLECTOR_FLAGS -f beads "$REPO_DIR"
+    "$STRINGER_BIN" scan $COLLECTOR_FLAGS --collector-timeout "$COLLECTOR_TIMEOUT" -f beads "$REPO_DIR"
 
 # JSON format
 run_timed "scan-json" "$RESULT_DIR/scan-json.json" "$RESULT_DIR/stderr-scan-json.log" \
-    "$STRINGER_BIN" scan $COLLECTOR_FLAGS -f json "$REPO_DIR"
+    "$STRINGER_BIN" scan $COLLECTOR_FLAGS --collector-timeout "$COLLECTOR_TIMEOUT" -f json "$REPO_DIR"
 
 # Markdown format
 run_timed "scan-markdown" "$RESULT_DIR/scan-markdown.md" "$RESULT_DIR/stderr-scan-markdown.log" \
-    "$STRINGER_BIN" scan $COLLECTOR_FLAGS -f markdown "$REPO_DIR"
+    "$STRINGER_BIN" scan $COLLECTOR_FLAGS --collector-timeout "$COLLECTOR_TIMEOUT" -f markdown "$REPO_DIR"
 
 # Tasks format
 run_timed "scan-tasks" "$RESULT_DIR/scan-tasks.txt" "$RESULT_DIR/stderr-scan-tasks.log" \
-    "$STRINGER_BIN" scan $COLLECTOR_FLAGS -f tasks "$REPO_DIR"
+    "$STRINGER_BIN" scan $COLLECTOR_FLAGS --collector-timeout "$COLLECTOR_TIMEOUT" -f tasks "$REPO_DIR"
 
 # Dry-run JSON
 run_timed "scan-dryrun" "$RESULT_DIR/scan-dryrun.json" "$RESULT_DIR/stderr-scan-dryrun.log" \
-    "$STRINGER_BIN" scan $COLLECTOR_FLAGS --dry-run --json "$REPO_DIR"
+    "$STRINGER_BIN" scan $COLLECTOR_FLAGS --collector-timeout "$COLLECTOR_TIMEOUT" --dry-run --json "$REPO_DIR"
 
 echo ""
 
 # --- Run stringer report ---
 echo "--- Running stringer report ---"
 run_timed "report" "$RESULT_DIR/report.txt" "$RESULT_DIR/stderr-report.log" \
-    "$STRINGER_BIN" report $COLLECTOR_FLAGS "$REPO_DIR"
+    "$STRINGER_BIN" report $COLLECTOR_FLAGS --collector-timeout "$COLLECTOR_TIMEOUT" "$REPO_DIR"
 
 echo ""
 

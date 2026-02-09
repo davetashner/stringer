@@ -23,12 +23,14 @@ import (
 
 // Report-specific flag values.
 var (
-	reportCollectors string
-	reportSections   string
-	reportOutput     string
-	reportGitDepth   int
-	reportGitSince   string
-	reportAnonymize  string
+	reportCollectors        string
+	reportSections          string
+	reportOutput            string
+	reportGitDepth          int
+	reportGitSince          string
+	reportAnonymize         string
+	reportExcludeCollectors string
+	reportCollectorTimeout  string
 )
 
 // reportCmd is the subcommand for generating a repository health report.
@@ -48,6 +50,8 @@ func init() {
 	reportCmd.Flags().IntVar(&reportGitDepth, "git-depth", 0, "max commits to examine (default 1000)")
 	reportCmd.Flags().StringVar(&reportGitSince, "git-since", "", "only examine commits after this duration (e.g., 90d, 6m, 1y)")
 	reportCmd.Flags().StringVar(&reportAnonymize, "anonymize", "auto", "anonymize author names: auto, always, or never")
+	reportCmd.Flags().StringVarP(&reportExcludeCollectors, "exclude-collectors", "x", "", "comma-separated list of collectors to skip")
+	reportCmd.Flags().StringVar(&reportCollectorTimeout, "collector-timeout", "", "per-collector timeout (e.g. 60s, 2m); 0 or empty = no timeout")
 }
 
 func runReport(cmd *cobra.Command, args []string) error {
@@ -97,6 +101,9 @@ func runReport(cmd *cobra.Command, args []string) error {
 			collectors[i] = strings.TrimSpace(collectors[i])
 		}
 	}
+
+	// 2b. Apply --exclude-collectors.
+	collectors = applyReportCollectorExclusions(collectors, reportExcludeCollectors)
 
 	// 3. Load config file.
 	fileCfg, err := config.Load(absPath)
@@ -166,6 +173,19 @@ func runReport(cmd *cobra.Command, args []string) error {
 		co := scanCfg.CollectorOpts[name]
 		co.ProgressFunc = progressFn
 		scanCfg.CollectorOpts[name] = co
+	}
+
+	// Apply --collector-timeout as global default for collectors without a per-collector timeout.
+	if reportCollectorTimeout != "" {
+		if d, err := time.ParseDuration(reportCollectorTimeout); err == nil && d > 0 {
+			for _, name := range collector.List() {
+				co := scanCfg.CollectorOpts[name]
+				if co.Timeout == 0 {
+					co.Timeout = d
+				}
+				scanCfg.CollectorOpts[name] = co
+			}
+		}
 	}
 
 	// 6. Create pipeline.
@@ -314,4 +334,29 @@ func resolveSections(filter []string, w interface{ Write([]byte) (int, error) })
 		names = append(names, name)
 	}
 	return names
+}
+
+// applyReportCollectorExclusions removes excluded collectors from the include list.
+// If include is empty, it starts from the full registry (collector.List()).
+func applyReportCollectorExclusions(include []string, exclude string) []string {
+	if exclude == "" {
+		return include
+	}
+	skip := make(map[string]bool)
+	for _, name := range strings.Split(exclude, ",") {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			skip[name] = true
+		}
+	}
+	if len(include) == 0 {
+		include = collector.List()
+	}
+	var result []string
+	for _, name := range include {
+		if !skip[name] {
+			result = append(result, name)
+		}
+	}
+	return result
 }

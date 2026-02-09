@@ -302,7 +302,13 @@ if [[ -f "$DRYRUN_FILE" ]] && [[ -s "$DRYRUN_FILE" ]]; then
     echo ""
 
     # Check for suspiciously slow collectors (> 30s)
-    SLOW=$(jq -r '.collectors[] | select(.duration | test("^[3-9][0-9]s|^[0-9]{3,}s|^[1-9][0-9]*m")) | .name' "$DRYRUN_FILE" 2>/dev/null || true)
+    # Parse durations properly: handles "45.123s", "1m2.5s", etc.
+    SLOW=$(jq -r '[.collectors[] |
+        {name, dur: .duration} |
+        {name, sec: ((.dur | capture("^(?<n>[0-9.]+)s$").n // null) | tonumber? // 0),
+         has_min: ((.dur | test("^[0-9.]+m[0-9]")) // false)} |
+        {name, sec: (if .has_min then 999 elif .sec > 0 then .sec else 0 end)} |
+        select(.sec > 30) | .name] | join(", ")' "$DRYRUN_FILE" 2>/dev/null || true)
     if [[ -n "$SLOW" ]]; then
         check "Slow collectors (>30s): $SLOW" WARN
     else
