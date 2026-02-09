@@ -60,7 +60,7 @@ func TestContextCmd_DefaultPath(t *testing.T) {
 
 func TestContextCmd_ExplicitPath(t *testing.T) {
 	resetContextFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"context", root, "--quiet"})
@@ -121,7 +121,7 @@ func TestContextCmd_FlagsRegistered(t *testing.T) {
 
 func TestContextCmd_FormatJSON(t *testing.T) {
 	resetContextFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"context", root, "--format", "json", "--quiet"})
@@ -156,7 +156,7 @@ func TestContextCmd_FormatJSON(t *testing.T) {
 
 func TestContextCmd_FormatInvalid(t *testing.T) {
 	resetContextFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, _, _ := newTestCmd()
 	cmd.SetArgs([]string{"context", root, "--format", "xml"})
@@ -169,7 +169,7 @@ func TestContextCmd_FormatInvalid(t *testing.T) {
 
 func TestContextCmd_OutputFile(t *testing.T) {
 	resetContextFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 	outFile := filepath.Join(t.TempDir(), "context.md")
 
 	cmd, _, _ := newTestCmd()
@@ -185,7 +185,7 @@ func TestContextCmd_OutputFile(t *testing.T) {
 
 func TestContextCmd_OutputFileError(t *testing.T) {
 	resetContextFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, _, _ := newTestCmd()
 	cmd.SetArgs([]string{"context", root, "-o", "/nonexistent/dir/context.md", "--quiet"})
@@ -197,7 +197,7 @@ func TestContextCmd_OutputFileError(t *testing.T) {
 
 func TestContextCmd_WeeksFlag(t *testing.T) {
 	resetContextFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd, stdout, _ := newTestCmd()
 	cmd.SetArgs([]string{"context", root, "--weeks", "2", "--quiet"})
@@ -296,7 +296,7 @@ func TestRenderContextJSON_WithScanState(t *testing.T) {
 
 func TestContextCmd_OutputFileJSON(t *testing.T) {
 	resetContextFlags()
-	root := repoRoot(t)
+	root := initTestRepo(t)
 	outFile := filepath.Join(t.TempDir(), "context.json")
 
 	cmd, _, _ := newTestCmd()

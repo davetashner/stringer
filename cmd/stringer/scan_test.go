@@ -38,7 +38,7 @@ func repoRoot(t *testing.T) string {
 
 func TestScan_ProducesJSONL(t *testing.T) {
 	binary := buildBinary(t)
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd := exec.Command(binary, "scan", root, "--quiet") //nolint:gosec // test helper
 	stdout, err := cmd.Output()
@@ -70,7 +70,7 @@ func TestScan_ProducesJSONL(t *testing.T) {
 
 func TestScan_DryRun(t *testing.T) {
 	binary := buildBinary(t)
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd := exec.Command(binary, "scan", root, "--dry-run") //nolint:gosec // test helper
 	stdout, err := cmd.Output()
@@ -89,7 +89,7 @@ func TestScan_DryRun(t *testing.T) {
 
 func TestScan_DryRunJSON(t *testing.T) {
 	binary := buildBinary(t)
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd := exec.Command(binary, "scan", root, "--dry-run", "--json", "--quiet") //nolint:gosec // test helper
 	stdout, err := cmd.Output()
@@ -121,7 +121,7 @@ func TestScan_DryRunJSON(t *testing.T) {
 
 func TestScan_CollectorsFlag(t *testing.T) {
 	binary := buildBinary(t)
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd := exec.Command(binary, "scan", root, "--collectors=todos", "--dry-run") //nolint:gosec // test helper
 	stdout, err := cmd.Output()
@@ -136,7 +136,7 @@ func TestScan_CollectorsFlag(t *testing.T) {
 
 func TestScan_UnknownCollector(t *testing.T) {
 	binary := buildBinary(t)
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd := exec.Command(binary, "scan", root, "--collectors=nonexistent") //nolint:gosec // test helper
 	var stderr bytes.Buffer
@@ -173,7 +173,7 @@ func TestScan_InvalidPath(t *testing.T) {
 
 func TestScan_FormatBeads(t *testing.T) {
 	binary := buildBinary(t)
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd := exec.Command(binary, "scan", root, "--format=beads", "--quiet") //nolint:gosec // test helper
 	stdout, err := cmd.Output()
@@ -190,7 +190,7 @@ func TestScan_FormatBeads(t *testing.T) {
 
 func TestScan_UnknownFormat(t *testing.T) {
 	binary := buildBinary(t)
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd := exec.Command(binary, "scan", root, "--format=yaml") //nolint:gosec // test helper
 	var stderr bytes.Buffer
@@ -207,7 +207,7 @@ func TestScan_UnknownFormat(t *testing.T) {
 
 func TestScan_OutputFile(t *testing.T) {
 	binary := buildBinary(t)
-	root := repoRoot(t)
+	root := initTestRepo(t)
 	outFile := filepath.Join(t.TempDir(), "out.jsonl")
 
 	cmd := exec.Command(binary, "scan", root, "-o", outFile, "--quiet") //nolint:gosec // test helper
@@ -234,7 +234,7 @@ func TestScan_OutputFile(t *testing.T) {
 
 func TestScan_QuietSuppressesStderr(t *testing.T) {
 	binary := buildBinary(t)
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd := exec.Command(binary, "scan", root, "--quiet") //nolint:gosec // test helper
 	var stderr bytes.Buffer
@@ -250,7 +250,7 @@ func TestScan_QuietSuppressesStderr(t *testing.T) {
 
 func TestScan_MaxIssues(t *testing.T) {
 	binary := buildBinary(t)
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
 	cmd := exec.Command(binary, "scan", root, "--max-issues=1", "--quiet") //nolint:gosec // test helper
 	stdout, err := cmd.Output()
@@ -276,9 +276,9 @@ func TestScan_HistoryDepthFlag(t *testing.T) {
 
 func TestScan_DefaultPath(t *testing.T) {
 	binary := buildBinary(t)
-	root := repoRoot(t)
+	root := initTestRepo(t)
 
-	// Run from the repo root without specifying a path.
+	// Run from the test repo root without specifying a path.
 	cmd := exec.Command(binary, "scan", "--dry-run", "--quiet") //nolint:gosec // test helper
 	cmd.Dir = root
 	stdout, err := cmd.Output()
