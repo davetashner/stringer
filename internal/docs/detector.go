@@ -2,7 +2,6 @@ package docs
 
 import (
 	"bufio"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -38,7 +37,7 @@ var builtinDetectors = []Detector{
 func DetectAll(repoPath string) []Detection {
 	var results []Detection
 	for _, d := range builtinDetectors {
-		if _, err := os.Stat(filepath.Join(repoPath, d.File)); err == nil {
+		if _, err := FS.Stat(filepath.Join(repoPath, d.File)); err == nil {
 			if det := d.Detect(repoPath); det != nil {
 				results = append(results, *det)
 			}
@@ -49,7 +48,7 @@ func DetectAll(repoPath string) []Detection {
 
 func detectGoMod(repoPath string) *Detection {
 	path := filepath.Join(repoPath, "go.mod")
-	f, err := os.Open(path) //nolint:gosec // user-specified repo path
+	f, err := FS.Open(path)
 	if err != nil {
 		return nil
 	}
@@ -119,7 +118,7 @@ func detectGoMod(repoPath string) *Detection {
 
 func detectPackageJSON(repoPath string) *Detection {
 	path := filepath.Join(repoPath, "package.json")
-	if _, err := os.Stat(path); err != nil {
+	if _, err := FS.Stat(path); err != nil {
 		return nil
 	}
 
@@ -137,7 +136,7 @@ func detectPackageJSON(repoPath string) *Detection {
 
 func detectMakefile(repoPath string) *Detection {
 	path := filepath.Join(repoPath, "Makefile")
-	f, err := os.Open(path) //nolint:gosec // user-specified repo path
+	f, err := FS.Open(path)
 	if err != nil {
 		return nil
 	}

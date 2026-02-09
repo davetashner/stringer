@@ -2,7 +2,12 @@ package bootstrap
 
 import (
 	"github.com/davetashner/stringer/internal/docs"
+	"github.com/davetashner/stringer/internal/testable"
 )
+
+// FS is the file system implementation used by this package.
+// Override in tests with a testable.MockFileSystem.
+var FS testable.FileSystem = testable.DefaultFS
 
 // InitConfig holds the inputs for the init command.
 type InitConfig struct {

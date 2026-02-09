@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -72,17 +71,17 @@ func runReport(cmd *cobra.Command, args []string) error {
 		repoPath = args[0]
 	}
 
-	absPath, err := filepath.Abs(repoPath)
+	absPath, err := cmdFS.Abs(repoPath)
 	if err != nil {
 		return fmt.Errorf("stringer: cannot resolve path %q (%v)", repoPath, err)
 	}
 
-	absPath, err = filepath.EvalSymlinks(absPath)
+	absPath, err = cmdFS.EvalSymlinks(absPath)
 	if err != nil {
 		return fmt.Errorf("stringer: cannot resolve path %q (%v)", repoPath, err)
 	}
 
-	info, err := os.Stat(absPath)
+	info, err := cmdFS.Stat(absPath)
 	if err != nil {
 		return fmt.Errorf("stringer: path %q does not exist", repoPath)
 	}
@@ -93,7 +92,7 @@ func runReport(cmd *cobra.Command, args []string) error {
 	// Walk up to find .git root for subdirectory scans.
 	gitRoot := absPath
 	for {
-		if _, err := os.Stat(filepath.Join(gitRoot, ".git")); err == nil {
+		if _, err := cmdFS.Stat(filepath.Join(gitRoot, ".git")); err == nil {
 			break
 		}
 		parent := filepath.Dir(gitRoot)
@@ -235,7 +234,7 @@ func runReport(cmd *cobra.Command, args []string) error {
 	// 8. Render report.
 	w := cmd.OutOrStdout()
 	if reportOutput != "" {
-		f, createErr := os.Create(reportOutput) //nolint:gosec // user-specified output path
+		f, createErr := cmdFS.Create(reportOutput)
 		if createErr != nil {
 			return fmt.Errorf("stringer: cannot create output file %q (%v)", reportOutput, createErr)
 		}

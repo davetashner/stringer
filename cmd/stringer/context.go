@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"sort"
 
 	"github.com/spf13/cobra"
@@ -52,17 +50,17 @@ func runContext(cmd *cobra.Command, args []string) error {
 		repoPath = args[0]
 	}
 
-	absPath, err := filepath.Abs(repoPath)
+	absPath, err := cmdFS.Abs(repoPath)
 	if err != nil {
 		return fmt.Errorf("stringer: cannot resolve path %q (%v)", repoPath, err)
 	}
 
-	absPath, err = filepath.EvalSymlinks(absPath)
+	absPath, err = cmdFS.EvalSymlinks(absPath)
 	if err != nil {
 		return fmt.Errorf("stringer: cannot resolve path %q (%v)", repoPath, err)
 	}
 
-	info, err := os.Stat(absPath)
+	info, err := cmdFS.Stat(absPath)
 	if err != nil {
 		return fmt.Errorf("stringer: path %q does not exist", repoPath)
 	}
@@ -95,7 +93,7 @@ func runContext(cmd *cobra.Command, args []string) error {
 	// 4. Generate CONTEXT.md.
 	w := cmd.OutOrStdout()
 	if contextOutput != "" {
-		f, err := os.Create(contextOutput) //nolint:gosec // user-specified output path
+		f, err := cmdFS.Create(contextOutput)
 		if err != nil {
 			return fmt.Errorf("stringer: cannot create output file %q (%v)", contextOutput, err)
 		}

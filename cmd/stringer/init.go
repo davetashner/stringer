@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -39,17 +37,17 @@ func runInit(cmd *cobra.Command, args []string) error {
 		repoPath = args[0]
 	}
 
-	absPath, err := filepath.Abs(repoPath)
+	absPath, err := cmdFS.Abs(repoPath)
 	if err != nil {
 		return fmt.Errorf("stringer: cannot resolve path %q (%v)", repoPath, err)
 	}
 
-	absPath, err = filepath.EvalSymlinks(absPath)
+	absPath, err = cmdFS.EvalSymlinks(absPath)
 	if err != nil {
 		return fmt.Errorf("stringer: cannot resolve path %q (%v)", repoPath, err)
 	}
 
-	info, err := os.Stat(absPath)
+	info, err := cmdFS.Stat(absPath)
 	if err != nil {
 		return fmt.Errorf("stringer: path %q does not exist", repoPath)
 	}

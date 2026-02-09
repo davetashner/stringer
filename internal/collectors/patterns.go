@@ -99,7 +99,7 @@ func (c *PatternsCollector) detectTestRoots(repoPath string) {
 	c.testRootsInit = true
 	candidates := []string{"tests", "test", "spec", "__tests__"}
 	for _, dir := range candidates {
-		info, err := os.Stat(filepath.Join(repoPath, dir))
+		info, err := FS.Stat(filepath.Join(repoPath, dir))
 		if err == nil && info.IsDir() {
 			c.testRoots = append(c.testRoots, dir)
 		}
@@ -130,7 +130,7 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 	}
 	dirMap := make(map[string]*dirStats)
 
-	err := filepath.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error {
+	err := FS.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil // skip unreadable entries
 		}
@@ -158,7 +158,7 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 
 		// Skip symlinks that resolve outside the repo tree.
 		if d.Type()&os.ModeSymlink != 0 {
-			resolved, resolveErr := filepath.EvalSymlinks(path)
+			resolved, resolveErr := FS.EvalSymlinks(path)
 			if resolveErr != nil {
 				return nil
 			}
@@ -317,7 +317,7 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 
 // countLines counts the number of lines in a file using bufio.Scanner.
 func countLines(path string) (int, error) {
-	f, err := os.Open(path) //nolint:gosec // path is from filepath.WalkDir
+	f, err := FS.Open(path)
 	if err != nil {
 		return 0, err
 	}
@@ -436,7 +436,7 @@ func hasTestCounterpart(absPath, relPath, repoPath string, testRoots []string) b
 
 	// Check same-directory candidates.
 	for _, candidate := range candidates {
-		if _, err := os.Stat(filepath.Join(dir, candidate)); err == nil {
+		if _, err := FS.Stat(filepath.Join(dir, candidate)); err == nil {
 			return true
 		}
 	}
@@ -448,7 +448,7 @@ func hasTestCounterpart(absPath, relPath, repoPath string, testRoots []string) b
 		relDir := filepath.Dir(relPath)
 		testDir := filepath.Join(repoPath, testRoot, relDir)
 		for _, candidate := range candidates {
-			if _, err := os.Stat(filepath.Join(testDir, candidate)); err == nil {
+			if _, err := FS.Stat(filepath.Join(testDir, candidate)); err == nil {
 				return true
 			}
 		}
@@ -466,7 +466,7 @@ func hasTestCounterpart(absPath, relPath, repoPath string, testRoots []string) b
 		stripped := parts[1]
 		testDir := filepath.Join(repoPath, testRoot, stripped)
 		for _, candidate := range candidates {
-			if _, err := os.Stat(filepath.Join(testDir, candidate)); err == nil {
+			if _, err := FS.Stat(filepath.Join(testDir, candidate)); err == nil {
 				return true
 			}
 		}
