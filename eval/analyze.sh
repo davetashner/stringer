@@ -137,7 +137,7 @@ echo "--- 3. Signal Quality ---"
 echo ""
 
 if [[ -f "$JSON_FILE" ]] && [[ -s "$JSON_FILE" ]] && [[ "$TOTAL" -gt 0 ]]; then
-    # File paths exist in repo (skip github pseudo-paths)
+    # File paths exist in repo (skip github pseudo-paths and historical paths)
     MISSING_FILES=0
     CHECKED_FILES=0
     MISSING_EXAMPLES=""
@@ -151,13 +151,14 @@ if [[ -f "$JSON_FILE" ]] && [[ -s "$JSON_FILE" ]] && [[ "$TOTAL" -gt 0 ]]; then
             continue
         fi
         CHECKED_FILES=$((CHECKED_FILES + 1))
-        if [[ ! -f "$REPO_DIR/$filepath" ]]; then
+        # Use -e (exists) not -f (is file) — lotteryrisk and patterns emit directory paths
+        if [[ ! -e "$REPO_DIR/$filepath" ]]; then
             MISSING_FILES=$((MISSING_FILES + 1))
             if [[ "$MISSING_FILES" -le 5 ]]; then
                 MISSING_EXAMPLES="$MISSING_EXAMPLES $filepath"
             fi
         fi
-    done < <(jq -r '.signals[].FilePath' "$JSON_FILE" | sort -u)
+    done < <(jq -r '.signals[] | select(.Tags | map(. == "historical-path") | any | not) | .FilePath' "$JSON_FILE" | sort -u)
 
     if [[ "$MISSING_FILES" -gt 0 ]]; then
         check "File paths: $MISSING_FILES/$CHECKED_FILES unique paths don't exist" WARN "e.g.${MISSING_EXAMPLES}"

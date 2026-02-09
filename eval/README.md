@@ -53,13 +53,23 @@ A summary line at the end shows totals: `Summary: X PASS, Y WARN, Z FAIL`
 
 ## Suggested Repos
 
-| Repo | Why |
-|------|-----|
-| `httpie/cli` | Python CLI, long history, active issues (default) |
-| `pallets/flask` | Python web framework, many contributors |
-| `charmbracelet/bubbletea` | Go TUI, good for testing Go-specific patterns |
-| `junegunn/fzf` | Go CLI, moderate size, clean history |
-| `astral-sh/ruff` | Rust linter, large codebase, many TODOs |
+| Repo | Language | Signals | Time | Notes |
+|------|----------|---------|------|-------|
+| `httpie/cli` | Python | ~200+ | ~30s | Default target; long history, active issues |
+| `charmbracelet/bubbletea` | Go | ~120 | ~4s | Fast; good Go pattern/lottery-risk coverage |
+| `pallets/flask` | Python | ~150+ | ~15s | Many contributors, good lottery risk spread |
+| `junegunn/fzf` | Go | ~80+ | ~5s | Moderate size, clean history |
+| `astral-sh/ruff` | Rust | ~300+ | ~60s | Large codebase, many TODOs |
+
+Signal counts and timings are approximate and will vary with repo activity.
+
+### Quick regression check
+
+For fast iteration, use bubbletea — it completes in ~4s and exercises all non-GitHub collectors:
+
+```bash
+./eval/run-eval.sh charmbracelet/bubbletea --reuse
+```
 
 ## Adding Analysis Checks
 
