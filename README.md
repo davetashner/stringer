@@ -193,6 +193,7 @@ stringer scan [path] [flags]
 | `--history-depth`       |       |         | Filter closed items older than this duration (e.g., 90d)  |
 | `--anonymize`           |       | `auto`  | Anonymize author names: auto, always, or never            |
 | `--collector-timeout`   |       |         | Per-collector timeout (e.g. 60s, 2m); 0 = no timeout      |
+| `--include-demo-paths`  |       |         | Include demo/example/tutorial paths in noise-prone signals |
 | `--no-llm`              |       |         | Skip LLM clustering pass (noop — reserved for future use) |
 
 **Global flags:** `--quiet` (`-q`), `--verbose` (`-v`), `--no-color`, `--help` (`-h`)
@@ -225,6 +226,10 @@ collectors:
   gitlog:
     git_depth: 500
     git_since: 6m
+  patterns:
+    include_demo_paths: true  # report missing-tests / low-test-ratio in example dirs
+  lotteryrisk:
+    include_demo_paths: true  # report lottery-risk in example dirs
   github:
     include_closed: true
     history_depth: 90d
@@ -233,6 +238,8 @@ collectors:
 **Precedence:** CLI flags > `.stringer.yaml` > defaults
 
 If no config file exists, stringer uses its built-in defaults (all collectors enabled, beads format, no issue cap).
+
+By default, stringer suppresses noise-prone signals (`missing-tests`, `low-test-ratio`, `low-lottery-risk`) in demo/example/tutorial directories (`examples/`, `tutorials/`, `demos/`, `samples/`, and variants). Use `--include-demo-paths` or set `include_demo_paths: true` per collector to scan these paths.
 
 ## Other Commands
 

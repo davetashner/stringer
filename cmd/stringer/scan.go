@@ -43,6 +43,7 @@ var (
 	scanHistoryDepth      string
 	scanCollectorTimeout  string
 	scanExcludeCollectors string
+	scanIncludeDemoPaths  bool
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -76,6 +77,7 @@ func init() {
 	scanCmd.Flags().StringVar(&scanAnonymize, "anonymize", "auto", "anonymize author names: auto, always, or never")
 	scanCmd.Flags().StringVar(&scanCollectorTimeout, "collector-timeout", "", "per-collector timeout (e.g. 60s, 2m); 0 or empty = no timeout")
 	scanCmd.Flags().StringVarP(&scanExcludeCollectors, "exclude-collectors", "x", "", "comma-separated list of collectors to skip")
+	scanCmd.Flags().BoolVar(&scanIncludeDemoPaths, "include-demo-paths", false, "include demo/example/tutorial paths in noise-prone signals")
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
@@ -242,6 +244,18 @@ func runScan(cmd *cobra.Command, args []string) error {
 		co := scanCfg.CollectorOpts["lotteryrisk"]
 		co.Anonymize = scanAnonymize
 		scanCfg.CollectorOpts["lotteryrisk"] = co
+	}
+
+	// Apply --include-demo-paths to noise-prone collectors.
+	if scanIncludeDemoPaths {
+		if scanCfg.CollectorOpts == nil {
+			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
+		}
+		for _, name := range []string{"patterns", "lotteryrisk"} {
+			co := scanCfg.CollectorOpts[name]
+			co.IncludeDemoPaths = true
+			scanCfg.CollectorOpts[name] = co
+		}
 	}
 
 	// Wire progress callback for long-running collectors.
