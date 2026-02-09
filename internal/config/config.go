@@ -40,6 +40,9 @@ type CollectorConfig struct {
 	// Anonymization settings.
 	Anonymize string `yaml:"anonymize,omitempty"`
 
+	// IncludeDemoPaths disables demo-path filtering for noise-prone signals.
+	IncludeDemoPaths *bool `yaml:"include_demo_paths,omitempty"`
+
 	// Timeout is the per-collector timeout (e.g. "60s", "2m").
 	Timeout string `yaml:"timeout,omitempty"`
 }

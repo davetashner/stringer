@@ -215,19 +215,21 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 			dirMap[dir].sourceFiles++
 
 			// C3.2: Missing test detection — only for non-test source files
-			// with meaningful size.
+			// with meaningful size. Suppressed in demo/example paths by default.
 			if lineCount >= minSourceLinesForTestCheck {
 				if !hasTestCounterpart(path, relPath, repoPath, c.testRoots) {
-					signals = append(signals, signal.RawSignal{
-						Source:      "patterns",
-						Kind:        "missing-tests",
-						FilePath:    relPath,
-						Line:        0,
-						Title:       fmt.Sprintf("No test file found for %s", relPath),
-						Description: "No corresponding test file was found using naming heuristics. Consider adding tests.",
-						Confidence:  missingTestConfidence,
-						Tags:        []string{"missing-tests"},
-					})
+					if opts.IncludeDemoPaths || !isDemoPath(relPath) {
+						signals = append(signals, signal.RawSignal{
+							Source:      "patterns",
+							Kind:        "missing-tests",
+							FilePath:    relPath,
+							Line:        0,
+							Title:       fmt.Sprintf("No test file found for %s", relPath),
+							Description: "No corresponding test file was found using naming heuristics. Consider adding tests.",
+							Confidence:  missingTestConfidence,
+							Tags:        []string{"missing-tests"},
+						})
+					}
 				}
 			}
 		}
@@ -271,6 +273,11 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 		}
 
 		if stats.sourceFiles < minSourceFilesForRatio {
+			continue
+		}
+
+		// Suppress low-test-ratio in demo/example paths by default.
+		if !opts.IncludeDemoPaths && isDemoPath(dir) {
 			continue
 		}
 
