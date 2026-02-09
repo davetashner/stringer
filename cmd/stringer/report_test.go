@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,7 @@ func resetReportFlags() {
 	reportCollectors = ""
 	reportSections = ""
 	reportOutput = ""
+	reportFormat = ""
 	reportGitDepth = 0
 	reportGitSince = ""
 	reportAnonymize = "auto"
@@ -129,6 +131,7 @@ func TestReportCmd_FlagsRegistered(t *testing.T) {
 		{"collectors", "c"},
 		{"sections", ""},
 		{"output", "o"},
+		{"format", "f"},
 		{"git-depth", ""},
 		{"git-since", ""},
 		{"anonymize", ""},
@@ -314,4 +317,82 @@ func TestResolveSections_EmptyReturnsAll(t *testing.T) {
 	names := resolveSections(nil, &buf)
 	assert.NotEmpty(t, names)
 	assert.Empty(t, buf.String())
+}
+
+func TestReportCmd_FormatJSON(t *testing.T) {
+	resetReportFlags()
+	root := repoRoot(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"report", root, "--format", "json", "--quiet"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	out := stdout.String()
+
+	// Output should be valid JSON.
+	var result reportJSON
+	require.NoError(t, json.Unmarshal([]byte(out), &result), "output should be valid JSON")
+
+	// Verify key fields are present.
+	assert.Equal(t, root, result.Repository)
+	assert.NotEmpty(t, result.Generated)
+	assert.NotEmpty(t, result.Duration)
+	assert.NotEmpty(t, result.Collectors)
+	assert.GreaterOrEqual(t, result.Signals.Total, 0)
+	assert.NotNil(t, result.Signals.ByKind)
+	assert.NotEmpty(t, result.Sections)
+
+	// Verify sections have name, description, and status.
+	for _, sec := range result.Sections {
+		assert.NotEmpty(t, sec.Name, "section name should not be empty")
+		assert.NotEmpty(t, sec.Description, "section description should not be empty")
+		assert.Contains(t, []string{"ok", "skipped"}, sec.Status, "section status should be ok or skipped")
+	}
+}
+
+func TestReportCmd_FormatInvalid(t *testing.T) {
+	resetReportFlags()
+	root := repoRoot(t)
+
+	cmd, _, _ := newTestCmd()
+	cmd.SetArgs([]string{"report", root, "--format", "xml"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported report format")
+	assert.Contains(t, err.Error(), "xml")
+}
+
+func TestRenderReportJSON_EmptyResult(t *testing.T) {
+	result := &signal.ScanResult{
+		Duration: 100 * time.Millisecond,
+		Metrics:  map[string]any{},
+	}
+
+	var buf bytes.Buffer
+	err := renderReportJSON(result, "/tmp/test", []string{"todos"}, nil, &buf)
+	require.NoError(t, err)
+
+	var out reportJSON
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
+
+	assert.Equal(t, "/tmp/test", out.Repository)
+	assert.Equal(t, 0, out.Signals.Total)
+
+	// Every section should have a valid status.
+	for _, sec := range out.Sections {
+		assert.Contains(t, []string{"ok", "skipped"}, sec.Status,
+			"section %s should have valid status", sec.Name)
+	}
+
+	// Most metric-dependent sections should be skipped with empty metrics.
+	skippedCount := 0
+	for _, sec := range out.Sections {
+		if sec.Status == "skipped" {
+			skippedCount++
+		}
+	}
+	assert.Greater(t, skippedCount, 0, "at least one section should be skipped with empty metrics")
 }
