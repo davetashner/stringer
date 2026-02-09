@@ -244,6 +244,52 @@ func TestBlameFile_NonexistentFile(t *testing.T) {
 	}
 }
 
+func TestLastCommitTime(t *testing.T) {
+	dir := initTestRepo(t, map[string]string{
+		"hello.go": "package main\n\nfunc main() {}\n",
+	})
+
+	ts, err := LastCommitTime(context.Background(), dir, "hello.go")
+	if err != nil {
+		t.Fatalf("LastCommitTime error: %v", err)
+	}
+	if ts.IsZero() {
+		t.Error("expected non-zero timestamp")
+	}
+	if time.Since(ts) > 10*time.Minute {
+		t.Errorf("timestamp too far in past: %v", ts)
+	}
+}
+
+func TestLastCommitTime_Directory(t *testing.T) {
+	dir := initTestRepo(t, map[string]string{
+		"src/a.go": "package src\n",
+		"src/b.go": "package src\n",
+	})
+
+	ts, err := LastCommitTime(context.Background(), dir, "src")
+	if err != nil {
+		t.Fatalf("LastCommitTime error: %v", err)
+	}
+	if ts.IsZero() {
+		t.Error("expected non-zero timestamp for directory")
+	}
+}
+
+func TestLastCommitTime_NoCommits(t *testing.T) {
+	dir := initTestRepo(t, map[string]string{
+		"hello.go": "package main\n",
+	})
+
+	ts, err := LastCommitTime(context.Background(), dir, "nonexistent-path")
+	if err != nil {
+		t.Fatalf("LastCommitTime error: %v", err)
+	}
+	if !ts.IsZero() {
+		t.Errorf("expected zero timestamp for nonexistent path, got %v", ts)
+	}
+}
+
 func TestBlameSingleLine_ContextTimeout(t *testing.T) {
 	dir := initTestRepo(t, map[string]string{
 		"hello.go": "package main\n",

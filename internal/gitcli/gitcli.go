@@ -144,6 +144,24 @@ func parsePorcelainBlame(output string) ([]BlameLine, error) {
 	return result, nil
 }
 
+// LastCommitTime returns the author time of the most recent commit that touched
+// the given path (file or directory). Returns zero time if no commits are found.
+func LastCommitTime(ctx context.Context, repoDir, path string) (time.Time, error) {
+	out, err := Exec(ctx, repoDir, "log", "-1", "--format=%aI", "--", path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	out = strings.TrimSpace(out)
+	if out == "" {
+		return time.Time{}, nil
+	}
+	t, err := time.Parse(time.RFC3339, out)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parsing commit time %q: %w", out, err)
+	}
+	return t, nil
+}
+
 // isHexSHA returns true if s looks like a full or abbreviated git SHA (hex string, >= 4 chars).
 func isHexSHA(s string) bool {
 	if len(s) < 4 {

@@ -202,6 +202,9 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 		return signals[i].FilePath < signals[j].FilePath
 	})
 
+	// Enrich signals with timestamps from git log.
+	enrichTimestamps(ctx, gitRoot, signals)
+
 	return signals, nil
 }
 
