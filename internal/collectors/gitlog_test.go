@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/davetashner/stringer/internal/signal"
+	"github.com/davetashner/stringer/internal/testable"
 )
 
 // --- Revert detection tests ---
@@ -887,4 +888,141 @@ func TestGitlogCollector_GitSinceFiltersOldCommits(t *testing.T) {
 	require.NoError(t, err)
 	churn = filterByKind(signals, "churn")
 	assert.Empty(t, churn, "with git-since=1d, very few commits seen, below churn threshold")
+}
+
+// --- Mock-based tests ---
+
+func TestGitlogCollector_PlainOpenFailure(t *testing.T) {
+	c := &GitlogCollector{
+		GitOpener: &testable.MockGitOpener{
+			OpenErr: fmt.Errorf("repo not found"),
+		},
+	}
+	_, err := c.Collect(context.Background(), "/tmp/fake", signal.CollectorOpts{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "opening repo")
+	assert.Contains(t, err.Error(), "repo not found")
+}
+
+func TestGitlogCollector_LogError(t *testing.T) {
+	mockRepo := &testable.MockGitRepository{
+		HeadRef: plumbing.NewHashReference(plumbing.HEAD, plumbing.ZeroHash),
+		LogErr:  fmt.Errorf("log iterator failed"),
+	}
+	c := &GitlogCollector{
+		GitOpener: &testable.MockGitOpener{Repo: mockRepo},
+	}
+	_, err := c.Collect(context.Background(), "/tmp/fake", signal.CollectorOpts{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "walking commits")
+	assert.Contains(t, err.Error(), "log iterator failed")
+}
+
+func TestGitlogCollector_HeadError(t *testing.T) {
+	mockRepo := &testable.MockGitRepository{
+		HeadErr:        fmt.Errorf("empty repo"),
+		ReferencesIter: nil,
+		ReferencesErr:  fmt.Errorf("no references"),
+	}
+	c := &GitlogCollector{
+		GitOpener: &testable.MockGitOpener{Repo: mockRepo},
+	}
+	// Head error is handled gracefully (returns nil for walkCommits),
+	// but detectStaleBranches will fail due to ReferencesErr.
+	_, err := c.Collect(context.Background(), "/tmp/fake", signal.CollectorOpts{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "detecting stale branches")
+}
+
+func TestGitlogCollector_ReferencesError(t *testing.T) {
+	mockRepo := &testable.MockGitRepository{
+		HeadErr:       fmt.Errorf("no head"),
+		ReferencesErr: fmt.Errorf("refs failed"),
+	}
+	c := &GitlogCollector{
+		GitOpener: &testable.MockGitOpener{Repo: mockRepo},
+	}
+	_, err := c.Collect(context.Background(), "/tmp/fake", signal.CollectorOpts{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "detecting stale branches")
+	assert.Contains(t, err.Error(), "refs failed")
+}
+
+func TestGitlogCollector_GitRootUsed(t *testing.T) {
+	repo, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n",
+	})
+
+	// Add commits to produce signals so we can verify GitRoot is actually used.
+	now := time.Now()
+	for i := 0; i < 12; i++ {
+		content := fmt.Sprintf("package main\n// change %d\n", i)
+		addCommit(t, repo, dir, "hot.go", content,
+			fmt.Sprintf("chore: tweak (%d)", i), now.Add(-time.Duration(i)*24*time.Hour))
+	}
+
+	c := &GitlogCollector{}
+	signals, err := c.Collect(context.Background(), "/tmp/nonexistent", signal.CollectorOpts{
+		GitRoot: dir,
+	})
+	require.NoError(t, err)
+	// Should succeed because GitRoot is used instead of repoPath.
+	assert.NotEmpty(t, signals, "GitRoot should allow access to the repo")
+}
+
+func TestGitlogCollector_Metrics(t *testing.T) {
+	c := &GitlogCollector{}
+	// Before calling Collect, metrics should be nil.
+	assert.Nil(t, c.Metrics())
+
+	repo, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n",
+	})
+
+	// Add a few commits so FileChurns has data.
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		content := fmt.Sprintf("package main\n// change %d\n", i)
+		addCommit(t, repo, dir, "main.go", content,
+			fmt.Sprintf("chore: tweak (%d)", i), now.Add(-time.Duration(i)*24*time.Hour))
+	}
+
+	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	m := c.Metrics()
+	require.NotNil(t, m)
+
+	metrics, ok := m.(*GitlogMetrics)
+	require.True(t, ok, "Metrics() should return *GitlogMetrics")
+	assert.NotEmpty(t, metrics.FileChurns, "should have file churn data after commits")
+}
+
+func TestGitlogCollector_MetricsAfterCollect(t *testing.T) {
+	repo, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n",
+	})
+
+	// Create some commits to generate churn data.
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		content := fmt.Sprintf("package main\n// change %d\n", i)
+		addCommit(t, repo, dir, "main.go", content,
+			fmt.Sprintf("chore: tweak (%d)", i), now.Add(-time.Duration(i)*24*time.Hour))
+	}
+
+	c := &GitlogCollector{}
+	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	m := c.Metrics()
+	require.NotNil(t, m)
+
+	metrics := m.(*GitlogMetrics)
+	// Should have some file churns tracked (even if below threshold).
+	assert.NotEmpty(t, metrics.FileChurns, "should track file changes in metrics")
+	// FileChurns should be sorted by path.
+	for i := 1; i < len(metrics.FileChurns); i++ {
+		assert.LessOrEqual(t, metrics.FileChurns[i-1].Path, metrics.FileChurns[i].Path)
+	}
 }

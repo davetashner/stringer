@@ -2,16 +2,20 @@ package collectors
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	gogit "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/go-github/v68/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/davetashner/stringer/internal/signal"
+	"github.com/davetashner/stringer/internal/testable"
 )
 
 func TestLotteryRiskCollector_Name(t *testing.T) {
@@ -712,4 +716,569 @@ func TestLotteryRiskCollector_TimestampsEnriched(t *testing.T) {
 		assert.WithinDuration(t, time.Now(), sig.Timestamp, 10*time.Minute,
 			"timestamp for %s should be recent", sig.FilePath)
 	}
+}
+
+// --- Mock-based tests ---
+
+func TestLotteryRiskCollector_PlainOpenFailure(t *testing.T) {
+	c := &LotteryRiskCollector{
+		GitOpener: &testable.MockGitOpener{
+			OpenErr: fmt.Errorf("repo not found"),
+		},
+	}
+	_, err := c.Collect(context.Background(), "/tmp/fake", signal.CollectorOpts{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "opening repo")
+	assert.Contains(t, err.Error(), "repo not found")
+}
+
+func TestLotteryRiskCollector_Metrics(t *testing.T) {
+	c := &LotteryRiskCollector{}
+	// Before collecting, metrics should be nil.
+	assert.Nil(t, c.Metrics())
+
+	_, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n\nfunc main() {}\n",
+	})
+
+	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	m := c.Metrics()
+	require.NotNil(t, m)
+
+	metrics, ok := m.(*LotteryRiskMetrics)
+	require.True(t, ok, "Metrics() should return *LotteryRiskMetrics")
+	assert.NotEmpty(t, metrics.Directories)
+}
+
+func TestLotteryRiskCollector_GitRootUsed(t *testing.T) {
+	_, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n\nfunc main() {}\n",
+	})
+
+	c := &LotteryRiskCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		GitRoot: dir,
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, signals)
+}
+
+func TestFindOwningDir_DeepNesting(t *testing.T) {
+	ownership := map[string]*dirOwnership{
+		".":            {Path: ".", Authors: make(map[string]*authorStats)},
+		"internal":     {Path: "internal", Authors: make(map[string]*authorStats)},
+		"internal/pkg": {Path: "internal/pkg", Authors: make(map[string]*authorStats)},
+	}
+
+	// File in internal/pkg/sub/file.go should map to "internal/pkg".
+	dir := findOwningDir("internal/pkg/sub/file.go", ownership)
+	assert.Equal(t, "internal/pkg", dir)
+}
+
+func TestFindOwningDir_RootFallback(t *testing.T) {
+	ownership := map[string]*dirOwnership{
+		".": {Path: ".", Authors: make(map[string]*authorStats)},
+	}
+
+	// File at root level should map to ".".
+	dir := findOwningDir("main.go", ownership)
+	assert.Equal(t, ".", dir)
+}
+
+func TestFindOwningDir_NoMatch(t *testing.T) {
+	ownership := map[string]*dirOwnership{
+		"internal": {Path: "internal", Authors: make(map[string]*authorStats)},
+	}
+
+	// File not under any known directory and no "." entry.
+	dir := findOwningDir("main.go", ownership)
+	assert.Equal(t, "", dir)
+}
+
+func TestIsSourceExtension(t *testing.T) {
+	assert.True(t, isSourceExtension(".go"))
+	assert.True(t, isSourceExtension(".py"))
+	assert.True(t, isSourceExtension(".java"))
+	assert.True(t, isSourceExtension(".ts"))
+	assert.False(t, isSourceExtension(".md"))
+	assert.False(t, isSourceExtension(".txt"))
+	assert.False(t, isSourceExtension(".yaml"))
+	assert.False(t, isSourceExtension(""))
+}
+
+func TestTotalCommitWeight(t *testing.T) {
+	own := &dirOwnership{
+		Authors: map[string]*authorStats{
+			"Alice": {CommitWeight: 3.5},
+			"Bob":   {CommitWeight: 1.5},
+		},
+	}
+	assert.InDelta(t, 5.0, totalCommitWeight(own), 0.001)
+}
+
+func TestTotalCommitWeight_Empty(t *testing.T) {
+	own := &dirOwnership{Authors: map[string]*authorStats{}}
+	assert.InDelta(t, 0.0, totalCommitWeight(own), 0.001)
+}
+
+func TestBuildDirectoryOwnership(t *testing.T) {
+	own := &dirOwnership{
+		Path: "internal/pkg",
+		Authors: map[string]*authorStats{
+			"Alice": {BlameLines: 80, CommitWeight: 8.0},
+			"Bob":   {BlameLines: 20, CommitWeight: 2.0},
+		},
+		TotalLines:  100,
+		LotteryRisk: 1,
+	}
+
+	result := buildDirectoryOwnership(own)
+	assert.Equal(t, "internal/pkg", result.Path)
+	assert.Equal(t, 1, result.LotteryRisk)
+	assert.Equal(t, 100, result.TotalLines)
+	assert.Len(t, result.Authors, 2)
+	// Authors should be sorted by ownership descending.
+	assert.Equal(t, "Alice", result.Authors[0].Name)
+	assert.Greater(t, result.Authors[0].Ownership, result.Authors[1].Ownership)
+}
+
+func TestResolveAnonymize_Default(t *testing.T) {
+	// Default (empty string) should behave like "auto".
+	assert.False(t, resolveAnonymize(context.Background(), nil, ""))
+}
+
+func TestResolveAnonymize_UnknownMode(t *testing.T) {
+	assert.False(t, resolveAnonymize(context.Background(), nil, "unknown"))
+}
+
+func TestResolveAnonymize_AutoAPIError(t *testing.T) {
+	mock := &reviewMockAPI{}
+	// GetRepository returns nil, nil — which means err is nil but repo is nil.
+	ghCtx := &githubContext{Owner: "o", Repo: "r", API: mock}
+	assert.False(t, resolveAnonymize(context.Background(), ghCtx, "auto"))
+}
+
+func TestBuildLotteryRiskSignal_WithAnonymizer(t *testing.T) {
+	own := &dirOwnership{
+		Path: ".",
+		Authors: map[string]*authorStats{
+			"Alice": {BlameLines: 100, CommitWeight: 10.0},
+		},
+		TotalLines:  100,
+		LotteryRisk: 1,
+	}
+
+	anon := newNameAnonymizer()
+	sig := buildLotteryRiskSignal(own, anon)
+	assert.Contains(t, sig.Title, "Contributor A")
+	assert.NotContains(t, sig.Title, "Alice")
+}
+
+func TestBuildLotteryRiskSignal_WithoutAnonymizer(t *testing.T) {
+	own := &dirOwnership{
+		Path: ".",
+		Authors: map[string]*authorStats{
+			"Alice": {BlameLines: 100, CommitWeight: 10.0},
+		},
+		TotalLines:  100,
+		LotteryRisk: 1,
+	}
+
+	sig := buildLotteryRiskSignal(own, nil)
+	assert.Contains(t, sig.Title, "Alice")
+	assert.Contains(t, sig.Description, "Alice")
+}
+
+func TestBuildReviewConcentrationSignals_WithAnonymizer(t *testing.T) {
+	reviewData := map[string]*reviewParticipation{
+		".": {
+			Reviewers: map[string]int{"alice": 8, "bob": 2},
+			Authors:   map[string]int{"charlie": 5, "dave": 5},
+		},
+	}
+
+	anon := newNameAnonymizer()
+	signals := buildReviewConcentrationSignals(reviewData, anon)
+	require.Len(t, signals, 1)
+	assert.Contains(t, signals[0].Title, "Contributor")
+	assert.NotContains(t, signals[0].Title, "alice")
+}
+
+func TestFetchReviewParticipation_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	mock := &reviewMockAPI{}
+	ghCtx := &githubContext{Owner: "o", Repo: "r", API: mock}
+	ownership := map[string]*dirOwnership{
+		".": {Path: ".", Authors: make(map[string]*authorStats)},
+	}
+
+	_, err := fetchReviewParticipation(ctx, ghCtx, ownership, 10)
+	require.Error(t, err)
+}
+
+func TestContributorLabel_Range(t *testing.T) {
+	// Test a range beyond Z.
+	assert.Equal(t, "Contributor A", contributorLabel(0))
+	assert.Equal(t, "Contributor Z", contributorLabel(25))
+	assert.Equal(t, "Contributor AA", contributorLabel(26))
+	assert.Equal(t, "Contributor BA", contributorLabel(52))
+}
+
+func TestComputeLotteryRisk_OnlyCommitWeight(t *testing.T) {
+	// No blame lines, only commit weight.
+	own := &dirOwnership{
+		Path: ".",
+		Authors: map[string]*authorStats{
+			"Alice": {CommitWeight: 10.0},
+		},
+		TotalLines: 0,
+	}
+	bf := computeLotteryRisk(own)
+	assert.Equal(t, 1, bf, "single author with only commit weight should have lottery risk 1")
+}
+
+func TestComputeLotteryRisk_OnlyBlame(t *testing.T) {
+	// Only blame lines, no commit weight.
+	own := &dirOwnership{
+		Path: ".",
+		Authors: map[string]*authorStats{
+			"Alice": {BlameLines: 100},
+		},
+		TotalLines: 100,
+	}
+	bf := computeLotteryRisk(own)
+	assert.Equal(t, 1, bf, "single author with only blame should have lottery risk 1")
+}
+
+func TestLotteryRiskCollector_GitSinceOption(t *testing.T) {
+	repo, dir := initGoGitRepo(t, map[string]string{
+		"main.go": "package main\n\nfunc main() {}\n",
+	})
+
+	now := time.Now()
+	// Add commits at various times.
+	for i := 0; i < 5; i++ {
+		content := fmt.Sprintf("package main\n// change %d\n", i)
+		addCommitAs(t, repo, dir, fmt.Sprintf("file%d.go", i), content,
+			fmt.Sprintf("feat: add file%d", i),
+			now.Add(-time.Duration(i*30)*24*time.Hour),
+			"Alice", "alice@example.com")
+	}
+
+	c := &LotteryRiskCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		GitSince: "30d",
+	})
+	require.NoError(t, err)
+	assert.NotEmpty(t, signals)
+}
+
+func TestLotteryRiskCollector_DiscoverDirectoriesError(t *testing.T) {
+	// Test context cancellation during directory discovery.
+	_, dir := initGoGitRepo(t, map[string]string{
+		"main.go":              "package main\n\nfunc main() {}\n",
+		"internal/pkg/file.go": "package pkg\n",
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	c := &LotteryRiskCollector{}
+	_, err := c.Collect(ctx, dir, signal.CollectorOpts{})
+	require.Error(t, err)
+}
+
+func TestLotteryRiskCollector_BlameDirectoriesProgress(t *testing.T) {
+	// Create a repo with enough files to trigger progress callback in blameDirectories.
+	files := map[string]string{}
+	for i := 0; i < 55; i++ {
+		files[fmt.Sprintf("file%d.go", i)] = fmt.Sprintf("package main\nfunc F%d() {}\n", i)
+	}
+	_, dir := initGoGitRepo(t, files)
+
+	var progressMessages []string
+	c := &LotteryRiskCollector{}
+	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		ProgressFunc: func(msg string) {
+			progressMessages = append(progressMessages, msg)
+		},
+	})
+	require.NoError(t, err)
+	// With 55+ files, should trigger the blame progress (at 50 file mark).
+	var hasBlamedMsg bool
+	for _, msg := range progressMessages {
+		if strings.Contains(msg, "blamed") {
+			hasBlamedMsg = true
+			break
+		}
+	}
+	assert.True(t, hasBlamedMsg, "should have blamed progress message for 55+ files")
+}
+
+func TestLotteryRiskCollector_WalkCommitsError(t *testing.T) {
+	mockRepo := &testable.MockGitRepository{
+		HeadRef: plumbing.NewHashReference(plumbing.HEAD, plumbing.ZeroHash),
+		LogErr:  fmt.Errorf("log iterator failed"),
+	}
+	c := &LotteryRiskCollector{
+		GitOpener: &testable.MockGitOpener{Repo: mockRepo},
+	}
+	// The walkCommitsForOwnership Log error should propagate.
+	_, err := c.Collect(context.Background(), t.TempDir(), signal.CollectorOpts{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "walking commits for ownership")
+}
+
+func TestBuildLotteryRiskSignal_MultipleAuthorsEqualPct(t *testing.T) {
+	// Two authors with identical ownership percentages — tests the name tie-breaker sort.
+	own := &dirOwnership{
+		Path: ".",
+		Authors: map[string]*authorStats{
+			"Alice": {BlameLines: 50, CommitWeight: 5.0},
+			"Bob":   {BlameLines: 50, CommitWeight: 5.0},
+		},
+		TotalLines:  100,
+		LotteryRisk: 2,
+	}
+	sig := buildLotteryRiskSignal(own, nil)
+	// Both authors should appear in the description.
+	assert.Contains(t, sig.Description, "Alice")
+	assert.Contains(t, sig.Description, "Bob")
+}
+
+func TestBuildLotteryRiskSignal_NegligibleContributor(t *testing.T) {
+	// One dominant author and one with less than 1% — negligible should be skipped.
+	own := &dirOwnership{
+		Path: ".",
+		Authors: map[string]*authorStats{
+			"Alice":   {BlameLines: 99, CommitWeight: 9.9},
+			"Charlie": {BlameLines: 1, CommitWeight: 0.01},
+		},
+		TotalLines:  100,
+		LotteryRisk: 1,
+	}
+	sig := buildLotteryRiskSignal(own, nil)
+	assert.Contains(t, sig.Description, "Alice")
+	// Charlie may or may not appear (< 1% threshold), depends on combined weight.
+}
+
+func TestFetchReviewParticipation_PRError(t *testing.T) {
+	mock := &reviewMockAPI{
+		prs: nil,
+	}
+	// Override ListPullRequests to return error.
+	errorMock := &reviewErrorMock{inner: mock, prErr: fmt.Errorf("PR list error")}
+	ghCtx := &githubContext{Owner: "o", Repo: "r", API: errorMock}
+	ownership := map[string]*dirOwnership{
+		".": {Path: ".", Authors: make(map[string]*authorStats)},
+	}
+	_, err := fetchReviewParticipation(context.Background(), ghCtx, ownership, 10)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "listing merged PRs")
+}
+
+// reviewErrorMock wraps a reviewMockAPI and overrides ListPullRequests to return an error.
+type reviewErrorMock struct {
+	inner *reviewMockAPI
+	prErr error
+}
+
+func (m *reviewErrorMock) ListIssues(ctx context.Context, owner, repo string, opts *github.IssueListByRepoOptions) ([]*github.Issue, *github.Response, error) {
+	return m.inner.ListIssues(ctx, owner, repo, opts)
+}
+
+func (m *reviewErrorMock) ListPullRequests(_ context.Context, _, _ string, _ *github.PullRequestListOptions) ([]*github.PullRequest, *github.Response, error) {
+	return nil, lrEmptyResponse(), m.prErr
+}
+
+func (m *reviewErrorMock) ListReviews(ctx context.Context, owner, repo string, number int, opts *github.ListOptions) ([]*github.PullRequestReview, *github.Response, error) {
+	return m.inner.ListReviews(ctx, owner, repo, number, opts)
+}
+
+func (m *reviewErrorMock) ListReviewComments(ctx context.Context, owner, repo string, number int, opts *github.PullRequestListCommentsOptions) ([]*github.PullRequestComment, *github.Response, error) {
+	return m.inner.ListReviewComments(ctx, owner, repo, number, opts)
+}
+
+func (m *reviewErrorMock) ListPullRequestFiles(ctx context.Context, owner, repo string, number int, opts *github.ListOptions) ([]*github.CommitFile, *github.Response, error) {
+	return m.inner.ListPullRequestFiles(ctx, owner, repo, number, opts)
+}
+
+func (m *reviewErrorMock) GetRepository(ctx context.Context, owner, repo string) (*github.Repository, *github.Response, error) {
+	return m.inner.GetRepository(ctx, owner, repo)
+}
+
+func TestFetchReviewParticipation_SkipNonMerged(t *testing.T) {
+	now := time.Now()
+	mock := &reviewMockAPI{
+		prs: []*github.PullRequest{
+			makeClosedPR(1, "Closed not merged", now), // not merged, should be skipped
+			makeMergedPR(2, "Merged PR", now),
+		},
+		reviews: map[int][]*github.PullRequestReview{
+			2: {{State: github.Ptr("APPROVED"), User: &github.User{Login: github.Ptr("alice")}}},
+		},
+		files: map[int][]*github.CommitFile{
+			2: {{Filename: github.Ptr("main.go")}},
+		},
+	}
+
+	ghCtx := &githubContext{Owner: "o", Repo: "r", API: mock}
+	ownership := map[string]*dirOwnership{
+		".": {Path: ".", Authors: make(map[string]*authorStats)},
+	}
+	result, err := fetchReviewParticipation(context.Background(), ghCtx, ownership, 10)
+	require.NoError(t, err)
+	// Should have data from the merged PR only.
+	assert.NotEmpty(t, result)
+}
+
+func TestFetchReviewParticipation_ReviewError(t *testing.T) {
+	now := time.Now()
+	mock := &reviewMockAPI{
+		prs: []*github.PullRequest{
+			makeMergedPR(1, "Merged PR", now),
+		},
+	}
+	// Override to return review error.
+	errMock := &reviewErrOnReviews{inner: mock, reviewErr: fmt.Errorf("review fetch failed")}
+	ghCtx := &githubContext{Owner: "o", Repo: "r", API: errMock}
+	ownership := map[string]*dirOwnership{
+		".": {Path: ".", Authors: make(map[string]*authorStats)},
+	}
+	result, err := fetchReviewParticipation(context.Background(), ghCtx, ownership, 10)
+	require.NoError(t, err)
+	// Review error is skipped, result should be empty.
+	assert.Empty(t, result)
+}
+
+type reviewErrOnReviews struct {
+	inner     *reviewMockAPI
+	reviewErr error
+}
+
+func (m *reviewErrOnReviews) ListIssues(ctx context.Context, o, r string, opts *github.IssueListByRepoOptions) ([]*github.Issue, *github.Response, error) {
+	return m.inner.ListIssues(ctx, o, r, opts)
+}
+func (m *reviewErrOnReviews) ListPullRequests(ctx context.Context, o, r string, opts *github.PullRequestListOptions) ([]*github.PullRequest, *github.Response, error) {
+	return m.inner.ListPullRequests(ctx, o, r, opts)
+}
+func (m *reviewErrOnReviews) ListReviews(_ context.Context, _, _ string, _ int, _ *github.ListOptions) ([]*github.PullRequestReview, *github.Response, error) {
+	return nil, lrEmptyResponse(), m.reviewErr
+}
+func (m *reviewErrOnReviews) ListReviewComments(ctx context.Context, o, r string, n int, opts *github.PullRequestListCommentsOptions) ([]*github.PullRequestComment, *github.Response, error) {
+	return m.inner.ListReviewComments(ctx, o, r, n, opts)
+}
+func (m *reviewErrOnReviews) ListPullRequestFiles(ctx context.Context, o, r string, n int, opts *github.ListOptions) ([]*github.CommitFile, *github.Response, error) {
+	return m.inner.ListPullRequestFiles(ctx, o, r, n, opts)
+}
+func (m *reviewErrOnReviews) GetRepository(ctx context.Context, o, r string) (*github.Repository, *github.Response, error) {
+	return m.inner.GetRepository(ctx, o, r)
+}
+
+func TestFetchReviewParticipation_FileError(t *testing.T) {
+	now := time.Now()
+	mock := &reviewMockAPI{
+		prs: []*github.PullRequest{
+			makeMergedPR(1, "Merged PR", now),
+		},
+		reviews: map[int][]*github.PullRequestReview{
+			1: {{State: github.Ptr("APPROVED"), User: &github.User{Login: github.Ptr("alice")}}},
+		},
+	}
+	// Override to return file error.
+	errMock := &reviewErrOnFiles{inner: mock, fileErr: fmt.Errorf("file fetch failed")}
+	ghCtx := &githubContext{Owner: "o", Repo: "r", API: errMock}
+	ownership := map[string]*dirOwnership{
+		".": {Path: ".", Authors: make(map[string]*authorStats)},
+	}
+	result, err := fetchReviewParticipation(context.Background(), ghCtx, ownership, 10)
+	require.NoError(t, err)
+	// File error is skipped, result should be empty.
+	assert.Empty(t, result)
+}
+
+type reviewErrOnFiles struct {
+	inner   *reviewMockAPI
+	fileErr error
+}
+
+func (m *reviewErrOnFiles) ListIssues(ctx context.Context, o, r string, opts *github.IssueListByRepoOptions) ([]*github.Issue, *github.Response, error) {
+	return m.inner.ListIssues(ctx, o, r, opts)
+}
+func (m *reviewErrOnFiles) ListPullRequests(ctx context.Context, o, r string, opts *github.PullRequestListOptions) ([]*github.PullRequest, *github.Response, error) {
+	return m.inner.ListPullRequests(ctx, o, r, opts)
+}
+func (m *reviewErrOnFiles) ListReviews(ctx context.Context, o, r string, n int, opts *github.ListOptions) ([]*github.PullRequestReview, *github.Response, error) {
+	return m.inner.ListReviews(ctx, o, r, n, opts)
+}
+func (m *reviewErrOnFiles) ListReviewComments(ctx context.Context, o, r string, n int, opts *github.PullRequestListCommentsOptions) ([]*github.PullRequestComment, *github.Response, error) {
+	return m.inner.ListReviewComments(ctx, o, r, n, opts)
+}
+func (m *reviewErrOnFiles) ListPullRequestFiles(_ context.Context, _, _ string, _ int, _ *github.ListOptions) ([]*github.CommitFile, *github.Response, error) {
+	return nil, lrEmptyResponse(), m.fileErr
+}
+func (m *reviewErrOnFiles) GetRepository(ctx context.Context, o, r string) (*github.Repository, *github.Response, error) {
+	return m.inner.GetRepository(ctx, o, r)
+}
+
+func TestFetchReviewParticipation_MaxPRsLimit(t *testing.T) {
+	now := time.Now()
+	mock := &reviewMockAPI{
+		prs: []*github.PullRequest{
+			makeMergedPR(1, "PR 1", now),
+			makeMergedPR(2, "PR 2", now),
+			makeMergedPR(3, "PR 3", now),
+		},
+		reviews: map[int][]*github.PullRequestReview{
+			1: {{State: github.Ptr("APPROVED"), User: &github.User{Login: github.Ptr("alice")}}},
+			2: {{State: github.Ptr("APPROVED"), User: &github.User{Login: github.Ptr("bob")}}},
+			3: {{State: github.Ptr("APPROVED"), User: &github.User{Login: github.Ptr("charlie")}}},
+		},
+		files: map[int][]*github.CommitFile{
+			1: {{Filename: github.Ptr("main.go")}},
+			2: {{Filename: github.Ptr("main.go")}},
+			3: {{Filename: github.Ptr("main.go")}},
+		},
+	}
+
+	ghCtx := &githubContext{Owner: "o", Repo: "r", API: mock}
+	ownership := map[string]*dirOwnership{
+		".": {Path: ".", Authors: make(map[string]*authorStats)},
+	}
+	// Limit to 2 PRs.
+	result, err := fetchReviewParticipation(context.Background(), ghCtx, ownership, 2)
+	require.NoError(t, err)
+	assert.NotEmpty(t, result)
+	// Only 2 PRs should be processed, not 3.
+	if part, ok := result["."]; ok {
+		total := 0
+		for _, count := range part.Reviewers {
+			total += count
+		}
+		assert.LessOrEqual(t, total, 2, "should only process 2 PRs max")
+	}
+}
+
+func TestFetchReviewParticipation_ContextDuringIteration(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	now := time.Now()
+	mock := &reviewMockAPI{
+		prs: []*github.PullRequest{
+			makeMergedPR(1, "PR 1", now),
+		},
+		reviews: map[int][]*github.PullRequestReview{},
+		files:   map[int][]*github.CommitFile{},
+	}
+
+	cancel()
+	ghCtx := &githubContext{Owner: "o", Repo: "r", API: mock}
+	ownership := map[string]*dirOwnership{
+		".": {Path: ".", Authors: make(map[string]*authorStats)},
+	}
+	_, err := fetchReviewParticipation(ctx, ghCtx, ownership, 10)
+	require.Error(t, err)
 }

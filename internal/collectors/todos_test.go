@@ -2,6 +2,8 @@ package collectors
 
 import (
 	"context"
+	"fmt"
+	"io/fs"
 	"math"
 	"os"
 	"os/exec"
@@ -9,7 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/davetashner/stringer/internal/signal"
+	"github.com/davetashner/stringer/internal/testable"
 )
 
 const floatTolerance = 0.001
@@ -1109,4 +1115,194 @@ func TestCollect_SubdirectoryScanWithoutGitRoot(t *testing.T) {
 	if sig.Author != "" {
 		t.Logf("note: got author %q (blame might still work depending on git implementation)", sig.Author)
 	}
+}
+
+// --- Mock-based tests ---
+
+func TestTodoCollector_Metrics(t *testing.T) {
+	c := &TodoCollector{}
+	// Before collecting, metrics should be nil.
+	assert.Nil(t, c.Metrics())
+
+	repoPath := initTestGitRepo(t, map[string]string{
+		"main.go": "// TODO: first\n// FIXME: second\n// TODO: third\n",
+	})
+
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 3)
+
+	m := c.Metrics()
+	require.NotNil(t, m)
+
+	metrics, ok := m.(*TodoMetrics)
+	require.True(t, ok, "Metrics() should return *TodoMetrics")
+	assert.Equal(t, 3, metrics.Total)
+	assert.Equal(t, 2, metrics.ByKind["todo"])
+	assert.Equal(t, 1, metrics.ByKind["fixme"])
+	assert.GreaterOrEqual(t, metrics.WithTimestamp, 0)
+}
+
+func TestTodoCollector_WalkDirError(t *testing.T) {
+	oldFS := FS
+	defer func() { FS = oldFS }()
+
+	FS = &testable.MockFileSystem{
+		WalkDirFn: func(root string, fn fs.WalkDirFunc) error {
+			return fmt.Errorf("walk error")
+		},
+	}
+
+	c := &TodoCollector{}
+	_, err := c.Collect(context.Background(), "/tmp/fake", signal.CollectorOpts{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "walking repo")
+	assert.Contains(t, err.Error(), "walk error")
+}
+
+func TestTodoCollector_EvalSymlinksFailure(t *testing.T) {
+	oldFS := FS
+	defer func() { FS = oldFS }()
+
+	dir := t.TempDir()
+	// Create a symlink that the mock will fail to resolve.
+	targetPath := filepath.Join(dir, "target.go")
+	require.NoError(t, os.WriteFile(targetPath, []byte("// TODO: test\n"), 0o600))
+	symlinkPath := filepath.Join(dir, "link.go")
+	if err := os.Symlink(targetPath, symlinkPath); err != nil {
+		t.Skip("symlinks not supported")
+	}
+
+	FS = &testable.MockFileSystem{
+		EvalSymlinksFn: func(path string) (string, error) {
+			return "", fmt.Errorf("symlink error")
+		},
+	}
+
+	c := &TodoCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	// The symlink should be skipped due to EvalSymlinks error,
+	// but the target file may be scanned directly.
+	for _, sig := range signals {
+		assert.NotEqual(t, "link.go", sig.FilePath,
+			"symlink with failed EvalSymlinks should be skipped")
+	}
+}
+
+func TestTodoCollector_StatFailureInEnrichBlameFallback(t *testing.T) {
+	oldFS := FS
+	defer func() { FS = oldFS }()
+
+	// Create a git repo where blame will fail (untracked file).
+	repoPath := initTestGitRepo(t, map[string]string{
+		"main.go": "package main\n",
+	})
+	untrackedPath := filepath.Join(repoPath, "untracked.go")
+	require.NoError(t, os.WriteFile(untrackedPath, []byte("// TODO: test\n"), 0o600))
+
+	FS = &testable.MockFileSystem{
+		StatFn: func(name string) (os.FileInfo, error) {
+			// Let .git stat succeed (so isGitRepo returns true),
+			// but fail stat for the untracked file in the blame fallback.
+			if filepath.Base(name) == ".git" {
+				return os.Stat(name) //nolint:gosec
+			}
+			return nil, fmt.Errorf("stat error")
+		},
+	}
+
+	c := &TodoCollector{}
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{})
+	require.NoError(t, err)
+	// Should still collect signals from the untracked file.
+	// Blame fails and stat fallback also fails, so timestamp should be zero.
+	var untrackedSignals []signal.RawSignal
+	for _, sig := range signals {
+		if sig.FilePath == "untracked.go" {
+			untrackedSignals = append(untrackedSignals, sig)
+		}
+	}
+	// Note: The file may be skipped by isBinaryFile if stat affects Open,
+	// but since WalkDir uses real FS and Open falls through to real OS,
+	// the file should be readable.
+	for _, sig := range untrackedSignals {
+		assert.True(t, sig.Timestamp.IsZero(),
+			"timestamp should be zero when stat fallback fails")
+	}
+}
+
+func TestTodoCollector_OpenFailureInScanFile(t *testing.T) {
+	oldFS := FS
+	defer func() { FS = oldFS }()
+
+	FS = &testable.MockFileSystem{
+		OpenFn: func(name string) (*os.File, error) {
+			return nil, fmt.Errorf("permission denied")
+		},
+	}
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.go"), []byte("// TODO: test\n"), 0o600))
+
+	c := &TodoCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	// File can't be opened via mock, so scanFile and isBinaryFile will fail.
+	// Both skip gracefully, so no signals should be found.
+	assert.Empty(t, signals)
+}
+
+func TestIsGitRepo_True(t *testing.T) {
+	repoPath := initTestGitRepo(t, map[string]string{
+		"main.go": "package main\n",
+	})
+	assert.True(t, isGitRepo(repoPath))
+}
+
+func TestIsGitRepo_False(t *testing.T) {
+	dir := t.TempDir()
+	assert.False(t, isGitRepo(dir))
+}
+
+func TestIsGitRepo_MockStatFailure(t *testing.T) {
+	oldFS := FS
+	defer func() { FS = oldFS }()
+
+	FS = &testable.MockFileSystem{
+		StatFn: func(name string) (os.FileInfo, error) {
+			return nil, fmt.Errorf("no such file")
+		},
+	}
+	assert.False(t, isGitRepo("/any/path"))
+}
+
+func TestTodoCollector_ProgressCallback(t *testing.T) {
+	// This tests the progress callback path; it requires 500+ files
+	// to fire but should not error. Just verify no panics.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte("// TODO: test\n"), 0o600))
+
+	var progressMessages []string
+	c := &TodoCollector{}
+	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		ProgressFunc: func(msg string) {
+			progressMessages = append(progressMessages, msg)
+		},
+	})
+	require.NoError(t, err)
+	// Small directory won't trigger progress, but should not crash.
+}
+
+func TestIsBinaryFile_MockOpenError(t *testing.T) {
+	oldFS := FS
+	defer func() { FS = oldFS }()
+
+	FS = &testable.MockFileSystem{
+		OpenFn: func(name string) (*os.File, error) {
+			return nil, fmt.Errorf("open failed")
+		},
+	}
+	// Should treat as binary (unreadable).
+	assert.True(t, isBinaryFile("/any/path"))
 }
