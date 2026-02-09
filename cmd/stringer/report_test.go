@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/davetashner/stringer/internal/report"
 	"github.com/davetashner/stringer/internal/signal"
 )
 
@@ -338,7 +339,7 @@ func TestReportCmd_FormatJSON(t *testing.T) {
 	out := stdout.String()
 
 	// Output should be valid JSON.
-	var result reportJSON
+	var result report.ReportJSON
 	require.NoError(t, json.Unmarshal([]byte(out), &result), "output should be valid JSON")
 
 	// Verify key fields are present.
@@ -378,10 +379,10 @@ func TestRenderReportJSON_EmptyResult(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := renderReportJSON(result, "/tmp/test", []string{"todos"}, nil, &buf)
+	err := report.RenderJSON(result, "/tmp/test", []string{"todos"}, nil, &buf)
 	require.NoError(t, err)
 
-	var out reportJSON
+	var out report.ReportJSON
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
 
 	assert.Equal(t, "/tmp/test", out.Repository)
@@ -541,31 +542,31 @@ func TestReportCmd_OutputFileError(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// resolveSectionsQuiet tests
+// report.ResolveSections tests
 // -----------------------------------------------------------------------
 
 func TestResolveSectionsQuiet_EmptyReturnsAll(t *testing.T) {
-	names := resolveSectionsQuiet(nil)
+	names := report.ResolveSections(nil)
 	assert.NotEmpty(t, names)
 }
 
 func TestResolveSectionsQuiet_FilterValid(t *testing.T) {
-	names := resolveSectionsQuiet([]string{"lottery-risk", "churn"})
+	names := report.ResolveSections([]string{"lottery-risk", "churn"})
 	assert.Equal(t, []string{"lottery-risk", "churn"}, names)
 }
 
 func TestResolveSectionsQuiet_FilterInvalid(t *testing.T) {
-	names := resolveSectionsQuiet([]string{"lottery-risk", "nonexistent"})
+	names := report.ResolveSections([]string{"lottery-risk", "nonexistent"})
 	assert.Equal(t, []string{"lottery-risk"}, names)
 }
 
 func TestResolveSectionsQuiet_AllInvalid(t *testing.T) {
-	names := resolveSectionsQuiet([]string{"bad1", "bad2"})
+	names := report.ResolveSections([]string{"bad1", "bad2"})
 	assert.Empty(t, names)
 }
 
 // -----------------------------------------------------------------------
-// renderReportJSON with sections filter
+// report.RenderJSON with sections filter
 // -----------------------------------------------------------------------
 
 func TestRenderReportJSON_WithSectionFilter(t *testing.T) {
@@ -575,10 +576,10 @@ func TestRenderReportJSON_WithSectionFilter(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := renderReportJSON(result, "/tmp/test", []string{"todos"}, []string{"churn"}, &buf)
+	err := report.RenderJSON(result, "/tmp/test", []string{"todos"}, []string{"churn"}, &buf)
 	require.NoError(t, err)
 
-	var out reportJSON
+	var out report.ReportJSON
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
 	assert.Equal(t, "/tmp/test", out.Repository)
 
@@ -650,7 +651,7 @@ func TestReportCmd_JSONWithSections(t *testing.T) {
 	err := cmd.Execute()
 	require.NoError(t, err)
 
-	var result reportJSON
+	var result report.ReportJSON
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	assert.NotEmpty(t, result.Sections)
 }
@@ -673,10 +674,10 @@ func TestRenderReportJSON_WithSectionFilterAndMetrics(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := renderReportJSON(result, "/tmp/test", []string{"todos"}, []string{"todo-age"}, &buf)
+	err := report.RenderJSON(result, "/tmp/test", []string{"todos"}, []string{"todo-age"}, &buf)
 	require.NoError(t, err)
 
-	var out reportJSON
+	var out report.ReportJSON
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
 	assert.NotEmpty(t, out.Collectors)
 	assert.Equal(t, 1, out.Signals.Total)
@@ -696,10 +697,10 @@ func TestRenderReportJSON_CollectorWithError(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := renderReportJSON(result, "/tmp/test", []string{"todos"}, nil, &buf)
+	err := report.RenderJSON(result, "/tmp/test", []string{"todos"}, nil, &buf)
 	require.NoError(t, err)
 
-	var out reportJSON
+	var out report.ReportJSON
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
 	require.Len(t, out.Collectors, 1)
 	assert.Equal(t, "permission denied", out.Collectors[0].Error)

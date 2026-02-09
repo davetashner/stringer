@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	strcontext "github.com/davetashner/stringer/internal/context"
 	"github.com/davetashner/stringer/internal/docs"
 	"github.com/davetashner/stringer/internal/state"
 )
@@ -132,7 +133,7 @@ func TestContextCmd_FormatJSON(t *testing.T) {
 	out := stdout.String()
 
 	// Output should be valid JSON.
-	var result contextJSON
+	var result strcontext.ContextJSON
 	require.NoError(t, json.Unmarshal([]byte(out), &result), "output should be valid JSON")
 
 	// Verify key fields are present.
@@ -231,7 +232,7 @@ func TestContextCmd_NonGitDirJSON(t *testing.T) {
 	err := cmd.Execute()
 	require.NoError(t, err)
 
-	var result contextJSON
+	var result strcontext.ContextJSON
 	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
 	assert.NotEmpty(t, result.Name)
 	// No git history expected for non-git dir.
@@ -254,10 +255,10 @@ func TestRenderContextJSON_NilHistory(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := renderContextJSON(analysis, nil, nil, &buf)
+	err := strcontext.RenderJSON(analysis, nil, nil, &buf)
 	require.NoError(t, err)
 
-	var result contextJSON
+	var result strcontext.ContextJSON
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
 	assert.Equal(t, "test", result.Name)
 	assert.Nil(t, result.History)
@@ -283,10 +284,10 @@ func TestRenderContextJSON_WithScanState(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := renderContextJSON(analysis, nil, scanState, &buf)
+	err := strcontext.RenderJSON(analysis, nil, scanState, &buf)
 	require.NoError(t, err)
 
-	var result contextJSON
+	var result strcontext.ContextJSON
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
 	assert.NotNil(t, result.TechDebt)
 	assert.Equal(t, 5, result.TechDebt.SignalCount)
@@ -308,7 +309,7 @@ func TestContextCmd_OutputFileJSON(t *testing.T) {
 	data, err := os.ReadFile(outFile) //nolint:gosec // test path
 	require.NoError(t, err)
 
-	var result contextJSON
+	var result strcontext.ContextJSON
 	require.NoError(t, json.Unmarshal(data, &result))
 	assert.NotEmpty(t, result.Name)
 }

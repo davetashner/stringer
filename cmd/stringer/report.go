@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -252,7 +250,7 @@ func runReport(cmd *cobra.Command, args []string) error {
 	}
 
 	if reportFormat == "json" {
-		if err := renderReportJSON(result, absPath, collectorNames, sections, w); err != nil {
+		if err := report.RenderJSON(result, absPath, collectorNames, sections, w); err != nil {
 			return fmt.Errorf("stringer: rendering failed (%v)", err)
 		}
 	} else {
@@ -360,131 +358,6 @@ func resolveSections(filter []string, w interface{ Write([]byte) (int, error) })
 			continue
 		}
 		names = append(names, name)
-	}
-	return names
-}
-
-// reportJSON is the top-level JSON structure for --format json output.
-type reportJSON struct {
-	Repository string                `json:"repository"`
-	Generated  string                `json:"generated"`
-	Duration   string                `json:"duration"`
-	Collectors []collectorResultJSON `json:"collectors"`
-	Signals    signalSummaryJSON     `json:"signals"`
-	Sections   []sectionJSON         `json:"sections,omitempty"`
-}
-
-// collectorResultJSON is the JSON representation of a single collector result.
-type collectorResultJSON struct {
-	Name       string `json:"name"`
-	Signals    int    `json:"signals"`
-	Duration   string `json:"duration"`
-	Error      string `json:"error,omitempty"`
-	HasMetrics bool   `json:"has_metrics"`
-}
-
-// signalSummaryJSON is the JSON representation of the signal summary.
-type signalSummaryJSON struct {
-	Total  int            `json:"total"`
-	ByKind map[string]int `json:"by_kind"`
-}
-
-// sectionJSON is the JSON representation of a single report section.
-type sectionJSON struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Status      string `json:"status"`            // "ok", "skipped"
-	Content     string `json:"content,omitempty"` // rendered text
-}
-
-// renderReportJSON writes the report as machine-readable JSON.
-func renderReportJSON(result *signal.ScanResult, repoPath string, collectorNames []string, sections []string, w interface{ Write([]byte) (int, error) }) error {
-	out := reportJSON{
-		Repository: repoPath,
-		Generated:  time.Now().Format(time.RFC3339),
-		Duration:   result.Duration.Round(time.Millisecond).String(),
-	}
-
-	// Collector results.
-	for _, cr := range result.Results {
-		cj := collectorResultJSON{
-			Name:       cr.Collector,
-			Signals:    len(cr.Signals),
-			Duration:   cr.Duration.Round(time.Millisecond).String(),
-			HasMetrics: cr.Metrics != nil,
-		}
-		if cr.Err != nil {
-			cj.Error = cr.Err.Error()
-		}
-		out.Collectors = append(out.Collectors, cj)
-	}
-
-	// Signal summary.
-	kindCounts := make(map[string]int)
-	for _, sig := range result.Signals {
-		kindCounts[sig.Kind]++
-	}
-	out.Signals = signalSummaryJSON{
-		Total:  len(result.Signals),
-		ByKind: kindCounts,
-	}
-
-	// Report sections.
-	sectionNames := resolveSectionsQuiet(sections)
-	for _, name := range sectionNames {
-		sec := report.Get(name)
-		if sec == nil {
-			continue
-		}
-
-		sj := sectionJSON{
-			Name:        sec.Name(),
-			Description: sec.Description(),
-		}
-
-		if err := sec.Analyze(result); err != nil {
-			if errors.Is(err, report.ErrMetricsNotAvailable) {
-				sj.Status = "skipped"
-				out.Sections = append(out.Sections, sj)
-				continue
-			}
-			return fmt.Errorf("section %s: %w", name, err)
-		}
-
-		sj.Status = "ok"
-		var buf bytes.Buffer
-		if err := sec.Render(&buf); err != nil {
-			return fmt.Errorf("section %s render: %w", name, err)
-		}
-		sj.Content = buf.String()
-		out.Sections = append(out.Sections, sj)
-	}
-
-	data, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		return fmt.Errorf("JSON marshal: %w", err)
-	}
-	_, err = fmt.Fprintln(w, string(data))
-	return err
-}
-
-// resolveSectionsQuiet determines which sections to run without printing warnings.
-// Used by the JSON output path where warnings would corrupt the JSON.
-func resolveSectionsQuiet(filter []string) []string {
-	if len(filter) == 0 {
-		return report.List()
-	}
-
-	available := make(map[string]bool)
-	for _, name := range report.List() {
-		available[name] = true
-	}
-
-	var names []string
-	for _, name := range filter {
-		if available[name] {
-			names = append(names, name)
-		}
 	}
 	return names
 }
