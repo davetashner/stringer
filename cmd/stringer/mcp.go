@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
 	"github.com/davetashner/stringer/internal/mcpserver"
@@ -27,7 +28,7 @@ The server communicates using the Model Context Protocol (MCP) over stdio
 transport, enabling AI agents to call stringer tools directly.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		return mcpserver.Run(cmd.Context(), Version)
+		return mcpserver.Run(cmd.Context(), Version, &mcp.StdioTransport{})
 	},
 }
 

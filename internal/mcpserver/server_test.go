@@ -14,6 +14,32 @@ func TestNew_ReturnsServer(t *testing.T) {
 	assert.NotNil(t, server)
 }
 
+func TestRun_WithInMemoryTransport(t *testing.T) {
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- Run(ctx, "v1.0.0-test", serverTransport)
+	}()
+
+	client := mcp.NewClient(&mcp.Implementation{
+		Name:    "test-client",
+		Version: "v1.0.0",
+	}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	require.NoError(t, err)
+	defer session.Close() //nolint:errcheck // best-effort close in test
+
+	result, err := session.ListTools(ctx, nil)
+	require.NoError(t, err)
+	assert.Len(t, result.Tools, 4)
+
+	cancel()
+}
+
 func TestServer_ListsTools(t *testing.T) {
 	server := New("v1.0.0-test")
 

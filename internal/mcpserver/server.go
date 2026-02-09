@@ -18,9 +18,9 @@ func New(version string) *mcp.Server {
 	return server
 }
 
-// Run creates an MCP server and runs it on stdio transport.
+// Run creates an MCP server and runs it on the given transport.
 // It blocks until the client disconnects or the context is cancelled.
-func Run(ctx context.Context, version string) error {
+func Run(ctx context.Context, version string, transport mcp.Transport) error {
 	server := New(version)
-	return server.Run(ctx, &mcp.StdioTransport{})
+	return server.Run(ctx, transport)
 }
