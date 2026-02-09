@@ -1,0 +1,21 @@
+# CODEOWNERS — require review on security-sensitive paths
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# CI/CD workflows
+/.github/workflows/  @davetashner
+
+# Dependabot and GitHub config
+/.github/dependabot.yml  @davetashner
+
+# Dependency manifests
+/go.mod  @davetashner
+/go.sum  @davetashner
+
+# Release configuration
+/.goreleaser.yml  @davetashner
+
+# Linter configuration
+/.golangci.yml  @davetashner
+
+# Git hooks (secret scanning, pre-commit)
+/.githooks/  @davetashner
