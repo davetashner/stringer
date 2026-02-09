@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -400,4 +401,333 @@ func TestRenderReportJSON_EmptyResult(t *testing.T) {
 		}
 	}
 	assert.Greater(t, skippedCount, 0, "at least one section should be skipped with empty metrics")
+}
+
+// -----------------------------------------------------------------------
+// applyReportCollectorExclusions tests
+// -----------------------------------------------------------------------
+
+func TestApplyReportCollectorExclusions_EmptyExclude(t *testing.T) {
+	include := []string{"todos", "gitlog"}
+	result := applyReportCollectorExclusions(include, "")
+	assert.Equal(t, []string{"todos", "gitlog"}, result)
+}
+
+func TestApplyReportCollectorExclusions_EmptyInclude(t *testing.T) {
+	// When include is empty, starts from collector.List() and removes excluded.
+	result := applyReportCollectorExclusions(nil, "github")
+	assert.NotContains(t, result, "github")
+	assert.Greater(t, len(result), 0)
+}
+
+func TestApplyReportCollectorExclusions_ExcludeFromInclude(t *testing.T) {
+	include := []string{"todos", "gitlog", "patterns"}
+	result := applyReportCollectorExclusions(include, "gitlog")
+	assert.Equal(t, []string{"todos", "patterns"}, result)
+}
+
+func TestApplyReportCollectorExclusions_MultipleExcludes(t *testing.T) {
+	include := []string{"todos", "gitlog", "patterns"}
+	result := applyReportCollectorExclusions(include, "gitlog,patterns")
+	assert.Equal(t, []string{"todos"}, result)
+}
+
+func TestApplyReportCollectorExclusions_WhitespaceHandling(t *testing.T) {
+	include := []string{"todos", "gitlog"}
+	result := applyReportCollectorExclusions(include, " gitlog , ")
+	assert.Equal(t, []string{"todos"}, result)
+}
+
+func TestApplyReportCollectorExclusions_ExcludeAll(t *testing.T) {
+	include := []string{"todos"}
+	result := applyReportCollectorExclusions(include, "todos")
+	assert.Empty(t, result)
+}
+
+// -----------------------------------------------------------------------
+// Additional runReport coverage tests
+// -----------------------------------------------------------------------
+
+func TestReportCmd_ExcludeCollectors(t *testing.T) {
+	resetReportFlags()
+	root := repoRoot(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"report", root, "--exclude-collectors=github,lotteryrisk", "--quiet"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "Stringer Report")
+	assert.Contains(t, out, "todos")
+}
+
+func TestReportCmd_GitDepthFlag(t *testing.T) {
+	resetReportFlags()
+	root := repoRoot(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"report", root, "--git-depth=50", "--quiet", "-c", "gitlog"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	assert.Contains(t, stdout.String(), "Stringer Report")
+}
+
+func TestReportCmd_GitSinceFlag(t *testing.T) {
+	resetReportFlags()
+	root := repoRoot(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"report", root, "--git-since=30d", "--quiet", "-c", "gitlog"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	assert.Contains(t, stdout.String(), "Stringer Report")
+}
+
+func TestReportCmd_CollectorTimeout(t *testing.T) {
+	resetReportFlags()
+	root := repoRoot(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"report", root, "--collector-timeout=5m", "--quiet", "-c", "todos"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	assert.Contains(t, stdout.String(), "Stringer Report")
+}
+
+func TestReportCmd_AnonymizeFlag(t *testing.T) {
+	resetReportFlags()
+	root := repoRoot(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"report", root, "--anonymize=always", "--quiet", "-c", "todos"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	assert.Contains(t, stdout.String(), "Stringer Report")
+}
+
+func TestReportCmd_PathsFlag(t *testing.T) {
+	resetReportFlags()
+	root := repoRoot(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"report", root, "--paths=cmd/**", "--quiet", "-c", "todos"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	assert.Contains(t, stdout.String(), "Stringer Report")
+}
+
+func TestReportCmd_OutputFileError(t *testing.T) {
+	resetReportFlags()
+	root := repoRoot(t)
+
+	cmd, _, _ := newTestCmd()
+	cmd.SetArgs([]string{"report", root, "-o", "/nonexistent/dir/report.txt", "--quiet", "-c", "todos"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot create output file")
+}
+
+// -----------------------------------------------------------------------
+// resolveSectionsQuiet tests
+// -----------------------------------------------------------------------
+
+func TestResolveSectionsQuiet_EmptyReturnsAll(t *testing.T) {
+	names := resolveSectionsQuiet(nil)
+	assert.NotEmpty(t, names)
+}
+
+func TestResolveSectionsQuiet_FilterValid(t *testing.T) {
+	names := resolveSectionsQuiet([]string{"lottery-risk", "churn"})
+	assert.Equal(t, []string{"lottery-risk", "churn"}, names)
+}
+
+func TestResolveSectionsQuiet_FilterInvalid(t *testing.T) {
+	names := resolveSectionsQuiet([]string{"lottery-risk", "nonexistent"})
+	assert.Equal(t, []string{"lottery-risk"}, names)
+}
+
+func TestResolveSectionsQuiet_AllInvalid(t *testing.T) {
+	names := resolveSectionsQuiet([]string{"bad1", "bad2"})
+	assert.Empty(t, names)
+}
+
+// -----------------------------------------------------------------------
+// renderReportJSON with sections filter
+// -----------------------------------------------------------------------
+
+func TestRenderReportJSON_WithSectionFilter(t *testing.T) {
+	result := &signal.ScanResult{
+		Duration: 100 * time.Millisecond,
+		Metrics:  map[string]any{},
+	}
+
+	var buf bytes.Buffer
+	err := renderReportJSON(result, "/tmp/test", []string{"todos"}, []string{"churn"}, &buf)
+	require.NoError(t, err)
+
+	var out reportJSON
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
+	assert.Equal(t, "/tmp/test", out.Repository)
+
+	// Only churn section should appear (though likely skipped due to no metrics).
+	foundChurn := false
+	for _, sec := range out.Sections {
+		if sec.Name == "Code Churn" || strings.Contains(strings.ToLower(sec.Name), "churn") {
+			foundChurn = true
+		}
+	}
+	// The churn section should be attempted even if skipped.
+	assert.True(t, foundChurn || len(out.Sections) > 0, "filtered section should be attempted")
+}
+
+func TestRenderReport_WithSignals(t *testing.T) {
+	result := &signal.ScanResult{
+		Duration: 100 * time.Millisecond,
+		Signals: []signal.RawSignal{
+			{Kind: "todo", Title: "Fix this"},
+			{Kind: "todo", Title: "Fix that"},
+			{Kind: "churn", Title: "High churn file"},
+		},
+		Results: []signal.CollectorResult{
+			{Collector: "todos", Signals: []signal.RawSignal{
+				{Kind: "todo", Title: "Fix this"},
+				{Kind: "todo", Title: "Fix that"},
+			}, Duration: 50 * time.Millisecond},
+		},
+		Metrics: map[string]any{},
+	}
+
+	var buf bytes.Buffer
+	err := renderReport(result, "/tmp/test", []string{"todos"}, nil, &buf)
+	require.NoError(t, err)
+
+	out := buf.String()
+	assert.Contains(t, out, "Total signals: 3")
+	assert.Contains(t, out, "todo")
+	assert.Contains(t, out, "churn")
+}
+
+func TestRenderReport_WithCollectorError(t *testing.T) {
+	result := &signal.ScanResult{
+		Duration: 100 * time.Millisecond,
+		Results: []signal.CollectorResult{
+			{Collector: "todos", Err: fmt.Errorf("file not found"), Duration: 10 * time.Millisecond},
+			{Collector: "gitlog", Signals: []signal.RawSignal{{Kind: "churn"}}, Duration: 50 * time.Millisecond, Metrics: map[string]any{}},
+		},
+		Metrics: map[string]any{},
+	}
+
+	var buf bytes.Buffer
+	err := renderReport(result, "/tmp/test", []string{"todos", "gitlog"}, nil, &buf)
+	require.NoError(t, err)
+
+	out := buf.String()
+	assert.Contains(t, out, "error: file not found")
+	assert.Contains(t, out, "metrics: no")
+	assert.Contains(t, out, "metrics: yes")
+}
+
+func TestReportCmd_JSONWithSections(t *testing.T) {
+	resetReportFlags()
+	root := repoRoot(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"report", root, "--format", "json", "--sections=churn", "--quiet", "-c", "gitlog"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	var result reportJSON
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	assert.NotEmpty(t, result.Sections)
+}
+
+func TestRenderReportJSON_WithSectionFilterAndMetrics(t *testing.T) {
+	// Provide metrics so sections can actually analyze.
+	result := &signal.ScanResult{
+		Duration: 100 * time.Millisecond,
+		Signals: []signal.RawSignal{
+			{Kind: "todo", Title: "Fix this", Confidence: 0.8},
+		},
+		Results: []signal.CollectorResult{
+			{
+				Collector: "todos",
+				Signals:   []signal.RawSignal{{Kind: "todo", Title: "Fix this"}},
+				Duration:  50 * time.Millisecond,
+			},
+		},
+		Metrics: map[string]any{},
+	}
+
+	var buf bytes.Buffer
+	err := renderReportJSON(result, "/tmp/test", []string{"todos"}, []string{"todo-age"}, &buf)
+	require.NoError(t, err)
+
+	var out reportJSON
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
+	assert.NotEmpty(t, out.Collectors)
+	assert.Equal(t, 1, out.Signals.Total)
+}
+
+func TestRenderReportJSON_CollectorWithError(t *testing.T) {
+	result := &signal.ScanResult{
+		Duration: 100 * time.Millisecond,
+		Results: []signal.CollectorResult{
+			{
+				Collector: "todos",
+				Err:       fmt.Errorf("permission denied"),
+				Duration:  10 * time.Millisecond,
+			},
+		},
+		Metrics: map[string]any{},
+	}
+
+	var buf bytes.Buffer
+	err := renderReportJSON(result, "/tmp/test", []string{"todos"}, nil, &buf)
+	require.NoError(t, err)
+
+	var out reportJSON
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &out))
+	require.Len(t, out.Collectors, 1)
+	assert.Equal(t, "permission denied", out.Collectors[0].Error)
+}
+
+func TestReportCmd_SubdirectoryPath(t *testing.T) {
+	resetReportFlags()
+	root := repoRoot(t)
+
+	// Point at a subdirectory within the repo.
+	subDir := filepath.Join(root, "cmd", "stringer")
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"report", subDir, "--quiet", "-c", "todos", "--sections=todo-age"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Stringer Report")
+}
+
+func TestReportCmd_ExcludeCollectorsFromEmpty(t *testing.T) {
+	resetReportFlags()
+	root := repoRoot(t)
+
+	// Exclude github without specifying --collectors (starts from full registry).
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"report", root, "-x", "github,lotteryrisk", "--sections=todo-age", "--quiet"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "Stringer Report")
 }

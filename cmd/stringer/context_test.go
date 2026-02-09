@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,6 +10,9 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/davetashner/stringer/internal/docs"
+	"github.com/davetashner/stringer/internal/state"
 )
 
 // resetContextFlags resets all package-level context flags to their default values.
@@ -161,4 +165,150 @@ func TestContextCmd_FormatInvalid(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported context format")
 	assert.Contains(t, err.Error(), "xml")
+}
+
+func TestContextCmd_OutputFile(t *testing.T) {
+	resetContextFlags()
+	root := repoRoot(t)
+	outFile := filepath.Join(t.TempDir(), "context.md")
+
+	cmd, _, _ := newTestCmd()
+	cmd.SetArgs([]string{"context", root, "-o", outFile, "--quiet"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(outFile) //nolint:gosec // test path
+	require.NoError(t, err)
+	assert.Contains(t, string(data), "# CONTEXT.md")
+}
+
+func TestContextCmd_OutputFileError(t *testing.T) {
+	resetContextFlags()
+	root := repoRoot(t)
+
+	cmd, _, _ := newTestCmd()
+	cmd.SetArgs([]string{"context", root, "-o", "/nonexistent/dir/context.md", "--quiet"})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot create output file")
+}
+
+func TestContextCmd_WeeksFlag(t *testing.T) {
+	resetContextFlags()
+	root := repoRoot(t)
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"context", root, "--weeks", "2", "--quiet"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "# CONTEXT.md")
+}
+
+func TestContextCmd_NonGitDir(t *testing.T) {
+	resetContextFlags()
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n\ngo 1.22\n"), 0o600))
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"context", dir, "--quiet"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+	assert.Contains(t, stdout.String(), "# CONTEXT.md")
+}
+
+func TestContextCmd_NonGitDirJSON(t *testing.T) {
+	resetContextFlags()
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n\ngo 1.22\n"), 0o600))
+
+	cmd, stdout, _ := newTestCmd()
+	cmd.SetArgs([]string{"context", dir, "--format", "json", "--quiet"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	var result contextJSON
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	assert.NotEmpty(t, result.Name)
+	// No git history expected for non-git dir.
+	assert.Nil(t, result.History)
+}
+
+func TestRenderContextJSON_NilHistory(t *testing.T) {
+	analysis := &docs.RepoAnalysis{
+		Name:     "test",
+		Language: "Go",
+		TechStack: []docs.TechComponent{
+			{Name: "Go", Version: "1.22", Source: "go.mod"},
+		},
+		BuildCommands: []docs.BuildCommand{
+			{Name: "build", Command: "go build ./...", Source: "go.mod"},
+		},
+		Patterns: []docs.CodePattern{
+			{Name: "CLI", Description: "Command-line application"},
+		},
+	}
+
+	var buf bytes.Buffer
+	err := renderContextJSON(analysis, nil, nil, &buf)
+	require.NoError(t, err)
+
+	var result contextJSON
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+	assert.Equal(t, "test", result.Name)
+	assert.Nil(t, result.History)
+	assert.Nil(t, result.TechDebt)
+	assert.NotEmpty(t, result.TechStack)
+	assert.NotEmpty(t, result.BuildCmds)
+	assert.NotEmpty(t, result.Patterns)
+}
+
+func TestRenderContextJSON_WithScanState(t *testing.T) {
+	analysis := &docs.RepoAnalysis{
+		Name:     "test",
+		Language: "Go",
+	}
+
+	scanState := &state.ScanState{
+		SignalCount: 5,
+		SignalMetas: []state.SignalMeta{
+			{Kind: "todo"},
+			{Kind: "todo"},
+			{Kind: "churn"},
+		},
+	}
+
+	var buf bytes.Buffer
+	err := renderContextJSON(analysis, nil, scanState, &buf)
+	require.NoError(t, err)
+
+	var result contextJSON
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &result))
+	assert.NotNil(t, result.TechDebt)
+	assert.Equal(t, 5, result.TechDebt.SignalCount)
+	assert.Equal(t, 2, result.TechDebt.ByKind["todo"])
+	assert.Equal(t, 1, result.TechDebt.ByKind["churn"])
+}
+
+func TestContextCmd_OutputFileJSON(t *testing.T) {
+	resetContextFlags()
+	root := repoRoot(t)
+	outFile := filepath.Join(t.TempDir(), "context.json")
+
+	cmd, _, _ := newTestCmd()
+	cmd.SetArgs([]string{"context", root, "--format", "json", "-o", outFile, "--quiet"})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(outFile) //nolint:gosec // test path
+	require.NoError(t, err)
+
+	var result contextJSON
+	require.NoError(t, json.Unmarshal(data, &result))
+	assert.NotEmpty(t, result.Name)
 }
