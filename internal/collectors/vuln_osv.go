@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	osvDefaultBaseURL = "https://api.osv.dev/v1"
-	osvBatchLimit     = 1000
-	osvMaxRetries     = 3
-	osvRetryBaseDelay = 500 * time.Millisecond
+	osvDefaultBaseURL   = "https://api.osv.dev/v1"
+	osvBatchLimit       = 1000
+	osvMaxRetries       = 3
+	osvRetryBaseDelay   = 500 * time.Millisecond
+	osvMaxResponseBytes = 10 * 1024 * 1024 // 10 MiB
 )
 
 // PackageQuery represents a single dependency to check for vulnerabilities.
@@ -172,7 +173,7 @@ func (c *realOSVClient) postBatchQuery(ctx context.Context, items []osvQueryItem
 	defer func() { _ = resp.Body.Close() }()
 
 	var result osvBatchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, osvMaxResponseBytes)).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decoding batch response: %w", err)
 	}
 
@@ -189,7 +190,7 @@ func (c *realOSVClient) fetchVuln(ctx context.Context, id string) (*osvVulnerabi
 	defer func() { _ = resp.Body.Close() }()
 
 	var vuln osvVulnerability
-	if err := json.NewDecoder(resp.Body).Decode(&vuln); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, osvMaxResponseBytes)).Decode(&vuln); err != nil {
 		return nil, fmt.Errorf("decoding vuln %s: %w", id, err)
 	}
 

@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/davetashner/stringer/internal/collector"
+	"github.com/davetashner/stringer/internal/redact"
 	"github.com/davetashner/stringer/internal/signal"
 )
 
@@ -96,7 +97,7 @@ func (p *Pipeline) Run(ctx context.Context) (*signal.ScanResult, error) {
 					// Silently ignore.
 				default:
 					// ErrorModeWarn (default).
-					log.Printf("collector %q returned error: %v", result.Collector, result.Err)
+					log.Printf("collector %q returned error: %v", result.Collector, redact.String(result.Err.Error()))
 				}
 			}
 			return nil
@@ -121,7 +122,7 @@ func (p *Pipeline) Run(ctx context.Context) (*signal.ScanResult, error) {
 			errs := ValidateSignal(s)
 			if len(errs) > 0 {
 				log.Printf("skipping invalid signal from %q (title=%q): %v",
-					p.collectors[i].Name(), s.Title, errs)
+					p.collectors[i].Name(), redact.String(s.Title), errs)
 				continue
 			}
 			allSignals = append(allSignals, s)

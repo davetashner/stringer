@@ -67,7 +67,7 @@ sboms:
 
 signs:
   - cmd: cosign
-    artifacts: checksum
+    artifacts: all
     output: true
     args:
       - sign-blob

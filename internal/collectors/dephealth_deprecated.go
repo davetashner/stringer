@@ -57,7 +57,7 @@ func (c *realModuleProxyClient) FetchLatest(ctx context.Context, modulePath stri
 
 	client := c.httpClient
 	if client == nil {
-		client = http.DefaultClient
+		client = &http.Client{Timeout: 30 * time.Second}
 	}
 
 	resp, err := client.Do(req)
