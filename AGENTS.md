@@ -41,6 +41,7 @@ stringer/
 │   │   ├── github.go           # GitHub issues, PRs, and review comments
 │   │   ├── dephealth.go        # Dependency health (archived, stale, deprecated)
 │   │   ├── vuln.go             # Vulnerability scanner (govulncheck integration)
+│   │   ├── vuln_osv.go         # OSV.dev client for multi-ecosystem vuln queries
 │   │   └── duration.go         # Duration parsing helpers
 │   ├── config/             # .stringer.yaml config file support
 │   │   ├── config.go           # Config and CollectorConfig structs
@@ -102,7 +103,7 @@ stringer/
 ├── testdata/
 │   └── fixtures/           # Test fixture repos
 ├── docs/
-│   ├── decisions/          # Decision records (001-011)
+│   ├── decisions/          # Decision records (001-012)
 │   ├── agent-integration.md    # MCP setup and tool reference
 │   ├── branch-protection.md    # Branch protection rules
 │   ├── competitive-analysis.md # Competitive landscape
@@ -115,7 +116,7 @@ stringer/
 └── CLAUDE.md
 ```
 
-**Note:** The collector architecture is extensible (see [Adding a new collector](#adding-a-new-collector)). Stringer currently has five collectors (todos, gitlog, patterns, lotteryrisk, github) and four output formats (beads, json, markdown, tasks). See [docs/release-strategy.md](docs/release-strategy.md) for versioning and release process.
+**Note:** The collector architecture is extensible (see [Adding a new collector](#adding-a-new-collector)). Stringer currently has seven collectors (todos, gitlog, patterns, lotteryrisk, github, dephealth, vuln) and four output formats (beads, json, markdown, tasks). See [docs/release-strategy.md](docs/release-strategy.md) for versioning and release process.
 
 ## Tech Stack
 
