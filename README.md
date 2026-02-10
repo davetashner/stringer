@@ -271,6 +271,31 @@ Generates a compact context summary of the repository for use in AI prompts. Inc
 stringer context .
 ```
 
+## Agent Integration
+
+Stringer includes an [MCP](https://modelcontextprotocol.io/) server so AI agents can call stringer tools directly.
+
+### Quick Setup
+
+```bash
+# Option 1: Auto-detect and configure
+stringer init .
+
+# Option 2: Register manually with Claude Code
+claude mcp add stringer -- stringer mcp serve
+```
+
+### MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `scan` | Scan a repository for actionable work items (TODOs, git patterns, code smells) |
+| `report` | Generate a repository health report with metrics and recommendations |
+| `context` | Generate a context summary for agent onboarding |
+| `docs` | Generate or update an AGENTS.md scaffold |
+
+See [docs/agent-integration.md](docs/agent-integration.md) for detailed usage, parameters, and example workflows.
+
 ## How Output Works
 
 ### Confidence Scoring
