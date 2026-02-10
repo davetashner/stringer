@@ -357,6 +357,113 @@ jobs:
             echo "PR size is within limits."
           fi
 
+  doc-staleness:
+    name: Doc Staleness
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+      - name: Check documentation staleness
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pr_number="${{ github.event.pull_request.number }}"
+          repo="${{ github.repository }}"
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+
+          # Get changed files in this PR
+          changed_files=$(git diff --name-only "$base".."$head")
+
+          # Check if any internal Go files (non-test) changed
+          internal_go_changed=$(echo "$changed_files" | grep '^internal/.*\.go$' | grep -v '_test\.go$' || true)
+          agents_md_changed=$(echo "$changed_files" | grep '^AGENTS\.md$' || true)
+
+          if [ -z "$internal_go_changed" ]; then
+            echo "No internal Go files changed. Skipping doc staleness check."
+            exit 0
+          fi
+
+          # --- Hard-fail check: interface drift ---
+          # Extract an interface block from a file, stripping comments and blank
+          # lines, then normalize to a single space-separated line for comparison.
+          extract_interface() {
+            local file="$1" name="$2"
+            awk -v name="$name" '
+              $0 ~ "type " name " interface \\{" { capturing=1 }
+              capturing {
+                if ($0 ~ /^[[:space:]]*\/\//) next
+                if ($0 ~ /^[[:space:]]*$/) next
+                gsub(/^[[:space:]]+/, "")
+                printf "%s ", $0
+                if ($0 ~ /\}/) exit
+              }
+            ' "$file" | tr -s ' ' | sed 's/ $//'
+          }
+
+          # Monitored interfaces: name -> source file
+          declare -A INTERFACES=(
+            ["Collector"]="internal/collector/collector.go"
+            ["Formatter"]="internal/output/formatter.go"
+            ["Section"]="internal/report/section.go"
+          )
+
+          hard_fail=0
+          drift_details=""
+
+          for iface in "${!INTERFACES[@]}"; do
+            src="${INTERFACES[$iface]}"
+
+            # Only check if this source file was changed in the PR
+            if ! echo "$changed_files" | grep -q "^${src}$"; then
+              continue
+            fi
+
+            src_sig=$(extract_interface "$src" "$iface")
+            md_sig=$(extract_interface "AGENTS.md" "$iface")
+
+            if [ -z "$md_sig" ]; then
+              drift_details="${drift_details}- **${iface}** interface (in ${src}) not found in AGENTS.md"$'\n'
+              hard_fail=1
+              continue
+            fi
+
+            if [ "$src_sig" != "$md_sig" ]; then
+              drift_details="${drift_details}- **${iface}** interface in ${src} doesn't match AGENTS.md"$'\n'
+              hard_fail=1
+            fi
+          done
+
+          if [ "$hard_fail" -eq 1 ]; then
+            {
+              echo ":x: **Doc Staleness — Interface Drift**"
+              echo ""
+              echo "The following interface(s) changed but AGENTS.md was not updated:"
+              echo ""
+              echo "$drift_details"
+              echo "Please update the code blocks in AGENTS.md to match the current interface signatures."
+            } > /tmp/doc-staleness-body.md
+            gh pr comment "$pr_number" --repo "$repo" --body-file /tmp/doc-staleness-body.md
+            echo "::error::Interface signatures in source don't match AGENTS.md"
+            exit 1
+          fi
+
+          # --- Soft warn: internal Go files changed but AGENTS.md not updated ---
+          if [ -z "$agents_md_changed" ]; then
+            gh pr comment "$pr_number" --repo "$repo" --body "$(cat <<'EOF'
+          :warning: **Doc Staleness — Heads Up**
+
+          Internal Go files changed but `AGENTS.md` was not updated. If you changed architecture, interfaces, or public contracts, please update the documentation.
+          EOF
+            )"
+            echo "::warning::Internal Go files changed without AGENTS.md update"
+            exit 0
+          fi
+
+          echo "Documentation is up to date."
+
   fuzz:
     name: Fuzz
     runs-on: ubuntu-latest

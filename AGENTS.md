@@ -289,6 +289,37 @@ conditions or caveats.]
 5. Add tests in `internal/collectors/yourname_test.go`
 6. Update `README.md` collector list
 
+### Adding a new formatter
+
+1. Create `internal/output/yourformat.go`
+2. Implement the `output.Formatter` interface:
+   ```go
+   type Formatter interface {
+       Name() string
+       Format(signals []signal.RawSignal, w io.Writer) error
+   }
+   ```
+3. Self-register in an `init()` function: `output.RegisterFormatter(&YourFormatter{})`
+4. Add tests in `internal/output/yourformat_test.go`
+5. Update `README.md` format list
+
+### Adding a new report section
+
+1. Create `internal/report/yoursection.go`
+2. Implement the `report.Section` interface:
+   ```go
+   type Section interface {
+       Name() string
+       Description() string
+       Analyze(result *signal.ScanResult) error
+       Render(w io.Writer) error
+   }
+   ```
+3. Self-register in an `init()` function: `report.Register(&YourSection{})`
+4. Add a blank import in `cmd/stringer/report.go`: `_ "github.com/davetashner/stringer/internal/report"`
+   (already present — this ensures all section `init()` functions run)
+5. Add tests in `internal/report/yoursection_test.go`
+
 ### Signal schema
 
 ```go
@@ -352,6 +383,7 @@ Optional but valuable:
 | `License Check` | All dependency licenses are OSS-compatible |
 | `Archived Deps Check` | Warns if any GitHub-hosted dependencies are archived |
 | `PR Size Guard` | Warns at 500 lines, fails at 1000 non-test lines (PRs only) |
+| `Doc Staleness` | AGENTS.md interface code blocks match source; warns on internal Go changes without doc update (PRs only) |
 | `Fuzz` | Fuzz testing for input parsing (mcpserver, config, beads) |
 
 A separate [OpenSSF Scorecard](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer) workflow runs on the default branch to track supply chain security posture.
