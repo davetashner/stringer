@@ -367,6 +367,7 @@ jobs:
           go-version: "1.25"
       - name: Run fuzz tests
         run: |
-          go test -fuzz=. -fuzztime=30s ./internal/mcpserver/
-          go test -fuzz=. -fuzztime=30s ./internal/config/
-          go test -fuzz=. -fuzztime=30s ./internal/beads/
+          go test -fuzz=FuzzResolvePath -fuzztime=30s ./internal/mcpserver/
+          go test -fuzz=FuzzSplitAndTrim -fuzztime=30s ./internal/mcpserver/
+          go test -fuzz=FuzzConfigParse -fuzztime=30s ./internal/config/
+          go test -fuzz=FuzzBeadParse -fuzztime=30s ./internal/beads/
