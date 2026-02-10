@@ -20,7 +20,7 @@ func TestRun_GoRepoWithGitHub(t *testing.T) {
 
 	assert.Equal(t, "Go", result.Language)
 	assert.True(t, result.HasGitHub)
-	assert.Len(t, result.Actions, 2)
+	assert.Len(t, result.Actions, 3)
 
 	// Config created.
 	assert.Equal(t, config.FileName, result.Actions[0].File)
@@ -29,6 +29,10 @@ func TestRun_GoRepoWithGitHub(t *testing.T) {
 	// AGENTS.md created.
 	assert.Equal(t, "AGENTS.md", result.Actions[1].File)
 	assert.Equal(t, "created", result.Actions[1].Operation)
+
+	// .mcp.json skipped (no .claude/ directory in test repo).
+	assert.Equal(t, ".mcp.json", result.Actions[2].File)
+	assert.Equal(t, "skipped", result.Actions[2].Operation)
 
 	// Verify files exist.
 	assert.FileExists(t, filepath.Join(dir, config.FileName))
@@ -43,7 +47,7 @@ func TestRun_NonGitRepo(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.False(t, result.HasGitHub)
-	assert.Len(t, result.Actions, 2)
+	assert.Len(t, result.Actions, 3)
 }
 
 func TestRun_Idempotent(t *testing.T) {
@@ -55,11 +59,12 @@ func TestRun_Idempotent(t *testing.T) {
 	assert.Equal(t, "created", result1.Actions[0].Operation)
 	assert.Equal(t, "created", result1.Actions[1].Operation)
 
-	// Second run — both should be skipped.
+	// Second run — all should be skipped.
 	result2, err := Run(InitConfig{RepoPath: dir})
 	require.NoError(t, err)
 	assert.Equal(t, "skipped", result2.Actions[0].Operation)
 	assert.Equal(t, "skipped", result2.Actions[1].Operation)
+	assert.Equal(t, "skipped", result2.Actions[2].Operation)
 }
 
 func TestRun_ForceRegeneratesConfig(t *testing.T) {
