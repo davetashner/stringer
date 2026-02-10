@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/google/go-github/v68/github"
 	"golang.org/x/mod/modfile"
 
 	"github.com/davetashner/stringer/internal/collector"
@@ -20,13 +21,15 @@ func init() {
 }
 
 // DepHealthMetrics holds structured dependency data parsed from go.mod.
-// Downstream collectors (C6.2–C6.4) type-assert Metrics["dephealth"] to this.
 type DepHealthMetrics struct {
 	ModulePath   string
 	GoVersion    string
 	Dependencies []ModuleDep
 	Replaces     []ModuleReplace
 	Retracts     []ModuleRetract
+	Archived     []string
+	Deprecated   []string
+	Stale        []string
 }
 
 // ModuleDep represents a single require directive.
@@ -53,17 +56,21 @@ type ModuleRetract struct {
 }
 
 // DepHealthCollector parses go.mod to extract dependency information and
-// emits signals for local replace directives and retracted versions.
+// emits signals for local replace directives, retracted versions, archived
+// repos, deprecated modules, and stale dependencies.
 type DepHealthCollector struct {
-	metrics *DepHealthMetrics
+	metrics     *DepHealthMetrics
+	ghAPI       dephealthGitHubAPI
+	proxyClient moduleProxyClient
 }
 
 // Name returns the collector name used for registration and filtering.
 func (c *DepHealthCollector) Name() string { return "dephealth" }
 
 // Collect parses the go.mod file in repoPath and returns signals for
-// actionable findings (local replaces, retracted versions).
-func (c *DepHealthCollector) Collect(_ context.Context, repoPath string, _ signal.CollectorOpts) ([]signal.RawSignal, error) {
+// actionable findings (local replaces, retracted versions, archived repos,
+// deprecated modules, stale dependencies).
+func (c *DepHealthCollector) Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error) {
 	goModPath := filepath.Join(repoPath, "go.mod")
 
 	data, err := FS.ReadFile(goModPath)
@@ -164,6 +171,49 @@ func (c *DepHealthCollector) Collect(_ context.Context, repoPath string, _ signa
 			Tags:        []string{"retracted-version", "dephealth"},
 		})
 	}
+
+	// C6.2 + C6.4: Check GitHub repos for archived/stale status.
+	ghAPI := c.ghAPI
+	if ghAPI == nil {
+		token := os.Getenv("GITHUB_TOKEN")
+		if token != "" {
+			client := github.NewClient(nil).WithAuthToken(token)
+			ghAPI = &realGitHubAPI{client: client}
+		} else {
+			slog.Info("GITHUB_TOKEN not set, skipping dephealth GitHub checks")
+		}
+	}
+	if ghAPI != nil {
+		threshold := defaultStalenessThreshold
+		if opts.StalenessThreshold != "" {
+			if d, err := ParseDuration(opts.StalenessThreshold); err == nil {
+				threshold = d
+			} else {
+				slog.Warn("invalid staleness-threshold, using default", "value", opts.StalenessThreshold, "error", err)
+			}
+		}
+		ghSignals := checkGitHubDeps(ctx, ghAPI, metrics.Dependencies, threshold)
+		for _, s := range ghSignals {
+			switch s.Kind {
+			case "archived-dependency":
+				metrics.Archived = append(metrics.Archived, s.Title)
+			case "stale-dependency":
+				metrics.Stale = append(metrics.Stale, s.Title)
+			}
+		}
+		signals = append(signals, ghSignals...)
+	}
+
+	// C6.3: Check Go module proxy for deprecated modules.
+	proxyClient := c.proxyClient
+	if proxyClient == nil {
+		proxyClient = &realModuleProxyClient{}
+	}
+	deprecatedSignals := checkDeprecatedDeps(ctx, proxyClient, metrics.Dependencies)
+	for _, s := range deprecatedSignals {
+		metrics.Deprecated = append(metrics.Deprecated, s.Title)
+	}
+	signals = append(signals, deprecatedSignals...)
 
 	c.metrics = metrics
 	return signals, nil

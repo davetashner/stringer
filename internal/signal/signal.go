@@ -83,6 +83,11 @@ type CollectorOpts struct {
 
 	// Timeout is the per-collector timeout. 0 means no timeout.
 	Timeout time.Duration
+
+	// StalenessThreshold overrides the default staleness threshold for
+	// dependency health checks (e.g., "2y", "18m"). If empty, the default
+	// (2 years) is used.
+	StalenessThreshold string
 }
 
 // ScanConfig holds the overall configuration for a scan operation.
