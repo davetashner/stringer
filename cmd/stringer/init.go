@@ -102,9 +102,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		_, _ = fmt.Fprintln(w)
 		_, _ = bold.Fprintln(w, "Next steps:")
 		_, _ = fmt.Fprintln(w, "  1. Review .stringer.yaml and adjust settings")
-		_, _ = fmt.Fprintln(w, "  2. Register MCP server: claude mcp add stringer -- stringer mcp serve")
-		_, _ = fmt.Fprintln(w, "  3. Run: stringer scan .")
-		_, _ = fmt.Fprintln(w, "  4. Import results: stringer scan . | bd import")
+		_, _ = fmt.Fprintln(w, "  2. Run: stringer scan .")
+		_, _ = fmt.Fprintln(w, "  3. Import results: stringer scan . | bd import")
+		_, _ = fmt.Fprintln(w, "  4. (Optional) Register MCP server: claude mcp add stringer -- stringer mcp serve")
 	}
 
 	_, _ = fmt.Fprintln(w)

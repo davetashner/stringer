@@ -91,7 +91,7 @@ func TestGenerateConfig_AllCollectorsPresent(t *testing.T) {
 	require.NoError(t, err)
 	content := string(data)
 
-	for _, collector := range []string{"todos", "gitlog", "patterns", "lotteryrisk", "github"} {
+	for _, collector := range []string{"todos", "gitlog", "patterns", "lotteryrisk", "github", "dephealth"} {
 		assert.Contains(t, content, collector+":", "config should contain %s collector", collector)
 	}
 }
@@ -109,8 +109,8 @@ func TestGenerateConfig_ValidYAMLRoundTrip(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal(data, &cfg))
 
 	// Verify all collectors are configured.
-	assert.Len(t, cfg.Collectors, 5)
-	for _, name := range []string{"todos", "gitlog", "patterns", "lotteryrisk", "github"} {
+	assert.Len(t, cfg.Collectors, 6)
+	for _, name := range []string{"todos", "gitlog", "patterns", "lotteryrisk", "github", "dephealth"} {
 		cc, ok := cfg.Collectors[name]
 		require.True(t, ok, "collector %s should be in config", name)
 		require.NotNil(t, cc.Enabled, "collector %s should have enabled field", name)

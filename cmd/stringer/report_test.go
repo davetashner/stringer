@@ -167,7 +167,7 @@ func TestReportCmd_Help(t *testing.T) {
 	require.NoError(t, err)
 
 	out := stdout.String()
-	assert.Contains(t, out, "health report")
+	assert.Contains(t, out, "health dashboard")
 	assert.Contains(t, out, "--output")
 	assert.Contains(t, out, "--collectors")
 }
