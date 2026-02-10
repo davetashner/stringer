@@ -81,35 +81,111 @@ func init() {
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
-	// 1. Parse path argument.
+	// 1. Resolve scan path and find git root.
 	repoPath := "."
 	if len(args) > 0 {
 		repoPath = args[0]
 	}
-
-	absPath, err := cmdFS.Abs(repoPath)
+	absPath, gitRoot, err := resolveScanPath(repoPath)
 	if err != nil {
-		return exitError(ExitInvalidArgs, "stringer: cannot resolve path %q (%v)", repoPath, err)
+		return err
 	}
 
-	// Resolve symlinks to prevent path traversal outside the intended tree.
+	// 2. Load config, merge CLI flags, validate.
+	scanCfg, fileCfg, err := loadScanConfig(cmd, absPath, gitRoot)
+	if err != nil {
+		return err
+	}
+
+	// 3. Create pipeline.
+	p, err := pipeline.New(scanCfg)
+	if err != nil {
+		available := collector.List()
+		sort.Strings(available)
+		return exitError(ExitInvalidArgs, "stringer: %v (available: %s)", err, strings.Join(available, ", "))
+	}
+
+	// 4. Run pipeline.
+	collectorNames := scanCfg.Collectors
+	if len(collectorNames) == 0 {
+		collectorNames = collector.List()
+		sort.Strings(collectorNames)
+	}
+	slog.Info("scanning", "collectors", len(collectorNames))
+
+	result, err := p.Run(cmd.Context())
+	if err != nil {
+		return exitError(ExitTotalFailure, "stringer: scan failed (%v)", err)
+	}
+
+	for _, cr := range result.Results {
+		if cr.Err != nil {
+			slog.Error("collector failed", "name", cr.Collector, "error", cr.Err, "duration", cr.Duration)
+		} else {
+			slog.Info("collector complete", "name", cr.Collector, "signals", len(cr.Signals), "duration", cr.Duration)
+		}
+	}
+
+	// 5. Filter results (delta, beads dedup, confidence, kind).
+	allSignals := result.Signals // keep full list for state saving
+	if err := filterScanResults(cmd, result, absPath, fileCfg, scanCfg, collectorNames, allSignals); err != nil {
+		return err
+	}
+
+	// 6. Determine exit code based on collector results.
+	exitCode := computeExitCode(result, scanStrict)
+
+	// 7. Handle dry-run.
+	if scanDryRun {
+		return printDryRun(cmd, result, exitCode)
+	}
+
+	// 8. Write formatted output.
+	if err := writeScanOutput(cmd, result, scanCfg); err != nil {
+		return err
+	}
+
+	// 9. Save delta state from ALL signals (pre-filter), not just new ones.
+	if scanDelta {
+		newState := state.Build(absPath, collectorNames, allSignals)
+		if err := state.Save(absPath, newState); err != nil {
+			return exitError(ExitTotalFailure, "stringer: failed to save delta state (%v)", err)
+		}
+		slog.Info("delta state saved", "hashes", newState.SignalCount)
+	}
+
+	if exitCode != ExitOK {
+		return exitError(exitCode, "")
+	}
+	return nil
+}
+
+// resolveScanPath resolves the given path argument into an absolute path and
+// finds the nearest git root by walking up the directory tree. For non-git
+// directories, gitRoot equals absPath.
+func resolveScanPath(repoPath string) (absPath, gitRoot string, err error) {
+	absPath, err = cmdFS.Abs(repoPath)
+	if err != nil {
+		return "", "", exitError(ExitInvalidArgs, "stringer: cannot resolve path %q (%v)", repoPath, err)
+	}
+
 	absPath, err = cmdFS.EvalSymlinks(absPath)
 	if err != nil {
-		return exitError(ExitInvalidArgs, "stringer: cannot resolve path %q (%v)", repoPath, err)
+		return "", "", exitError(ExitInvalidArgs, "stringer: cannot resolve path %q (%v)", repoPath, err)
 	}
 
 	info, err := cmdFS.Stat(absPath)
 	if err != nil {
-		return exitError(ExitInvalidArgs, "stringer: path %q does not exist (check the path and try again)", repoPath)
+		return "", "", exitError(ExitInvalidArgs, "stringer: path %q does not exist (check the path and try again)", repoPath)
 	}
 	if !info.IsDir() {
-		return exitError(ExitInvalidArgs, "stringer: %q is not a directory (provide a repository root)", repoPath)
+		return "", "", exitError(ExitInvalidArgs, "stringer: %q is not a directory (provide a repository root)", repoPath)
 	}
 
 	// Walk up to find .git root for subdirectory scans.
-	gitRoot := absPath
+	gitRoot = absPath
 	for {
-		if _, err := cmdFS.Stat(filepath.Join(gitRoot, ".git")); err == nil {
+		if _, statErr := cmdFS.Stat(filepath.Join(gitRoot, ".git")); statErr == nil {
 			break
 		}
 		parent := filepath.Dir(gitRoot)
@@ -121,7 +197,15 @@ func runScan(cmd *cobra.Command, args []string) error {
 		gitRoot = parent
 	}
 
-	// 2. Parse collectors flag.
+	return absPath, gitRoot, nil
+}
+
+// loadScanConfig builds the merged ScanConfig from CLI flags and file config.
+// It parses the collectors flag, loads the config file, merges them, sets the
+// git root for subdirectory scans, applies defaults, validates the output
+// format, and wires CLI flag overrides into per-collector options.
+func loadScanConfig(cmd *cobra.Command, absPath, gitRoot string) (signal.ScanConfig, *config.Config, error) {
+	// Parse collectors flag.
 	var collectors []string
 	if scanCollectors != "" {
 		collectors = strings.Split(scanCollectors, ",")
@@ -129,20 +213,18 @@ func runScan(cmd *cobra.Command, args []string) error {
 			collectors[i] = strings.TrimSpace(collectors[i])
 		}
 	}
-
-	// 2b. Apply --exclude-collectors.
 	collectors = applyCollectorExclusions(collectors, scanExcludeCollectors)
 
-	// 3. Load config file.
+	// Load config file.
 	fileCfg, err := config.Load(absPath)
 	if err != nil {
-		return exitError(ExitInvalidArgs, "stringer: failed to load %s (%v)", config.FileName, err)
+		return signal.ScanConfig{}, nil, exitError(ExitInvalidArgs, "stringer: failed to load %s (%v)", config.FileName, err)
 	}
 	if err := config.Validate(fileCfg); err != nil {
-		return exitError(ExitInvalidArgs, "stringer: %v", err)
+		return signal.ScanConfig{}, nil, exitError(ExitInvalidArgs, "stringer: %v", err)
 	}
 
-	// 4. Build CLI scan config (only set OutputFormat if explicitly passed).
+	// Build CLI scan config (only set OutputFormat if explicitly passed).
 	cliFormat := ""
 	if cmd.Flags().Changed("format") {
 		cliFormat = scanFormat
@@ -156,7 +238,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		MaxIssues:       scanMaxIssues,
 	}
 
-	// 5. Merge file config into CLI config.
+	// Merge file config into CLI config.
 	scanCfg = config.Merge(fileCfg, scanCfg)
 
 	// Set GitRoot on all collector opts so collectors can open the git repo
@@ -179,12 +261,9 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	// Filter disabled collectors from file config.
 	if len(fileCfg.Collectors) > 0 && len(scanCfg.Collectors) == 0 {
-		// No CLI collector filter — apply enabled/disabled from file config.
 		for name, cc := range fileCfg.Collectors {
 			if cc.Enabled != nil && !*cc.Enabled {
-				// Ensure this collector is excluded.
 				if scanCfg.Collectors == nil {
-					// Build explicit list from all registered minus disabled.
 					all := collector.List()
 					for _, c := range all {
 						if fc, ok := fileCfg.Collectors[c]; ok && fc.Enabled != nil && !*fc.Enabled {
@@ -201,7 +280,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	// Validate format after merge.
 	if _, err := output.GetFormatter(scanCfg.OutputFormat); err != nil {
-		return exitError(ExitInvalidArgs, "stringer: %v", err)
+		return signal.ScanConfig{}, nil, exitError(ExitInvalidArgs, "stringer: %v", err)
 	}
 
 	// Apply CLI flag overrides to per-collector options.
@@ -217,40 +296,23 @@ func runScan(cmd *cobra.Command, args []string) error {
 		HistoryDepth:     scanHistoryDepth,
 	})
 
-	// 6. Create pipeline.
-	p, err := pipeline.New(scanCfg)
-	if err != nil {
-		// Provide helpful error for unknown collectors.
-		available := collector.List()
-		sort.Strings(available)
-		return exitError(ExitInvalidArgs, "stringer: %v (available: %s)", err, strings.Join(available, ", "))
-	}
+	return scanCfg, fileCfg, nil
+}
 
-	// 7. Progress: announce scan.
-	collectorNames := scanCfg.Collectors
-	if len(collectorNames) == 0 {
-		collectorNames = collector.List()
-		sort.Strings(collectorNames)
-	}
-	slog.Info("scanning", "collectors", len(collectorNames))
-
-	// 8. Run pipeline.
-	result, err := p.Run(cmd.Context())
-	if err != nil {
-		return exitError(ExitTotalFailure, "stringer: scan failed (%v)", err)
-	}
-
-	// 9. Report per-collector progress.
-	for _, cr := range result.Results {
-		if cr.Err != nil {
-			slog.Error("collector failed", "name", cr.Collector, "error", cr.Err, "duration", cr.Duration)
-		} else {
-			slog.Info("collector complete", "name", cr.Collector, "signals", len(cr.Signals), "duration", cr.Duration)
-		}
-	}
-
-	// 10. Delta filtering: load previous state, filter to new signals.
-	allSignals := result.Signals // keep full list for state saving
+// filterScanResults applies post-pipeline filters to the scan result: delta
+// filtering, beads-aware dedup, confidence threshold, and kind filter. It
+// mutates result.Signals in place. allSignals is the unfiltered signal list
+// used for delta diff computation.
+func filterScanResults(
+	cmd *cobra.Command,
+	result *signal.ScanResult,
+	absPath string,
+	fileCfg *config.Config,
+	scanCfg signal.ScanConfig,
+	collectorNames []string,
+	allSignals []signal.RawSignal,
+) error {
+	// Delta filtering: load previous state, filter to new signals.
 	if scanDelta {
 		prevState, err := state.Load(absPath)
 		if err != nil {
@@ -264,7 +326,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		slog.Info("delta filter", "total", len(allSignals), "new", len(newSignals))
 		result.Signals = newSignals
 
-		// 10.5a. Compute and display diff summary to stderr.
+		// Compute and display diff summary to stderr.
 		if prevState != nil {
 			currentState := state.Build(absPath, collectorNames, allSignals)
 			diff := state.ComputeDiff(prevState, currentState)
@@ -281,7 +343,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 10.5. Beads-aware dedup: filter signals already tracked as beads.
+	// Beads-aware dedup: filter signals already tracked as beads.
 	beadsAwareEnabled := fileCfg.BeadsAware == nil || *fileCfg.BeadsAware
 	if beadsAwareEnabled {
 		existingBeads, beadsErr := beads.LoadBeads(absPath)
@@ -306,7 +368,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 10.6. Post-pipeline confidence filter.
+	// Post-pipeline confidence filter.
 	if scanMinConfidence > 0 {
 		var filtered []signal.RawSignal
 		for _, sig := range result.Signals {
@@ -318,7 +380,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		result.Signals = filtered
 	}
 
-	// 10.7. Post-pipeline kind filter.
+	// Post-pipeline kind filter.
 	if scanKind != "" {
 		kinds := make(map[string]bool)
 		for _, k := range strings.Split(scanKind, ",") {
@@ -334,16 +396,13 @@ func runScan(cmd *cobra.Command, args []string) error {
 		result.Signals = filtered
 	}
 
-	// 11. Determine exit code based on collector results.
-	exitCode := computeExitCode(result, scanStrict)
+	return nil
+}
 
-	// 12. Handle dry-run.
-	if scanDryRun {
-		return printDryRun(cmd, result, exitCode)
-	}
-
-	// 13. Format and write output.
-	formatter, _ := output.GetFormatter(scanCfg.OutputFormat) // already validated above
+// writeScanOutput selects the formatter and writes the scan result to the
+// configured output destination (file or stdout).
+func writeScanOutput(cmd *cobra.Command, result *signal.ScanResult, scanCfg signal.ScanConfig) error {
+	formatter, _ := output.GetFormatter(scanCfg.OutputFormat) // already validated in loadScanConfig
 
 	w := cmd.OutOrStdout()
 	if scanOutput != "" {
@@ -360,19 +419,6 @@ func runScan(cmd *cobra.Command, args []string) error {
 	}
 
 	slog.Info("scan complete", "issues", len(result.Signals), "duration", result.Duration)
-
-	// 14. Save delta state from ALL signals (pre-filter), not just new ones.
-	if scanDelta {
-		newState := state.Build(absPath, collectorNames, allSignals)
-		if err := state.Save(absPath, newState); err != nil {
-			return exitError(ExitTotalFailure, "stringer: failed to save delta state (%v)", err)
-		}
-		slog.Info("delta state saved", "hashes", newState.SignalCount)
-	}
-
-	if exitCode != ExitOK {
-		return exitError(exitCode, "")
-	}
 	return nil
 }
 
