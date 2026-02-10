@@ -13,7 +13,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 
-> **Status: v0.5.1.** Five collectors, four output formats, report command with health analysis, parallel pipeline with signal deduplication, delta scanning, per-collector timeouts, beads-aware dedup, MCP server for agent integration, and `stringer init` for easy setup. See [Current Limitations](#current-limitations) for what's not here yet.
+> **Status: v0.6.0.** Seven collectors, four output formats, report command with health analysis, parallel pipeline with signal deduplication, delta scanning, per-collector timeouts, beads-aware dedup, MCP server for agent integration, and `stringer init` for easy setup. See [Current Limitations](#current-limitations) for what's not here yet.
 
 **Codebase archaeology for [Beads](https://github.com/steveyegge/beads).** Mine your repo for actionable work items, output them as Beads-formatted issues, and give your AI agents instant situational awareness.
 
@@ -57,6 +57,8 @@ Stringer solves the cold-start problem. It mines signals already present in your
 - **Patterns collector** (`patterns`) — Flags large files and modules with low test coverage ratios.
 - **Lottery risk analyzer** (`lotteryrisk`) — Flags directories with low lottery risk (single-author ownership risk) using git blame and commit history with recency weighting.
 - **GitHub collector** (`github`) — Imports open issues, pull requests, and actionable review comments from GitHub. With `--include-closed`, also generates pre-closed beads from merged PRs and closed issues with architectural module context. Requires `GITHUB_TOKEN` env var.
+- **Dependency health collector** (`dephealth`) — Detects archived, deprecated, and stale Go module dependencies using GitHub API and Go module proxy.
+- **Vulnerability scanner** (`vuln`) — Detects known CVEs in Go module dependencies via govulncheck. Graceful degradation when govulncheck is unavailable.
 
 ### Output Formats
 
@@ -76,17 +78,17 @@ Stringer solves the cold-start problem. It mines signals already present in your
 - **Dry-run mode** — Preview signal counts without producing output
 
 ```
- ┌────────────────────────────────────────────────────┐
- │                 Target Repository                  │
- └─────────────────────────┬──────────────────────────┘
-                           │
-     ┌──────────┬──────────┼──────────┬──────────┐
-     ▼          ▼          ▼          ▼          ▼
- ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
- │ TODOs  │ │ GitLog │ │Patterns│ │Lottery │ │ GitHub │  (parallel)
- │        │ │        │ │        │ │  Risk  │ │        │
- └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘
-     └──────────┴──────────┼──────────┴──────────┘
+ ┌────────────────────────────────────────────────────────────────────┐
+ │                         Target Repository                         │
+ └───────────────────────────────┬───────────────────────────────────┘
+                                 │
+     ┌──────────┬──────────┬─────┴─────┬──────────┬──────────┬──────────┐
+     ▼          ▼          ▼           ▼          ▼          ▼          ▼
+ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
+ │ TODOs  │ │ GitLog │ │Patterns│ │Lottery │ │ GitHub │ │  Dep   │ │  Vuln  │ (parallel)
+ │        │ │        │ │        │ │  Risk  │ │        │ │ Health │ │        │
+ └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘ └───┬────┘
+     └──────────┴──────────┴─────┬────┴──────────┴──────────┴──────────┘
                            ▼
                     ┌────────────┐
                     │  Dedup +   │
@@ -200,7 +202,7 @@ stringer scan [path] [flags]
 
 **Global flags:** `--quiet` (`-q`), `--verbose` (`-v`), `--no-color`, `--help` (`-h`)
 
-**Available collectors:** `todos`, `gitlog`, `patterns`, `lotteryrisk`, `github`
+**Available collectors:** `todos`, `gitlog`, `patterns`, `lotteryrisk`, `github`, `dephealth`, `vuln`
 
 **Available formats:** `beads`, `json`, `markdown`, `tasks`
 
@@ -423,7 +425,7 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 ## Current Limitations
 
 - **No LLM clustering.** The `--no-llm` flag exists but is a noop. There is no LLM pass to cluster related signals or infer dependencies.
-- **No dependency health scanning.** No detection of archived, deprecated, or vulnerable dependencies (planned as C6/C7 collectors).
+- **Go-only dependency scanning.** Dependency health and vulnerability scanning currently support Go modules only.
 - **No global config.** Per-repo `.stringer.yaml` is supported, but there is no global `~/.stringer.yaml`.
 - **Line-sensitive hashing.** Moving a TODO to a different line changes its ID, which means `bd import` sees it as a new issue. Delta scanning (`--delta`) detects moved signals but doesn't update beads IDs.
 - **No monorepo support.** Scanning targets a single repository root. Per-workspace scanning is planned.
@@ -432,8 +434,7 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 
 Planned for future releases:
 
-- **Dependency health collector** — Detect archived, deprecated, and unmaintained Go module dependencies
-- **Vulnerability scanner** — CVE detection via govulncheck integration
+- **Multi-language dependency scanning** — Extend dependency health and vulnerability scanning beyond Go modules
 - **LLM clustering pass** — Group related signals, infer dependencies, prioritize
 - **Monorepo support** — Per-workspace scanning and scoped output
 

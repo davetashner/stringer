@@ -39,6 +39,8 @@ stringer/
 │   │   ├── patterns.go         # Large files, low test coverage ratios
 │   │   ├── lotteryrisk.go      # Lottery risk analysis (ownership risk per directory)
 │   │   ├── github.go           # GitHub issues, PRs, and review comments
+│   │   ├── dephealth.go        # Dependency health (archived, stale, deprecated)
+│   │   ├── vuln.go             # Vulnerability scanner (govulncheck integration)
 │   │   └── duration.go         # Duration parsing helpers
 │   ├── config/             # .stringer.yaml config file support
 │   │   ├── config.go           # Config and CollectorConfig structs
