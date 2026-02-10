@@ -126,6 +126,11 @@ func handleScan(ctx context.Context, _ *mcp.CallToolRequest, input ScanInput) (*
 		return nil, nil, fmt.Errorf("unsupported format %q", format)
 	}
 
+	// Validate confidence bounds.
+	if input.MinConfidence < 0 || input.MinConfidence > 1 {
+		return nil, nil, fmt.Errorf("min_confidence must be between 0.0 and 1.0, got %g", input.MinConfidence)
+	}
+
 	// Load and merge config.
 	fileCfg, err := config.Load(pathInfo.AbsPath)
 	if err != nil {

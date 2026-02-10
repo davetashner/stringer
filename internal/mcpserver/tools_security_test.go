@@ -232,6 +232,41 @@ func TestHandleScan_SecurityUnicodeCollectorNames(t *testing.T) {
 	}
 }
 
+func TestHandleScan_SecurityMinConfidenceBounds(t *testing.T) {
+	dir := initTestRepo(t)
+
+	tests := []struct {
+		name          string
+		minConfidence float64
+		wantErr       bool
+	}{
+		{"valid zero", 0.0, false},
+		{"valid mid", 0.5, false},
+		{"valid one", 1.0, false},
+		{"negative", -0.1, true},
+		{"above one", 1.5, true},
+		{"large negative", -100, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			input := ScanInput{
+				Path:          dir,
+				Collectors:    "todos",
+				MinConfidence: tt.minConfidence,
+			}
+
+			_, _, err := handleScan(context.Background(), nil, input)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "min_confidence")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestHandleScan_SecurityKindFilterEdgeCases(t *testing.T) {
 	dir := initTestRepo(t)
 
