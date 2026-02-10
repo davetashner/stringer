@@ -151,10 +151,22 @@ func buildLotteryRiskSignal(own *dirOwnership, anon *nameAnonymizer) signal.RawS
 		Kind:        "low-lottery-risk",
 		FilePath:    own.Path,
 		Line:        0,
-		Title:       fmt.Sprintf("Low lottery risk: %s (lottery risk %d, primary: %s %.0f%%)", own.Path, own.LotteryRisk, primary.Name, primary.Pct),
+		Title:       fmt.Sprintf("%s: %s (lottery risk %d, primary: %s %.0f%%)", lotteryRiskLabel(own.LotteryRisk), own.Path, own.LotteryRisk, primary.Name, primary.Pct),
 		Description: strings.Join(descParts, "\n"),
 		Confidence:  confidence,
 		Tags:        []string{"low-lottery-risk"},
+	}
+}
+
+// lotteryRiskLabel returns a human-readable severity label for a lottery risk score.
+func lotteryRiskLabel(riskScore int) string {
+	switch {
+	case riskScore <= 1:
+		return "Critical lottery risk"
+	case riskScore == 2:
+		return "High lottery risk"
+	default:
+		return "Moderate lottery risk"
 	}
 }
 

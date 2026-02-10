@@ -91,6 +91,11 @@ func runScan(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if scanMinConfidence < 0 || scanMinConfidence > 1.0 {
+		return exitError(ExitInvalidArgs,
+			"stringer: --min-confidence must be between 0.0 and 1.0 (got %.2f)", scanMinConfidence)
+	}
+
 	// 2. Load config, merge CLI flags, validate.
 	scanCfg, fileCfg, err := loadScanConfig(cmd, absPath, gitRoot)
 	if err != nil {
@@ -123,6 +128,22 @@ func runScan(cmd *cobra.Command, args []string) error {
 			slog.Error("collector failed", "name", cr.Collector, "error", cr.Err, "duration", cr.Duration)
 		} else {
 			slog.Info("collector complete", "name", cr.Collector, "signals", len(cr.Signals), "duration", cr.Duration)
+		}
+	}
+
+	// Warn when an explicitly requested collector produced no signals and no error.
+	if scanCollectors != "" {
+		resultByName := make(map[string]bool)
+		for _, cr := range result.Results {
+			if cr.Err == nil && len(cr.Signals) > 0 {
+				resultByName[cr.Collector] = true
+			}
+		}
+		for _, name := range strings.Split(scanCollectors, ",") {
+			name = strings.TrimSpace(name)
+			if name != "" && !resultByName[name] {
+				slog.Warn("requested collector produced no signals", "name", name)
+			}
 		}
 	}
 

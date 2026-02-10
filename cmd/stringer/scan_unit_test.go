@@ -963,6 +963,31 @@ func TestRunScan_MinConfidenceFilter(t *testing.T) {
 	assert.Contains(t, out, "signal(s) found")
 }
 
+func TestRunScan_MinConfidenceTooHigh(t *testing.T) {
+	resetScanFlags()
+	dir := fixtureDir(t)
+	cmd, _, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--min-confidence=1.5"})
+	err := cmd.Execute()
+	require.Error(t, err)
+	var ece *exitCodeError
+	require.True(t, errors.As(err, &ece))
+	assert.Equal(t, ExitInvalidArgs, ece.ExitCode())
+	assert.Contains(t, ece.Error(), "--min-confidence must be between 0.0 and 1.0")
+}
+
+func TestRunScan_MinConfidenceNegative(t *testing.T) {
+	resetScanFlags()
+	dir := fixtureDir(t)
+	cmd, _, _ := newTestCmd()
+	cmd.SetArgs([]string{"scan", dir, "--min-confidence=-0.5"})
+	err := cmd.Execute()
+	require.Error(t, err)
+	var ece *exitCodeError
+	require.True(t, errors.As(err, &ece))
+	assert.Equal(t, ExitInvalidArgs, ece.ExitCode())
+}
+
 // -----------------------------------------------------------------------
 // --kind flag tests
 // -----------------------------------------------------------------------
