@@ -36,6 +36,25 @@ go test -race ./...
 golangci-lint run ./...
 ```
 
+## Current Focus
+1. **Next feature epic**: C7 Vulnerability Scanner (`stringer-uf1`)
+2. **Quick wins**: P3/P4 unblocked tasks — run `bd ready`
+3. **Blocked chain**: LLM1→LLM2→LLM3→LLM4 (start with `stringer-azr` when ready)
+
+## Post-Release Checklist
+After tagging a release:
+1. Close completed beads: `bd close <id> --reason "Completed in PR #N"`
+2. Close parent epics if all children done: check `bd children <epic-id>`
+3. Catch missed closures: `bd orphans`
+4. Fix stale blockers: `bd blocked` — if all blockers show ✓, remove deps
+5. Update MEMORY.md "What's Next" section
+
+## Task Scoping
+When requesting work, include the full outcome:
+- Release intent: "implement X, then cut vN.M.0"
+- Parallel opportunities: "also fix Y while CI runs on X"
+- Beads IDs for traceability
+
 ## Project Structure
 
 See `AGENTS.md` for full architecture documentation.
