@@ -19,6 +19,6 @@ func FuzzConfigParse(f *testing.F) {
 			return
 		}
 		// Round-trip: if parse succeeded, marshal should not panic.
-		yaml.Marshal(&cfg) //nolint:errcheck // fuzz: testing crash-freedom
+		yaml.Marshal(&cfg) //nolint:errcheck,gosec // fuzz: testing crash-freedom
 	})
 }

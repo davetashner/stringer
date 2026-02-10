@@ -25,7 +25,7 @@ func FuzzBeadParse(f *testing.F) {
 				continue
 			}
 			// Round-trip: if parse succeeded, marshal should not panic.
-			json.Marshal(&b) //nolint:errcheck // fuzz: testing crash-freedom
+			json.Marshal(&b) //nolint:errcheck,gosec // fuzz: testing crash-freedom
 		}
 	})
 }

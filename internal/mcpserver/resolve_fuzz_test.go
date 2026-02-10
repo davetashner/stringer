@@ -12,6 +12,6 @@ func FuzzResolvePath(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, input string) {
 		// ResolvePath should never panic on any input.
-		ResolvePath(input) //nolint:errcheck // fuzz: testing crash-freedom
+		ResolvePath(input) //nolint:errcheck,gosec // fuzz: testing crash-freedom
 	})
 }
