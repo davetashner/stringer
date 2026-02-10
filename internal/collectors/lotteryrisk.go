@@ -471,6 +471,20 @@ func recencyDecay(daysOld float64) float64 {
 	return math.Exp(-math.Ln2 / float64(decayHalfLifeDays) * daysOld)
 }
 
+// ownershipFraction computes a weighted ownership score from blame-line and
+// commit-weight contributions. Returns a value in [0, 1].
+func ownershipFraction(blameLines, totalBlameLines int, commitWeight, totalCommitWeight float64) float64 {
+	var blameFrac float64
+	if totalBlameLines > 0 {
+		blameFrac = float64(blameLines) / float64(totalBlameLines)
+	}
+	var commitFrac float64
+	if totalCommitWeight > 0 {
+		commitFrac = commitWeight / totalCommitWeight
+	}
+	return blameFrac*blameWeight + commitFrac*commitWeightFraction
+}
+
 // computeLotteryRisk calculates the lottery risk for a directory: the minimum
 // number of authors whose combined ownership exceeds 50%.
 func computeLotteryRisk(own *dirOwnership) int {
@@ -489,17 +503,7 @@ func computeLotteryRisk(own *dirOwnership) int {
 
 	var authors []authorOwnership
 	for name, stats := range own.Authors {
-		var blameFrac float64
-		if totalBlameLines > 0 {
-			blameFrac = float64(stats.BlameLines) / float64(totalBlameLines)
-		}
-
-		var commitFrac float64
-		if totalCW > 0 {
-			commitFrac = stats.CommitWeight / totalCW
-		}
-
-		ownership := blameFrac*blameWeight + commitFrac*commitWeightFraction
+		ownership := ownershipFraction(stats.BlameLines, totalBlameLines, stats.CommitWeight, totalCW)
 		authors = append(authors, authorOwnership{Name: name, Ownership: ownership})
 	}
 
@@ -540,15 +544,7 @@ func buildDirectoryOwnership(own *dirOwnership) DirectoryOwnership {
 
 	var authors []AuthorShare
 	for name, stats := range own.Authors {
-		var blameFrac float64
-		if totalBlameLines > 0 {
-			blameFrac = float64(stats.BlameLines) / float64(totalBlameLines)
-		}
-		var commitFrac float64
-		if totalCW > 0 {
-			commitFrac = stats.CommitWeight / totalCW
-		}
-		ownership := blameFrac*blameWeight + commitFrac*commitWeightFraction
+		ownership := ownershipFraction(stats.BlameLines, totalBlameLines, stats.CommitWeight, totalCW)
 		authors = append(authors, AuthorShare{Name: name, Ownership: ownership})
 	}
 
@@ -581,15 +577,7 @@ func buildLotteryRiskSignal(own *dirOwnership, anon *nameAnonymizer) signal.RawS
 
 	var authors []authorPct
 	for name, stats := range own.Authors {
-		var blameFrac float64
-		if totalBlameLines > 0 {
-			blameFrac = float64(stats.BlameLines) / float64(totalBlameLines)
-		}
-		var commitFrac float64
-		if totalCW > 0 {
-			commitFrac = stats.CommitWeight / totalCW
-		}
-		pct := (blameFrac*blameWeight + commitFrac*commitWeightFraction) * 100
+		pct := ownershipFraction(stats.BlameLines, totalBlameLines, stats.CommitWeight, totalCW) * 100
 		displayName := name
 		if anon != nil {
 			displayName = anon.anonymize(name)
