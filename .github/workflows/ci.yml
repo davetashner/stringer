@@ -469,6 +469,54 @@ jobs:
 
           echo "Documentation is up to date."
 
+  backlog-health:
+    name: Backlog Health
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+      - name: Check for orphaned issues
+        run: |
+          if ! command -v bd &>/dev/null; then
+            echo "bd not installed, skipping orphan check"
+            exit 0
+          fi
+          output=$(bd orphans --no-db 2>&1) || true
+          if echo "$output" | grep -q "No orphaned"; then
+            echo "✓ No orphaned issues"
+          else
+            echo "::warning::Orphaned beads issues found — close them or remove commit references"
+            echo "$output"
+          fi
+      - name: Check for stale blockers
+        run: |
+          if ! command -v bd &>/dev/null; then
+            echo "bd not installed, skipping stale blocker check"
+            exit 0
+          fi
+          bd list --status open --json --limit 0 --no-db 2>/dev/null | python3 -c "
+          import json, sys
+          issues = json.load(sys.stdin)
+          id_status = {i['id']: i['status'] for i in issues}
+          stale = []
+          for i in issues:
+              deps = [d['depends_on_id'] for d in i.get('dependencies', []) if d.get('type') == 'blocks']
+              if not deps:
+                  continue
+              # Check if ALL blockers are closed (not in open set)
+              open_blockers = [d for d in deps if d in id_status]
+              if not open_blockers and deps:
+                  stale.append(f\"{i['id']}: {i['title']} (blocked by closed: {', '.join(deps)})\")
+          if stale:
+              print('::warning::Stale blockers found:')
+              for s in stale:
+                  print(f'  {s}')
+          else:
+              print('✓ No stale blockers')
+          "
+
   fuzz:
     name: Fuzz
     runs-on: ubuntu-latest
