@@ -88,7 +88,7 @@ func applyFlagOverrides(cfg *signal.ScanConfig, flags flagOverrides) {
 
 	// 5. Progress callback → all collectors.
 	progressFn := func(msg string) {
-		slog.Info(msg)
+		slog.Debug(msg)
 	}
 	for _, name := range collector.List() {
 		co := cfg.CollectorOpts[name]

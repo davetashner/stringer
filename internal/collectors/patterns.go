@@ -215,8 +215,11 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 			dirMap[dir].sourceFiles++
 
 			// C3.2: Missing test detection — only for non-test source files
-			// with meaningful size. Suppressed in demo/example paths by default.
-			if lineCount >= minSourceLinesForTestCheck {
+			// with meaningful size. Suppressed in demo/example paths, test root
+			// dirs, and generated files by default.
+			if lineCount >= minSourceLinesForTestCheck &&
+				!isUnderTestRoot(relPath, c.testRoots) &&
+				!isGeneratedFile(path) {
 				if !hasTestCounterpart(path, relPath, repoPath, c.testRoots) {
 					if opts.IncludeDemoPaths || !isDemoPath(relPath) {
 						signals = append(signals, signal.RawSignal{
@@ -367,8 +370,11 @@ func isTestFile(relPath string) bool {
 			return true
 		}
 	}
-	// Ruby: *_spec.rb, *_test.rb
+	// Ruby: *_spec.rb, *_test.rb, test_*.rb
 	if strings.HasSuffix(base, "_spec.rb") || strings.HasSuffix(base, "_test.rb") {
+		return true
+	}
+	if strings.HasSuffix(base, ".rb") && strings.HasPrefix(base, "test_") {
 		return true
 	}
 	// Java/Kotlin: *Test.java, *Test.kt, *Spec.java, *Spec.kt
@@ -472,6 +478,43 @@ func hasTestCounterpart(absPath, relPath, repoPath string, testRoots []string) b
 		}
 	}
 
+	return false
+}
+
+// isUnderTestRoot returns true if relPath is under one of the parallel test
+// root directories (e.g., "tests/", "test/"). Files in test roots should not
+// be flagged as missing tests.
+func isUnderTestRoot(relPath string, testRoots []string) bool {
+	for _, root := range testRoots {
+		if strings.HasPrefix(relPath, root+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+// isGeneratedFile returns true if the file appears to be machine-generated.
+// Checks for Go stringer output (*_string.go) and files with a "Code generated"
+// header in the first line.
+func isGeneratedFile(path string) bool {
+	base := filepath.Base(path)
+	if strings.HasSuffix(base, "_string.go") {
+		return true
+	}
+
+	f, err := FS.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close() //nolint:errcheck // read-only file
+
+	scanner := bufio.NewScanner(f)
+	if scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, "Code generated") {
+			return true
+		}
+	}
 	return false
 }
 
