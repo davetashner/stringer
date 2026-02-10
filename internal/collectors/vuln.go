@@ -82,7 +82,7 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 
 	results, err := s.Scan(ctx, repoPath)
 	if err != nil {
-		slog.Warn("vuln scan failed, skipping", "error", err)
+		slog.Info("vuln scan unavailable, skipping", "error", err)
 		return nil, nil // C7.3: graceful degradation
 	}
 
