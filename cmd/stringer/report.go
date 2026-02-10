@@ -143,70 +143,15 @@ func runReport(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Apply git-depth and git-since.
-	if reportGitDepth > 0 || reportGitSince != "" {
-		if scanCfg.CollectorOpts == nil {
-			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
-		}
-		for _, name := range []string{"gitlog", "lotteryrisk"} {
-			co := scanCfg.CollectorOpts[name]
-			if reportGitDepth > 0 && co.GitDepth == 0 {
-				co.GitDepth = reportGitDepth
-			}
-			if reportGitSince != "" && co.GitSince == "" {
-				co.GitSince = reportGitSince
-			}
-			scanCfg.CollectorOpts[name] = co
-		}
-	}
-
-	// Apply --anonymize to the lotteryrisk collector.
-	if cmd.Flags().Changed("anonymize") {
-		if scanCfg.CollectorOpts == nil {
-			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
-		}
-		co := scanCfg.CollectorOpts["lotteryrisk"]
-		co.Anonymize = reportAnonymize
-		scanCfg.CollectorOpts["lotteryrisk"] = co
-	}
-
-	// Wire progress callback.
-	progressFn := func(msg string) {
-		slog.Info(msg)
-	}
-	if scanCfg.CollectorOpts == nil {
-		scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
-	}
-	for _, name := range collector.List() {
-		co := scanCfg.CollectorOpts[name]
-		co.ProgressFunc = progressFn
-		scanCfg.CollectorOpts[name] = co
-	}
-
-	// Apply --collector-timeout as global default for collectors without a per-collector timeout.
-	if reportCollectorTimeout != "" {
-		if d, err := time.ParseDuration(reportCollectorTimeout); err == nil && d > 0 {
-			for _, name := range collector.List() {
-				co := scanCfg.CollectorOpts[name]
-				if co.Timeout == 0 {
-					co.Timeout = d
-				}
-				scanCfg.CollectorOpts[name] = co
-			}
-		}
-	}
-
-	// Apply --paths as IncludePatterns for file-scoped scanning.
-	if len(reportPaths) > 0 {
-		if scanCfg.CollectorOpts == nil {
-			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
-		}
-		for _, name := range collector.List() {
-			co := scanCfg.CollectorOpts[name]
-			co.IncludePatterns = append(co.IncludePatterns, reportPaths...)
-			scanCfg.CollectorOpts[name] = co
-		}
-	}
+	// Apply CLI flag overrides to per-collector options.
+	applyFlagOverrides(&scanCfg, flagOverrides{
+		GitDepth:         reportGitDepth,
+		GitSince:         reportGitSince,
+		Anonymize:        reportAnonymize,
+		AnonymizeChanged: cmd.Flags().Changed("anonymize"),
+		CollectorTimeout: reportCollectorTimeout,
+		Paths:            reportPaths,
+	})
 
 	// 6. Create pipeline.
 	p, err := pipeline.New(scanCfg)
