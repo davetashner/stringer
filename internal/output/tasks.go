@@ -141,17 +141,40 @@ func signalToTask(s signal.RawSignal) taskRecord {
 }
 
 // subjectForSignal generates a subject line with kind-based prefix.
+// If the title already starts with the keyword, the prefix is not duplicated.
 func subjectForSignal(s signal.RawSignal) string {
+	var prefix string
 	switch s.Kind {
 	case "todo":
-		return "TODO: " + s.Title
+		prefix = "TODO"
 	case "fixme", "bug":
-		return "BUG: " + s.Title
+		prefix = "BUG"
 	case "hack", "xxx":
-		return "HACK: " + s.Title
+		prefix = "HACK"
 	default:
 		return s.Title
 	}
+	if titleStartsWithKeyword(s.Title, prefix) {
+		return s.Title
+	}
+	return prefix + ": " + s.Title
+}
+
+// titleStartsWithKeyword returns true if title begins with keyword followed by
+// a non-alphanumeric character (e.g. "TODO: fix" matches, "TODOIST" does not).
+func titleStartsWithKeyword(title, keyword string) bool {
+	upper := strings.ToUpper(title)
+	kw := strings.ToUpper(keyword)
+	if !strings.HasPrefix(upper, kw) {
+		return false
+	}
+	if len(title) == len(keyword) {
+		return true // exact match
+	}
+	next := title[len(keyword)]
+	// Word boundary: not a letter or digit.
+	isAlnum := (next >= 'A' && next <= 'Z') || (next >= 'a' && next <= 'z') || (next >= '0' && next <= '9')
+	return !isAlnum
 }
 
 // activeFormForSignal generates a present-continuous spinner label.

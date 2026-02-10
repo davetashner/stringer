@@ -874,6 +874,7 @@ func TestBuildLotteryRiskSignal_WithAnonymizer(t *testing.T) {
 	sig := buildLotteryRiskSignal(own, anon)
 	assert.Contains(t, sig.Title, "Contributor A")
 	assert.NotContains(t, sig.Title, "Alice")
+	assert.Contains(t, sig.Title, "Critical lottery risk")
 }
 
 func TestBuildLotteryRiskSignal_WithoutAnonymizer(t *testing.T) {
@@ -889,6 +890,25 @@ func TestBuildLotteryRiskSignal_WithoutAnonymizer(t *testing.T) {
 	sig := buildLotteryRiskSignal(own, nil)
 	assert.Contains(t, sig.Title, "Alice")
 	assert.Contains(t, sig.Description, "Alice")
+	assert.Contains(t, sig.Title, "Critical lottery risk")
+}
+
+func TestLotteryRiskLabel(t *testing.T) {
+	tests := []struct {
+		risk int
+		want string
+	}{
+		{0, "Critical lottery risk"},
+		{1, "Critical lottery risk"},
+		{2, "High lottery risk"},
+		{3, "Moderate lottery risk"},
+		{10, "Moderate lottery risk"},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("risk_%d", tt.risk), func(t *testing.T) {
+			assert.Equal(t, tt.want, lotteryRiskLabel(tt.risk))
+		})
+	}
 }
 
 func TestBuildReviewConcentrationSignals_WithAnonymizer(t *testing.T) {

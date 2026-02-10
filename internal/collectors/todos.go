@@ -58,6 +58,10 @@ var defaultExcludePatterns = []string{
 	"node_modules/**",
 	".git/**",
 	"testdata/**",
+	"CHANGELOG*",
+	"CHANGES*",
+	"HISTORY*",
+	"NEWS*",
 }
 
 // defaultDemoPatterns are directory globs for demo/example/tutorial paths.

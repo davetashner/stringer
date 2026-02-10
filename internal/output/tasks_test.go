@@ -61,22 +61,29 @@ func TestTasksFormatter_EmptySignals(t *testing.T) {
 
 func TestTasksFormatter_SubjectPrefixing(t *testing.T) {
 	tests := []struct {
+		name  string
 		kind  string
 		title string
 		want  string
 	}{
-		{"todo", "fix parser", "TODO: fix parser"},
-		{"fixme", "broken auth", "BUG: broken auth"},
-		{"bug", "null pointer", "BUG: null pointer"},
-		{"hack", "temp workaround", "HACK: temp workaround"},
-		{"xxx", "needs rewrite", "HACK: needs rewrite"},
-		{"churn", "high churn in main.go", "high churn in main.go"},
-		{"large_file", "config.json is 5MB", "config.json is 5MB"},
-		{"revert", "reverted commit abc", "reverted commit abc"},
+		{"todo_no_prefix", "todo", "fix parser", "TODO: fix parser"},
+		{"fixme_no_prefix", "fixme", "broken auth", "BUG: broken auth"},
+		{"bug_no_prefix", "bug", "null pointer", "BUG: null pointer"},
+		{"hack_no_prefix", "hack", "temp workaround", "HACK: temp workaround"},
+		{"xxx_no_prefix", "xxx", "needs rewrite", "HACK: needs rewrite"},
+		{"churn", "churn", "high churn in main.go", "high churn in main.go"},
+		{"large_file", "large_file", "config.json is 5MB", "config.json is 5MB"},
+		{"revert", "revert", "reverted commit abc", "reverted commit abc"},
+		// Dedup: title already starts with keyword — no double prefix.
+		{"todo_already_prefixed", "todo", "TODO: fix parser", "TODO: fix parser"},
+		{"bug_already_prefixed", "bug", "BUG: null pointer", "BUG: null pointer"},
+		{"hack_already_prefixed", "hack", "HACK: temp workaround", "HACK: temp workaround"},
+		// Word-boundary: "TODOIST" should NOT be treated as having TODO prefix.
+		{"todo_false_positive", "todo", "TODOIST integration broken", "TODO: TODOIST integration broken"},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.kind, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			s := signal.RawSignal{Kind: tt.kind, Title: tt.title}
 			got := subjectForSignal(s)
 			assert.Equal(t, tt.want, got)
