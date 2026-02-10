@@ -2,6 +2,35 @@
 
 Stringer exposes its tools via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/), allowing AI agents to call scan, report, context, and docs directly.
 
+## How It Works
+
+MCP is a standard for AI agents to discover and call tools. It defines how an agent asks "what can you do?" and "do this thing" — the agent sends JSON requests, the tool sends JSON responses, over a simple communication channel.
+
+### Where the server runs
+
+`stringer mcp serve` runs **on your machine, as a subprocess of the agent**. When you register stringer with Claude Code (`claude mcp add stringer -- stringer mcp serve`), you're telling Claude Code: "when you need stringer, launch this command and talk to it over stdin/stdout."
+
+The flow:
+
+1. You start Claude Code in a repo
+2. Claude Code sees stringer is registered as an MCP server
+3. When it decides it needs repo context, it spawns `stringer mcp serve` as a child process
+4. It sends JSON-RPC messages over stdin ("call the scan tool with these params")
+5. Stringer responds with results on stdout
+6. Claude Code reads the results and uses them in its reasoning
+
+The server lives only as long as the agent session needs it. It's not a daemon, not a web server, not listening on a port — just a process that reads stdin and writes stdout.
+
+### What `.mcp.json` does
+
+The `.mcp.json` file in a repo root tells MCP-aware agents which servers are available for that project. It's a per-repo tool registry. When `stringer init` detects a `.claude/` directory, it writes this file automatically.
+
+This means anyone who clones the repo and has stringer installed gets automatic tool access — no manual `claude mcp add` needed.
+
+### Why this matters
+
+Without MCP, an agent has to shell out to `stringer scan .`, parse the text output, and hope it got the flags right. With MCP, the agent sees structured tool definitions with typed parameters and gets structured JSON back. It can call `scan`, `report`, `context`, or `docs` with exactly the parameters it needs, and the results come back ready to use — no parsing, no guessing.
+
 ## Prerequisites
 
 - **stringer** installed and on your `PATH` (`brew install davetashner/tap/stringer` or `go install`)
