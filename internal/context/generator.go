@@ -3,6 +3,7 @@ package context
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/davetashner/stringer/internal/docs"
@@ -118,7 +119,7 @@ func Generate(analysis *docs.RepoAnalysis, history *GitHistory, scanState *state
 		for k := range byKind {
 			kinds = append(kinds, k)
 		}
-		sortStrings(kinds)
+		slices.Sort(kinds)
 
 		g.printf("Found %d signals from last scan:\n\n", scanState.SignalCount)
 		for _, kind := range kinds {
@@ -209,15 +210,6 @@ func formatKindLabel(kind string) string {
 		return "Lottery Risk"
 	default:
 		return strings.ToUpper(kind[:1]) + kind[1:]
-	}
-}
-
-// sortStrings sorts a string slice in place.
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
-		}
 	}
 }
 

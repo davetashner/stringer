@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/davetashner/stringer/internal/signal"
@@ -139,16 +140,7 @@ func extractCollectors(signals []signal.RawSignal) []string {
 	}
 	// Sort for deterministic output.
 	if len(names) > 1 {
-		sortStrings(names)
+		slices.Sort(names)
 	}
 	return names
-}
-
-// sortStrings sorts a string slice in place.
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
-		}
-	}
 }

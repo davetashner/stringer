@@ -231,12 +231,6 @@ func TestLastPathElement(t *testing.T) {
 	assert.Equal(t, "dir", lastPathElement("a/b/dir"))
 }
 
-func TestSortStrings(t *testing.T) {
-	s := []string{"c", "a", "b"}
-	sortStrings(s)
-	assert.Equal(t, []string{"a", "b", "c"}, s)
-}
-
 func TestGenerate_WithMilestones(t *testing.T) {
 	analysis := &docs.RepoAnalysis{
 		Name:     "myproject",
