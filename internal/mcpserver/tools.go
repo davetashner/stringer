@@ -23,7 +23,7 @@ import (
 	"github.com/davetashner/stringer/internal/state"
 )
 
-// ScanInput is the input schema for the scan tool.
+// ScanInput is the input schema for the stringer scan MCP tool.
 type ScanInput struct {
 	Path          string  `json:"path" jsonschema:"Repository path to scan (defaults to current directory)"`
 	Collectors    string  `json:"collectors,omitempty" jsonschema:"Comma-separated list of collectors to run (default: all)"`
@@ -35,7 +35,7 @@ type ScanInput struct {
 	GitSince      string  `json:"git_since,omitempty" jsonschema:"Only examine commits after this duration (e.g. 90d, 6m, 1y)"`
 }
 
-// ReportInput is the input schema for the report tool.
+// ReportInput is the input schema for the stringer report MCP tool.
 type ReportInput struct {
 	Path       string `json:"path" jsonschema:"Repository path to analyze (defaults to current directory)"`
 	Collectors string `json:"collectors,omitempty" jsonschema:"Comma-separated list of collectors to run (default: all)"`
@@ -44,14 +44,14 @@ type ReportInput struct {
 	GitSince   string `json:"git_since,omitempty" jsonschema:"Only examine commits after this duration (e.g. 90d, 6m, 1y)"`
 }
 
-// ContextInput is the input schema for the context tool.
+// ContextInput is the input schema for the stringer context MCP tool.
 type ContextInput struct {
 	Path   string `json:"path" jsonschema:"Repository path to analyze (defaults to current directory)"`
 	Weeks  int    `json:"weeks,omitempty" jsonschema:"Weeks of git history to include (default: 4)"`
 	Format string `json:"format,omitempty" jsonschema:"Output format: json or markdown (default: json)"`
 }
 
-// DocsInput is the input schema for the docs tool.
+// DocsInput is the input schema for the stringer docs MCP tool.
 type DocsInput struct {
 	Path   string `json:"path" jsonschema:"Repository path to analyze (defaults to current directory)"`
 	Update bool   `json:"update,omitempty" jsonschema:"Update existing AGENTS.md preserving manual sections"`
