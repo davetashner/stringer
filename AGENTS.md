@@ -70,6 +70,34 @@ stringer/
 - **Output:** Beads JSONL, JSON, and Markdown formatters
 - **Release:** GoReleaser for cross-platform binaries and Homebrew tap
 
+## MCP Server
+
+Stringer exposes an MCP server for direct AI agent integration. The architecture:
+
+```
+cmd/stringer/mcp.go          # CLI wiring: "stringer mcp serve"
+  └─ internal/mcpserver/
+       ├── server.go          # Server creation and lifecycle
+       └── tools.go           # Tool handlers: scan, report, context, docs
+```
+
+### Tools
+
+| Tool | Handler | Description |
+|------|---------|-------------|
+| `scan` | `handleScan` | Run collectors and return structured signals |
+| `report` | `handleReport` | Generate health report with metrics |
+| `context` | `handleContext` | Generate CONTEXT.md for agent onboarding |
+| `docs` | `handleDocs` | Generate or update AGENTS.md scaffold |
+
+### Registration
+
+```bash
+claude mcp add stringer -- stringer mcp serve
+```
+
+Or use `stringer init .` which auto-generates `.mcp.json` when a `.claude/` directory is detected.
+
 ## Build & Test
 
 ```bash

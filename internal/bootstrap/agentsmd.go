@@ -35,6 +35,14 @@ stringer docs .
 stringer scan . | bd import
 ` + "```" + `
 
+### MCP Server
+
+Stringer exposes tools via MCP for direct agent integration:
+
+` + "```" + `bash
+claude mcp add stringer -- stringer mcp serve
+` + "```" + `
+
 ### Configuration
 
 Edit ` + "`.stringer.yaml`" + ` in the repo root to customize collectors, output

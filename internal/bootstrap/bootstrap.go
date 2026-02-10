@@ -61,5 +61,12 @@ func Run(cfg InitConfig) (*InitResult, error) {
 	}
 	result.Actions = append(result.Actions, agentsAction)
 
+	// 5. Generate .mcp.json for Claude Code integration.
+	mcpAction, err := GenerateMCPConfig(cfg.RepoPath)
+	if err != nil {
+		return nil, err
+	}
+	result.Actions = append(result.Actions, mcpAction)
+
 	return result, nil
 }
