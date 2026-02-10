@@ -11,6 +11,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/davetashner/stringer)](https://goreportcard.com/report/github.com/davetashner/stringer)
 [![Release](https://img.shields.io/github/v/release/davetashner/stringer)](https://github.com/davetashner/stringer/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 
 > **Status: v0.5.0.** Five collectors, four output formats, report command with health analysis, parallel pipeline with signal deduplication, delta scanning, per-collector timeouts, and beads-aware dedup. See [Current Limitations](#current-limitations) for what's not here yet.
 
