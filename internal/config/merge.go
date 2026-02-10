@@ -66,6 +66,9 @@ func Merge(fileCfg *Config, cliCfg signal.ScanConfig) signal.ScanConfig {
 			if co.HistoryDepth == "" && fc.HistoryDepth != "" {
 				co.HistoryDepth = fc.HistoryDepth
 			}
+			if co.MaxIssues == 0 && fc.MaxIssuesPerCollector > 0 {
+				co.MaxIssues = fc.MaxIssuesPerCollector
+			}
 			if co.Timeout == 0 && fc.Timeout != "" {
 				if d, err := time.ParseDuration(fc.Timeout); err == nil {
 					co.Timeout = d

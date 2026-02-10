@@ -23,8 +23,9 @@ import (
 // Default configuration values for the GitHub collector.
 const (
 	defaultCommentDepth          = 30
-	defaultMaxIssuesPerCollector = 100
+	defaultMaxIssuesPerCollector = 25
 	defaultIncludePRs            = true
+	defaultStaleThreshold        = 180 * 24 * time.Hour // 6 months
 )
 
 // actionablePattern matches comment text containing actionable language.
@@ -121,12 +122,11 @@ func (c *GitHubCollector) Collect(ctx context.Context, repoPath string, opts sig
 
 	// Read config values with defaults.
 	maxIssues := defaultMaxIssuesPerCollector
+	if opts.MaxIssues > 0 {
+		maxIssues = opts.MaxIssues
+	}
 	commentDepth := defaultCommentDepth
 	includePRs := defaultIncludePRs
-
-	// Note: config values are read from opts.IncludePatterns as a workaround.
-	// The actual config fields are on the CollectorConfig struct.
-	// For now, use defaults. Config integration happens via the pipeline.
 
 	includeClosed := opts.IncludeClosed
 
@@ -242,7 +242,7 @@ func fetchIssues(ctx context.Context, api githubAPI, owner, repo string, maxIssu
 	}
 	opts := &github.IssueListByRepoOptions{
 		State:     state,
-		Sort:      "created",
+		Sort:      "updated",
 		Direction: "desc",
 		ListOptions: github.ListOptions{
 			PerPage: 100,
@@ -281,6 +281,13 @@ func fetchIssues(ctx context.Context, api githubAPI, owner, repo string, maxIssu
 			} else {
 				kind, confidence = classifyIssue(issue)
 				tags = []string{kind}
+
+				// Mark open issues with no recent activity as stale.
+				if issue.UpdatedAt != nil && time.Since(issue.UpdatedAt.Time) > defaultStaleThreshold {
+					kind = "github-stale-issue"
+					confidence = 0.2
+					tags = []string{kind}
+				}
 			}
 
 			desc := truncateBody(issue.GetBody(), 500)
@@ -335,7 +342,7 @@ func fetchPullRequests(ctx context.Context, api githubAPI, owner, repo string, m
 	}
 	opts := &github.PullRequestListOptions{
 		State:     state,
-		Sort:      "created",
+		Sort:      "updated",
 		Direction: "desc",
 		ListOptions: github.ListOptions{
 			PerPage: 100,

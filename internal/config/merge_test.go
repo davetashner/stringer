@@ -415,6 +415,35 @@ func TestMerge_AnonymizeCLIOverridesFile(t *testing.T) {
 	assert.Equal(t, "never", result.CollectorOpts["github"].Anonymize)
 }
 
+func TestMerge_MaxIssuesPerCollectorFromFile(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {MaxIssuesPerCollector: 50},
+		},
+	}
+	cliCfg := signal.ScanConfig{}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.Equal(t, 50, result.CollectorOpts["github"].MaxIssues)
+}
+
+func TestMerge_MaxIssuesPerCollectorCLIOverridesFile(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"github": {MaxIssuesPerCollector: 50},
+		},
+	}
+	cliCfg := signal.ScanConfig{
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"github": {MaxIssues: 10},
+		},
+	}
+
+	result := Merge(fileCfg, cliCfg)
+	// CLI value should win.
+	assert.Equal(t, 10, result.CollectorOpts["github"].MaxIssues)
+}
+
 func TestMerge_TimeoutInvalidDurationIgnored(t *testing.T) {
 	fileCfg := &Config{
 		Collectors: map[string]CollectorConfig{

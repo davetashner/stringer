@@ -35,15 +35,19 @@ type mockGitHubAPI struct {
 	commentErr     error
 	issueCallCount int
 	prCallCount    int
+	lastIssueOpts  *github.IssueListByRepoOptions
+	lastPROpts     *github.PullRequestListOptions
 }
 
-func (m *mockGitHubAPI) ListIssues(_ context.Context, _, _ string, _ *github.IssueListByRepoOptions) ([]*github.Issue, *github.Response, error) {
+func (m *mockGitHubAPI) ListIssues(_ context.Context, _, _ string, opts *github.IssueListByRepoOptions) ([]*github.Issue, *github.Response, error) {
 	m.issueCallCount++
+	m.lastIssueOpts = opts
 	return m.issues, m.issueResp, m.issueErr
 }
 
-func (m *mockGitHubAPI) ListPullRequests(_ context.Context, _, _ string, _ *github.PullRequestListOptions) ([]*github.PullRequest, *github.Response, error) {
+func (m *mockGitHubAPI) ListPullRequests(_ context.Context, _, _ string, opts *github.PullRequestListOptions) ([]*github.PullRequest, *github.Response, error) {
 	m.prCallCount++
+	m.lastPROpts = opts
 	return m.prs, m.prResp, m.prErr
 }
 
@@ -1544,4 +1548,162 @@ func (m *paginatingPRMock) ListPullRequestFiles(_ context.Context, _, _ string, 
 
 func (m *paginatingPRMock) GetRepository(_ context.Context, _, _ string) (*github.Repository, *github.Response, error) {
 	return nil, emptyResponse(), nil
+}
+
+// makeIssueWithUpdatedAt creates a test issue with a specific UpdatedAt time.
+func makeIssueWithUpdatedAt(number int, title string, created, updated time.Time, labelNames []string) *github.Issue {
+	issue := makeIssue(number, title, created, labelNames)
+	ts := github.Timestamp{Time: updated}
+	issue.UpdatedAt = &ts
+	return issue
+}
+
+func TestFetchIssues_SortByUpdated(t *testing.T) {
+	now := time.Now()
+	mock := &mockGitHubAPI{
+		issues:    []*github.Issue{makeIssue(1, "Issue 1", now, nil)},
+		issueResp: emptyResponse(),
+	}
+
+	_, err := fetchIssues(context.Background(), mock, "owner", "repo", 25, false, time.Time{})
+	require.NoError(t, err)
+	require.NotNil(t, mock.lastIssueOpts)
+	assert.Equal(t, "updated", mock.lastIssueOpts.Sort)
+	assert.Equal(t, "desc", mock.lastIssueOpts.Direction)
+}
+
+func TestFetchPullRequests_SortByUpdated(t *testing.T) {
+	now := time.Now()
+	mock := &mockGitHubAPI{
+		prs:      []*github.PullRequest{makePR(1, "PR 1", now)},
+		prResp:   emptyResponse(),
+		reviews:  map[int][]*github.PullRequestReview{},
+		comments: map[int][]*github.PullRequestComment{},
+	}
+
+	_, err := fetchPullRequests(context.Background(), mock, "owner", "repo", 25, 30, false, time.Time{})
+	require.NoError(t, err)
+	require.NotNil(t, mock.lastPROpts)
+	assert.Equal(t, "updated", mock.lastPROpts.Sort)
+	assert.Equal(t, "desc", mock.lastPROpts.Direction)
+}
+
+func TestFetchIssues_DefaultCapIs25(t *testing.T) {
+	now := time.Now()
+	var issues []*github.Issue
+	for i := 0; i < 30; i++ {
+		issues = append(issues, makeIssue(i+1, fmt.Sprintf("Issue %d", i+1), now, nil))
+	}
+
+	mock := &mockGitHubAPI{
+		issues:    issues,
+		issueResp: emptyResponse(),
+	}
+
+	// Use the default cap value.
+	signals, err := fetchIssues(context.Background(), mock, "owner", "repo", defaultMaxIssuesPerCollector, false, time.Time{})
+	require.NoError(t, err)
+	assert.Len(t, signals, 25)
+}
+
+func TestGitHubCollector_StaleIssue(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
+	repoPath := initGitHubTestRepo(t, "https://github.com/testowner/testrepo.git")
+
+	now := time.Now()
+	sevenMonthsAgo := now.Add(-7 * 30 * 24 * time.Hour)
+	mock := &mockGitHubAPI{
+		issues: []*github.Issue{
+			// Stale issue: created and last updated 7 months ago.
+			makeIssueWithUpdatedAt(1, "Old stale issue", sevenMonthsAgo, sevenMonthsAgo, []string{"bug"}),
+			// Fresh issue: created recently with recent update.
+			makeIssueWithUpdatedAt(2, "Fresh issue", now, now, []string{"bug"}),
+		},
+		issueResp: emptyResponse(),
+		prs:       []*github.PullRequest{},
+		prResp:    emptyResponse(),
+		reviews:   map[int][]*github.PullRequestReview{},
+		comments:  map[int][]*github.PullRequestComment{},
+	}
+
+	c := &GitHubCollector{api: mock}
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 2)
+
+	sigMap := make(map[string]signal.RawSignal)
+	for _, s := range signals {
+		sigMap[s.FilePath] = s
+	}
+
+	// Stale issue should be classified as github-stale-issue.
+	staleSig := sigMap["github/issues/1"]
+	assert.Equal(t, "github-stale-issue", staleSig.Kind)
+	assert.InDelta(t, 0.2, staleSig.Confidence, 0.01)
+	assert.Contains(t, staleSig.Tags, "github-stale-issue")
+
+	// Fresh issue should remain as github-bug.
+	freshSig := sigMap["github/issues/2"]
+	assert.Equal(t, "github-bug", freshSig.Kind)
+	assert.InDelta(t, 0.7, freshSig.Confidence, 0.01)
+}
+
+func TestGitHubCollector_StaleIssueNotAppliedToClosed(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
+	repoPath := initGitHubTestRepo(t, "https://github.com/testowner/testrepo.git")
+
+	now := time.Now()
+	sevenMonthsAgo := now.Add(-7 * 30 * 24 * time.Hour)
+	closedIssue := makeClosedIssue(1, "Old closed issue", sevenMonthsAgo, nil, "completed")
+	ts := github.Timestamp{Time: sevenMonthsAgo}
+	closedIssue.UpdatedAt = &ts
+
+	mock := &mockGitHubAPI{
+		issues:    []*github.Issue{closedIssue},
+		issueResp: emptyResponse(),
+		prs:       []*github.PullRequest{},
+		prResp:    emptyResponse(),
+		reviews:   map[int][]*github.PullRequestReview{},
+		comments:  map[int][]*github.PullRequestComment{},
+	}
+
+	c := &GitHubCollector{api: mock}
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{
+		IncludeClosed: true,
+	})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+
+	// Closed issue should stay as github-closed-issue, not github-stale-issue.
+	assert.Equal(t, "github-closed-issue", signals[0].Kind)
+}
+
+func TestGitHubCollector_MaxIssuesFromConfig(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
+	repoPath := initGitHubTestRepo(t, "https://github.com/testowner/testrepo.git")
+
+	now := time.Now()
+	var issues []*github.Issue
+	for i := 0; i < 10; i++ {
+		issues = append(issues, makeIssue(i+1, fmt.Sprintf("Issue %d", i+1), now, nil))
+	}
+
+	mock := &mockGitHubAPI{
+		issues:    issues,
+		issueResp: emptyResponse(),
+		prs:       []*github.PullRequest{},
+		prResp:    emptyResponse(),
+		reviews:   map[int][]*github.PullRequestReview{},
+		comments:  map[int][]*github.PullRequestComment{},
+	}
+
+	c := &GitHubCollector{api: mock}
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{
+		MaxIssues: 5,
+	})
+	require.NoError(t, err)
+	assert.Len(t, signals, 5)
 }
