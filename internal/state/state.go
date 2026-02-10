@@ -98,7 +98,7 @@ func Load(repoPath string) (*ScanState, error) {
 func Save(repoPath string, s *ScanState) error {
 	dir := filepath.Join(repoPath, stateDir)
 	if err := FS.MkdirAll(dir, 0o750); err != nil {
-		return err
+		return fmt.Errorf("create state directory: %w", err)
 	}
 
 	data, err := json.MarshalIndent(s, "", "  ")
@@ -106,7 +106,10 @@ func Save(repoPath string, s *ScanState) error {
 		return err
 	}
 
-	return FS.WriteFile(filepath.Join(dir, stateFile), data, 0o644)
+	if err := FS.WriteFile(filepath.Join(dir, stateFile), data, 0o644); err != nil {
+		return fmt.Errorf("write state file: %w", err)
+	}
+	return nil
 }
 
 // FilterNew returns only the signals whose hashes are not present in prev.

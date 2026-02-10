@@ -1,0 +1,27 @@
+name: Fuzz (Thorough)
+
+on:
+  schedule:
+    - cron: "0 3 * * 0"  # Sunday 3am UTC
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+        with:
+          go-version: "1.25"
+      - name: Run thorough fuzz tests
+        run: |
+          go test -fuzz=FuzzResolvePath -fuzztime=2m ./internal/mcpserver/
+          go test -fuzz=FuzzSplitAndTrim -fuzztime=2m ./internal/mcpserver/
+          go test -fuzz=FuzzConfigParse -fuzztime=2m ./internal/config/
+          go test -fuzz=FuzzBeadParse -fuzztime=2m ./internal/beads/
