@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -205,98 +204,18 @@ func runScan(cmd *cobra.Command, args []string) error {
 		return exitError(ExitInvalidArgs, "stringer: %v", err)
 	}
 
-	// Apply git-depth and git-since to relevant collectors.
-	if scanGitDepth > 0 || scanGitSince != "" {
-		if scanCfg.CollectorOpts == nil {
-			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
-		}
-		for _, name := range []string{"gitlog", "lotteryrisk"} {
-			co := scanCfg.CollectorOpts[name]
-			if scanGitDepth > 0 && co.GitDepth == 0 {
-				co.GitDepth = scanGitDepth
-			}
-			if scanGitSince != "" && co.GitSince == "" {
-				co.GitSince = scanGitSince
-			}
-			scanCfg.CollectorOpts[name] = co
-		}
-	}
-
-	// Apply --include-closed and --history-depth to the github collector.
-	if scanIncludeClosed || scanHistoryDepth != "" {
-		if scanCfg.CollectorOpts == nil {
-			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
-		}
-		co := scanCfg.CollectorOpts["github"]
-		if scanIncludeClosed {
-			co.IncludeClosed = true
-		}
-		if scanHistoryDepth != "" && co.HistoryDepth == "" {
-			co.HistoryDepth = scanHistoryDepth
-		}
-		scanCfg.CollectorOpts["github"] = co
-	}
-
-	// Apply --anonymize to the lotteryrisk collector.
-	if cmd.Flags().Changed("anonymize") {
-		if scanCfg.CollectorOpts == nil {
-			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
-		}
-		co := scanCfg.CollectorOpts["lotteryrisk"]
-		co.Anonymize = scanAnonymize
-		scanCfg.CollectorOpts["lotteryrisk"] = co
-	}
-
-	// Apply --include-demo-paths to noise-prone collectors.
-	if scanIncludeDemoPaths {
-		if scanCfg.CollectorOpts == nil {
-			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
-		}
-		for _, name := range []string{"patterns", "lotteryrisk"} {
-			co := scanCfg.CollectorOpts[name]
-			co.IncludeDemoPaths = true
-			scanCfg.CollectorOpts[name] = co
-		}
-	}
-
-	// Wire progress callback for long-running collectors.
-	progressFn := func(msg string) {
-		slog.Info(msg)
-	}
-	if scanCfg.CollectorOpts == nil {
-		scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
-	}
-	for _, name := range collector.List() {
-		co := scanCfg.CollectorOpts[name]
-		co.ProgressFunc = progressFn
-		scanCfg.CollectorOpts[name] = co
-	}
-
-	// Apply --collector-timeout as global default for collectors without a per-collector timeout.
-	if scanCollectorTimeout != "" {
-		if d, err := time.ParseDuration(scanCollectorTimeout); err == nil && d > 0 {
-			for _, name := range collector.List() {
-				co := scanCfg.CollectorOpts[name]
-				if co.Timeout == 0 {
-					co.Timeout = d
-				}
-				scanCfg.CollectorOpts[name] = co
-			}
-		}
-	}
-
-	// Apply --paths as IncludePatterns for file-scoped scanning.
-	if len(scanPaths) > 0 {
-		if scanCfg.CollectorOpts == nil {
-			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
-		}
-		for _, name := range collector.List() {
-			co := scanCfg.CollectorOpts[name]
-			// Merge with existing include patterns rather than overwriting.
-			co.IncludePatterns = append(co.IncludePatterns, scanPaths...)
-			scanCfg.CollectorOpts[name] = co
-		}
-	}
+	// Apply CLI flag overrides to per-collector options.
+	applyFlagOverrides(&scanCfg, flagOverrides{
+		GitDepth:         scanGitDepth,
+		GitSince:         scanGitSince,
+		Anonymize:        scanAnonymize,
+		AnonymizeChanged: cmd.Flags().Changed("anonymize"),
+		IncludeDemoPaths: scanIncludeDemoPaths,
+		CollectorTimeout: scanCollectorTimeout,
+		Paths:            scanPaths,
+		IncludeClosed:    scanIncludeClosed,
+		HistoryDepth:     scanHistoryDepth,
+	})
 
 	// 6. Create pipeline.
 	p, err := pipeline.New(scanCfg)
