@@ -77,6 +77,10 @@ type CollectorOpts struct {
 	// (missing-tests, low-test-ratio, low-lottery-risk) in demo/example/tutorial paths.
 	IncludeDemoPaths bool
 
+	// MaxIssues caps the number of issues/PRs fetched by the GitHub collector.
+	// 0 uses the collector default.
+	MaxIssues int
+
 	// Timeout is the per-collector timeout. 0 means no timeout.
 	Timeout time.Duration
 }
