@@ -13,7 +13,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 
-> **Status: v0.5.0.** Five collectors, four output formats, report command with health analysis, parallel pipeline with signal deduplication, delta scanning, per-collector timeouts, and beads-aware dedup. See [Current Limitations](#current-limitations) for what's not here yet.
+> **Status: v0.5.1.** Five collectors, four output formats, report command with health analysis, parallel pipeline with signal deduplication, delta scanning, per-collector timeouts, beads-aware dedup, MCP server for agent integration, and `stringer init` for easy setup. See [Current Limitations](#current-limitations) for what's not here yet.
 
 **Codebase archaeology for [Beads](https://github.com/steveyegge/beads).** Mine your repo for actionable work items, output them as Beads-formatted issues, and give your AI agents instant situational awareness.
 
@@ -194,6 +194,7 @@ stringer scan [path] [flags]
 | `--history-depth`       |       |         | Filter closed items older than this duration (e.g., 90d)  |
 | `--anonymize`           |       | `auto`  | Anonymize author names: auto, always, or never            |
 | `--collector-timeout`   |       |         | Per-collector timeout (e.g. 60s, 2m); 0 = no timeout      |
+| `--paths`               |       |         | Restrict scanning to specific files or directories         |
 | `--include-demo-paths`  |       |         | Include demo/example/tutorial paths in noise-prone signals |
 | `--no-llm`              |       |         | Skip LLM clustering pass (noop — reserved for future use) |
 
@@ -251,8 +252,24 @@ Generates a repository health report with analysis sections for lottery risk, co
 ```bash
 stringer report .              # print to stdout
 stringer report . -o report.txt # write to file
+stringer report . --format json # machine-readable output
 stringer report . --sections lottery-risk,churn  # specific sections only
 ```
+
+| Flag                    | Short | Default | Description                                               |
+| ----------------------- | ----- | ------- | --------------------------------------------------------- |
+| `--collectors`          | `-c`  | (all)   | Comma-separated list of collectors to run                 |
+| `--sections`            |       | (all)   | Comma-separated report sections to include                |
+| `--output`              | `-o`  | stdout  | Output file path                                          |
+| `--format`              | `-f`  |         | Output format (`json` for machine-readable)               |
+| `--git-depth`           |       | `0`     | Max commits to examine (default 1000)                     |
+| `--git-since`           |       |         | Only examine commits after this duration (e.g., 90d, 6m)  |
+| `--anonymize`           |       | `auto`  | Anonymize author names: auto, always, or never            |
+| `--exclude-collectors`  | `-x`  |         | Comma-separated list of collectors to skip                |
+| `--collector-timeout`   |       |         | Per-collector timeout (e.g. 60s, 2m); 0 = no timeout      |
+| `--paths`               |       |         | Restrict scanning to specific files or directories         |
+
+**Available sections:** `lottery-risk`, `churn`, `todo-age`, `coverage`, `recommendations`
 
 ### `stringer docs`
 
@@ -261,7 +278,13 @@ Auto-generates an `AGENTS.md` scaffold from your repository structure, documenti
 ```bash
 stringer docs .              # print to stdout
 stringer docs . -o AGENTS.md # write to file
+stringer docs . --update     # update existing AGENTS.md, preserving manual sections
 ```
+
+| Flag       | Short | Default | Description                                              |
+| ---------- | ----- | ------- | -------------------------------------------------------- |
+| `--output` | `-o`  | stdout  | Output file path                                         |
+| `--update` |       |         | Update existing AGENTS.md, preserving manual sections    |
 
 ### `stringer context`
 
@@ -269,7 +292,33 @@ Generates a compact context summary of the repository for use in AI prompts. Inc
 
 ```bash
 stringer context .
+stringer context . --format json  # machine-readable output
+stringer context . --weeks 8      # include 8 weeks of history
 ```
+
+| Flag       | Short | Default | Description                                              |
+| ---------- | ----- | ------- | -------------------------------------------------------- |
+| `--output` | `-o`  | stdout  | Output file path                                         |
+| `--format` | `-f`  |         | Output format: `json` or `markdown`                      |
+| `--weeks`  |       | `4`     | Weeks of git history to include                          |
+
+### `stringer init`
+
+Bootstraps stringer in a repository. Detects project characteristics and generates starter configuration. Non-destructive by default — skips files that already exist.
+
+```bash
+stringer init .          # bootstrap stringer config
+stringer init . --force  # overwrite existing .stringer.yaml
+```
+
+When run, `stringer init`:
+- Creates `.stringer.yaml` with sensible defaults based on project detection
+- Appends a stringer integration section to `AGENTS.md`
+- Generates `.mcp.json` when a `.claude/` directory is detected (for MCP server integration)
+
+| Flag      | Short | Default | Description                          |
+| --------- | ----- | ------- | ------------------------------------ |
+| `--force` |       |         | Overwrite existing `.stringer.yaml`  |
 
 ## Agent Integration
 
@@ -361,6 +410,15 @@ Stringer produces:
 ```
 
 The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `task`, `hack`/`xxx`/`optimize` -> `chore`.
+
+## Exit Codes
+
+| Code | Name              | Meaning                                          |
+| ---- | ----------------- | ------------------------------------------------ |
+| `0`  | OK                | All collectors succeeded                         |
+| `1`  | Invalid Args      | Invalid arguments or bad path                    |
+| `2`  | Partial Failure   | Some collectors failed, partial output written   |
+| `3`  | Total Failure     | No output produced                               |
 
 ## Current Limitations
 

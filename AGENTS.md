@@ -12,9 +12,25 @@ stringer/
 │   ├── main.go                 # cobra root setup
 │   ├── root.go                 # root command, global flags
 │   ├── scan.go                 # scan subcommand and flags
+│   ├── report.go               # report subcommand
+│   ├── context.go              # context subcommand
+│   ├── docs.go                 # docs subcommand
+│   ├── init.go                 # init subcommand (bootstrap stringer in a repo)
+│   ├── mcp.go                  # mcp serve subcommand (MCP server)
 │   ├── version.go              # version subcommand
-│   └── exitcodes.go            # exit code constants
+│   ├── exitcodes.go            # exit code constants
+│   └── fs.go                   # filesystem helpers
 ├── internal/
+│   ├── beads/              # Beads integration
+│   │   ├── conventions.go      # Beads naming and format conventions
+│   │   ├── dedup.go            # Beads-aware signal deduplication
+│   │   └── reader.go           # Read existing beads from .beads/ directory
+│   ├── bootstrap/          # stringer init bootstrapping
+│   │   ├── bootstrap.go        # Bootstrap orchestration
+│   │   ├── detect.go           # Project detection (language, framework, CI)
+│   │   ├── config.go           # Generate .stringer.yaml defaults
+│   │   ├── agentsmd.go         # Append stringer section to AGENTS.md
+│   │   └── mcpjson.go          # Generate .mcp.json for Claude Code
 │   ├── collector/          # Collector registry and interface
 │   │   └── collector.go        # Register(), List(), Get(), Collector interface
 │   ├── collectors/         # Signal extraction modules
@@ -22,34 +38,73 @@ stringer/
 │   │   ├── gitlog.go           # Reverts, high-churn files, stale branches
 │   │   ├── patterns.go         # Large files, low test coverage ratios
 │   │   ├── lotteryrisk.go      # Lottery risk analysis (ownership risk per directory)
-│   │   └── github.go           # GitHub issues, PRs, and review comments
+│   │   ├── github.go           # GitHub issues, PRs, and review comments
+│   │   └── duration.go         # Duration parsing helpers
 │   ├── config/             # .stringer.yaml config file support
 │   │   ├── config.go           # Config and CollectorConfig structs
 │   │   ├── yaml.go             # Load() and Write() — YAML marshal/unmarshal
 │   │   ├── validate.go         # Validate() — multi-error validation
 │   │   └── merge.go            # Merge() — file config + CLI merge
+│   ├── context/            # Context generation (stringer context)
+│   │   ├── generator.go        # Context generation orchestration
+│   │   ├── githistory.go       # Git history analysis for context
+│   │   └── render_json.go      # JSON output for context
+│   ├── docs/               # Docs generation (stringer docs)
+│   │   ├── analyzer.go         # Repository analysis for docs
+│   │   ├── detector.go         # Language/framework detection
+│   │   ├── generator.go        # AGENTS.md generation
+│   │   └── updater.go          # Update existing AGENTS.md preserving manual sections
+│   ├── gitcli/             # Native git CLI wrapper (DR-011)
+│   │   └── gitcli.go           # Shell out to git for blame and ownership
+│   ├── log/                # Structured logging
+│   │   └── log.go              # slog-based logging helpers
+│   ├── mcpserver/          # MCP server for AI agent integration
+│   │   ├── server.go           # Server creation and lifecycle
+│   │   ├── tools.go            # Tool handlers: scan, report, context, docs
+│   │   └── resolve.go          # Path resolution and input parsing
 │   ├── output/             # Output formatters
 │   │   ├── formatter.go        # Formatter interface and registry
 │   │   ├── beads.go            # Beads JSONL writer (primary)
 │   │   ├── json.go             # JSON with metadata envelope
-│   │   └── markdown.go         # Human-readable markdown summary
+│   │   ├── markdown.go         # Human-readable markdown summary
+│   │   ├── tasks.go            # Claude Code task format
+│   │   └── signalid.go         # Shared deterministic signal ID generation
 │   ├── pipeline/           # Scan orchestration
 │   │   ├── pipeline.go         # New(), Run() — parallel execution via errgroup
 │   │   ├── dedup.go            # Content-based signal deduplication
 │   │   └── validate.go         # ScanConfig validation
 │   ├── redact/             # Secret redaction
 │   │   └── redact.go           # Scrub sensitive patterns from signal content
+│   ├── report/             # Report generation (stringer report)
+│   │   ├── section.go          # Section registry and interface
+│   │   ├── render.go           # Report rendering orchestration
+│   │   ├── color.go            # Color-coded terminal output
+│   │   ├── table.go            # Table formatting helpers
+│   │   ├── lotteryrisk.go      # Lottery risk analysis section
+│   │   ├── churn.go            # Code churn hotspots section
+│   │   ├── todoage.go          # TODO age distribution section
+│   │   ├── coverage.go         # Test coverage gaps section
+│   │   └── recommendations.go  # Actionable recommendations section
 │   ├── signal/             # Domain types
 │   │   └── signal.go           # RawSignal, ScanConfig, ScanResult, CollectorOpts
-│   └── state/              # Delta scan state persistence
-│       └── state.go            # Load/Save/FilterNew/Build for .stringer/last-scan.json
-├── test/
-│   └── integration/        # Integration tests
+│   ├── state/              # Delta scan state persistence
+│   │   └── state.go            # Load/Save/FilterNew/Build for .stringer/last-scan.json
+│   └── testable/           # Interfaces for test mock injection
+│       ├── exec.go             # CommandExecutor interface
+│       ├── exec_mock.go        # Mock command executor
+│       ├── fs.go               # FileSystem interface
+│       ├── mock_fs.go          # Mock filesystem
+│       ├── git.go              # GitOpener interface
+│       └── git_mock.go         # Mock git opener
+├── eval/                   # Evaluation harness for stress-testing
 ├── testdata/
 │   └── fixtures/           # Test fixture repos
 ├── docs/
-│   ├── decisions/          # Decision records (see "Decision Records" section)
-│   └── competitive-analysis.md
+│   ├── decisions/          # Decision records (001-011)
+│   ├── agent-integration.md    # MCP setup and tool reference
+│   ├── branch-protection.md    # Branch protection rules
+│   ├── competitive-analysis.md # Competitive landscape
+│   └── release-strategy.md     # Versioning and release process
 ├── go.mod
 ├── go.sum
 ├── AGENTS.md               # You are here
@@ -58,16 +113,17 @@ stringer/
 └── CLAUDE.md
 ```
 
-**Note:** The collector architecture is extensible (see [Adding a new collector](#adding-a-new-collector)). v0.2.0 ships with three collectors (todos, gitlog, patterns) and three output formats (beads, json, markdown). See [docs/release-strategy.md](docs/release-strategy.md) for versioning and release process.
+**Note:** The collector architecture is extensible (see [Adding a new collector](#adding-a-new-collector)). Stringer currently has five collectors (todos, gitlog, patterns, lotteryrisk, github) and four output formats (beads, json, markdown, tasks). See [docs/release-strategy.md](docs/release-strategy.md) for versioning and release process.
 
 ## Tech Stack
 
 - **Language:** Go 1.24+ (matches Beads ecosystem)
 - **CLI framework:** `spf13/cobra` for command/flag parsing
-- **Git interaction:** `go-git` for blame lookups
+- **Git interaction:** `go-git` for commit iteration and diffs; native `git` CLI for blame and ownership analysis ([DR-011](docs/decisions/011-native-git-blame.md))
 - **Testing:** `stretchr/testify` for assertions
 - **Linting:** `golangci-lint` v2 with gosec
-- **Output:** Beads JSONL, JSON, and Markdown formatters
+- **Output:** Beads JSONL, JSON, Markdown, and Tasks formatters
+- **MCP:** `modelcontextprotocol/go-sdk` for Model Context Protocol server
 - **Release:** GoReleaser for cross-platform binaries and Homebrew tap
 
 ## MCP Server
@@ -247,6 +303,7 @@ type RawSignal struct {
     Timestamp   time.Time // When this signal was created
     Confidence  float64   // 0.0-1.0, how certain we are this is real work
     Tags        []string  // Free-form tags for clustering hints
+    ClosedAt    time.Time // When this signal was closed/resolved (zero if open)
 }
 ```
 
@@ -257,7 +314,7 @@ Each line must be a valid JSON object that `bd import` accepts. Required fields:
 - `title`: string
 - `type`: one of `bug`, `task`, `chore` (mapped from signal kind)
 - `priority`: 1-4 (mapped from confidence: >=0.8→P1, >=0.6→P2, >=0.4→P3, <0.4→P4)
-- `status`: `open` (always, since these are discovered work)
+- `status`: `open` or `closed` (closed for pre-closed beads from resolved TODOs, merged PRs, and closed GitHub issues)
 - `created_at`: ISO 8601 timestamp (from git blame, empty if unavailable)
 - `created_by`: git blame author or `stringer` as fallback
 
@@ -285,7 +342,7 @@ Optional but valuable:
 | `Vet` | `go vet` static analysis |
 | `Format` | `gofmt` formatting compliance |
 | `Lint` | `golangci-lint` (includes gosec SAST) |
-| `Tidy` | `go.mod` / `go.sum` are tidy |
+| `Tidy` | `go.mod` / `go.sum` are tidy; `go mod verify` checksums match |
 | `Coverage` | Test coverage above 90% threshold |
 | `Vulncheck` | No known vulnerabilities in dependencies |
 | `Binary Size` | Binary does not exceed 2x baseline (`.github/binary-size-baseline`) |
@@ -293,6 +350,11 @@ Optional but valuable:
 | `Breaking Change Guard` | No breaking changes without major version bump (PRs only) |
 | `Go Generate` | Generated files are up to date |
 | `License Check` | All dependency licenses are OSS-compatible |
+| `Archived Deps Check` | Warns if any GitHub-hosted dependencies are archived |
+| `PR Size Guard` | Warns at 500 lines, fails at 1000 non-test lines (PRs only) |
+| `Fuzz` | Fuzz testing for input parsing (mcpserver, config, beads) |
+
+A separate [OpenSSF Scorecard](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer) workflow runs on the default branch to track supply chain security posture.
 
 **No exceptions.** Branch protection enforces these checks for all users including admins. If CI is broken, fix the checks — do not bypass them.
 
