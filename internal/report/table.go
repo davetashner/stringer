@@ -81,7 +81,7 @@ func (t *Table) Render(w io.Writer) error {
 		parts[i] = strings.Repeat("-", width)
 	}
 	if _, err := fmt.Fprintf(w, "  %s\n", strings.Join(parts, "  ")); err != nil {
-		return err
+		return fmt.Errorf("render table: %w", err)
 	}
 
 	// Render data rows.
@@ -104,8 +104,10 @@ func (t *Table) renderHeader(w io.Writer, widths []int) error {
 			parts[i] = bold.Sprintf("%-*s", widths[i], col.Header)
 		}
 	}
-	_, err := fmt.Fprintf(w, "  %s\n", strings.Join(parts, "  "))
-	return err
+	if _, err := fmt.Fprintf(w, "  %s\n", strings.Join(parts, "  ")); err != nil {
+		return fmt.Errorf("render table: %w", err)
+	}
+	return nil
 }
 
 func (t *Table) renderRow(w io.Writer, values []string, widths []int) error {
@@ -131,6 +133,8 @@ func (t *Table) renderRow(w io.Writer, values []string, widths []int) error {
 			parts[i] = display + strings.Repeat(" ", pad)
 		}
 	}
-	_, err := fmt.Fprintf(w, "  %s\n", strings.Join(parts, "  "))
-	return err
+	if _, err := fmt.Fprintf(w, "  %s\n", strings.Join(parts, "  ")); err != nil {
+		return fmt.Errorf("render table: %w", err)
+	}
+	return nil
 }

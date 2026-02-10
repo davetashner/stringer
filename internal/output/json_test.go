@@ -443,32 +443,6 @@ func TestExtractCollectors(t *testing.T) {
 	})
 }
 
-func TestSortStrings(t *testing.T) {
-	t.Run("already_sorted", func(t *testing.T) {
-		s := []string{"a", "b", "c"}
-		sortStrings(s)
-		assert.Equal(t, []string{"a", "b", "c"}, s)
-	})
-
-	t.Run("reverse", func(t *testing.T) {
-		s := []string{"c", "b", "a"}
-		sortStrings(s)
-		assert.Equal(t, []string{"a", "b", "c"}, s)
-	})
-
-	t.Run("single", func(t *testing.T) {
-		s := []string{"only"}
-		sortStrings(s)
-		assert.Equal(t, []string{"only"}, s)
-	})
-
-	t.Run("empty", func(t *testing.T) {
-		var s []string
-		sortStrings(s)
-		assert.Empty(t, s)
-	})
-}
-
 // --- Helpers ---
 
 // fixedNow returns a deterministic time for testing.

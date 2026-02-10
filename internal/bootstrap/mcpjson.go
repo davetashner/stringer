@@ -62,7 +62,10 @@ func GenerateMCPConfig(repoPath string) (Action, error) {
 			Command: "stringer",
 			Args:    []string{"mcp", "serve"},
 		}
-		entryJSON, _ := json.Marshal(entry)
+		entryJSON, entryErr := json.Marshal(entry)
+		if entryErr != nil {
+			return Action{}, fmt.Errorf("marshaling MCP server entry: %w", entryErr)
+		}
 		cfg.MCPServers["stringer"] = entryJSON
 
 		data, marshalErr := json.MarshalIndent(cfg, "", "  ")
@@ -90,7 +93,10 @@ func GenerateMCPConfig(repoPath string) (Action, error) {
 		Command: "stringer",
 		Args:    []string{"mcp", "serve"},
 	}
-	entryJSON, _ := json.Marshal(entry)
+	entryJSON, entryErr := json.Marshal(entry)
+	if entryErr != nil {
+		return Action{}, fmt.Errorf("marshaling MCP server entry: %w", entryErr)
+	}
 	cfg.MCPServers["stringer"] = entryJSON
 
 	data, marshalErr := json.MarshalIndent(cfg, "", "  ")
