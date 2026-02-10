@@ -37,9 +37,11 @@ var (
 // reportCmd is the subcommand for generating a repository health report.
 var reportCmd = &cobra.Command{
 	Use:   "report [path]",
-	Short: "Generate a repository health report",
-	Long: `Analyze a repository and generate a health report summarizing signals,
-metrics, and code quality indicators from all configured collectors.`,
+	Short: "Generate a human-readable health dashboard",
+	Long: `Analyze a repository and display a health dashboard with lottery risk,
+code churn hotspots, TODO age, and coverage gaps.
+
+For machine-readable output to import into an issue tracker, use 'stringer scan' instead.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runReport,
 }

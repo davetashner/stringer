@@ -55,6 +55,9 @@ collectors:
     # history_depth: "90d"
     # comment_depth: 30
     # max_issues_per_collector: 100
+
+  dephealth:
+    enabled: true
 `))
 
 // GenerateConfig renders and writes .stringer.yaml to the repo root.

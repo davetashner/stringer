@@ -21,7 +21,12 @@ var rootCmd = &cobra.Command{
 	Long: `Stringer is a codebase archaeology tool that mines existing repositories
 to produce Beads-formatted issues. It extracts actionable work items from
 signals already present in the repo — TODOs, FIXMEs, git history patterns,
-and more — giving agents instant situational awareness.`,
+and more — giving agents instant situational awareness.
+
+Get started:
+  stringer init .        Bootstrap config in current repo
+  stringer scan .        Scan and output issues
+  stringer report .      View a health dashboard`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRun: func(_ *cobra.Command, _ []string) {

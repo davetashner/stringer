@@ -49,9 +49,10 @@ var (
 var scanCmd = &cobra.Command{
 	Use:   "scan [path]",
 	Short: "Scan a repository for actionable work items",
-	Long: `Scan a repository for actionable work items such as TODOs, FIXMEs,
-git history patterns, and other signals. Outputs Beads-formatted JSONL
-suitable for import with 'bd import'.`,
+	Long: `Scan a repository and output machine-readable issues (Beads JSONL, JSON,
+or Markdown). Use 'stringer scan . | bd import' to add issues to your tracker.
+
+For a human-readable health dashboard, use 'stringer report' instead.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runScan,
 }
