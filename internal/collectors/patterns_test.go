@@ -1026,6 +1026,90 @@ func TestHasTestCounterpart_ParallelTestTreeStrippedRoot(t *testing.T) {
 	))
 }
 
+// --- Maven/Gradle test tree tests ---
+
+func TestHasTestCounterpart_MavenJavaTree(t *testing.T) {
+	dir := t.TempDir()
+
+	// src/main/java/com/example/Foo.java
+	srcDir := filepath.Join(dir, "src", "main", "java", "com", "example")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "Foo.java"), []byte("// java\n"), 0o600))
+
+	// src/test/java/com/example/FooTest.java
+	testDir := filepath.Join(dir, "src", "test", "java", "com", "example")
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(testDir, "FooTest.java"), []byte("// test\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(
+		filepath.Join(srcDir, "Foo.java"),
+		"src/main/java/com/example/Foo.java",
+		dir,
+		nil,
+	))
+}
+
+func TestHasTestCounterpart_MavenKotlinTree(t *testing.T) {
+	dir := t.TempDir()
+
+	// src/main/kotlin/com/example/Bar.kt
+	srcDir := filepath.Join(dir, "src", "main", "kotlin", "com", "example")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "Bar.kt"), []byte("// kt\n"), 0o600))
+
+	// src/test/kotlin/com/example/BarTest.kt
+	testDir := filepath.Join(dir, "src", "test", "kotlin", "com", "example")
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(testDir, "BarTest.kt"), []byte("// test\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(
+		filepath.Join(srcDir, "Bar.kt"),
+		"src/main/kotlin/com/example/Bar.kt",
+		dir,
+		nil,
+	))
+}
+
+func TestHasTestCounterpart_MavenTreeMissing(t *testing.T) {
+	dir := t.TempDir()
+
+	// src/main/java/com/example/Foo.java — no test counterpart
+	srcDir := filepath.Join(dir, "src", "main", "java", "com", "example")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "Foo.java"), []byte("// java\n"), 0o600))
+
+	assert.False(t, hasTestCounterpart(
+		filepath.Join(srcDir, "Foo.java"),
+		"src/main/java/com/example/Foo.java",
+		dir,
+		nil,
+	))
+}
+
+func TestMavenTestDir(t *testing.T) {
+	tests := []struct {
+		name    string
+		relPath string
+		want    string
+		ok      bool
+	}{
+		{"java", "src/main/java/com/example/Foo.java", filepath.FromSlash("src/test/java/com/example"), true},
+		{"kotlin", "src/main/kotlin/com/Bar.kt", filepath.FromSlash("src/test/kotlin/com"), true},
+		{"scala", "src/main/scala/Baz.scala", filepath.FromSlash("src/test/scala"), true},
+		{"not_maven", "lib/handler.go", "", false},
+		{"src_but_not_main", "src/handler.go", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := mavenTestDir(tt.relPath)
+			assert.Equal(t, tt.ok, ok)
+			if ok {
+				assert.Equal(t, tt.want, got)
+			}
+		})
+	}
+}
+
 func TestDetectTestRoots(t *testing.T) {
 	dir := t.TempDir()
 

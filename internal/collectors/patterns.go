@@ -460,6 +460,15 @@ func hasTestCounterpart(absPath, relPath, repoPath string, testRoots []string) b
 		}
 	}
 
+	// Maven/Gradle convention: src/main/{java,kotlin,scala}/... → src/test/{java,kotlin,scala}/...
+	if testDir, ok := mavenTestDir(relPath); ok {
+		for _, candidate := range candidates {
+			if _, err := FS.Stat(filepath.Join(repoPath, testDir, candidate)); err == nil {
+				return true
+			}
+		}
+	}
+
 	// Try stripping the first path component for projects where the
 	// source root (e.g., "src/", "lib/", "homeassistant/") is not
 	// mirrored in the test tree.
@@ -479,6 +488,27 @@ func hasTestCounterpart(absPath, relPath, repoPath string, testRoots []string) b
 	}
 
 	return false
+}
+
+// mavenTestDir checks if relPath follows Maven/Gradle convention
+// (src/main/{java,kotlin,scala}/...) and returns the corresponding test
+// directory (src/test/{java,kotlin,scala}/...). Returns ("", false) if the
+// path doesn't match the convention.
+func mavenTestDir(relPath string) (string, bool) {
+	norm := filepath.ToSlash(relPath)
+	for _, lang := range []string{"java", "kotlin", "scala"} {
+		prefix := "src/main/" + lang + "/"
+		if strings.HasPrefix(norm, prefix) {
+			rest := strings.TrimPrefix(norm, prefix)
+			dir := filepath.Dir(rest)
+			testBase := "src/test/" + lang
+			if dir != "." {
+				testBase += "/" + dir
+			}
+			return filepath.FromSlash(testBase), true
+		}
+	}
+	return "", false
 }
 
 // isUnderTestRoot returns true if relPath is under one of the parallel test
