@@ -658,3 +658,169 @@ func TestVulnCollector_MavenNoFix(t *testing.T) {
 	assert.Contains(t, signals[0].Description, "No fix available for org.springframework:spring-core 5.3.0")
 	assert.Equal(t, "pom.xml", signals[0].FilePath)
 }
+
+// --- Rust Cargo.toml tests ---
+
+func validCargoToml() []byte {
+	return []byte(`[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+serde = "1.0.197"
+tokio = { version = "1.36.0", features = ["full"] }
+`)
+}
+
+func crateVulnDetail() VulnDetail {
+	return VulnDetail{
+		ID:           "RUSTSEC-2024-0001",
+		Aliases:      []string{"CVE-2024-55555"},
+		Summary:      "Memory safety issue in serde",
+		Ecosystem:    "crates.io",
+		PackageName:  "serde",
+		Version:      "1.0.197",
+		FixedVersion: "1.0.200",
+		Severity:     "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+	}
+}
+
+func TestVulnCollector_CargoOnly(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Cargo.toml"), validCargoToml(), 0o600))
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{crateVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+
+	sig := signals[0]
+	assert.Equal(t, "Cargo.toml", sig.FilePath)
+	assert.Equal(t, "vuln", sig.Source)
+	assert.Contains(t, sig.Title, "serde")
+	assert.Contains(t, sig.Title, "CVE-2024-55555")
+	assert.Contains(t, sig.Description, "Upgrade serde from 1.0.197 to 1.0.200")
+	assert.Contains(t, sig.Tags, "rust")
+	assert.Contains(t, sig.Tags, "security")
+
+	metrics := c.Metrics().(*VulnMetrics)
+	assert.Equal(t, "crates.io", metrics.Vulns[0].Ecosystem)
+	assert.Equal(t, "Cargo.toml", metrics.Vulns[0].FilePath)
+}
+
+func TestVulnCollector_GoAndCargo(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), validGoMod(), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Cargo.toml"), validCargoToml(), 0o600))
+
+	goVuln := VulnDetail{
+		ID:           "GO-2024-0001",
+		Aliases:      []string{"CVE-2024-0001"},
+		Summary:      "Go vuln",
+		Ecosystem:    "Go",
+		PackageName:  "github.com/foo/bar",
+		Version:      "v1.0.0",
+		FixedVersion: "v1.1.0",
+		Severity:     "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+	}
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{goVuln, crateVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 2)
+
+	var goSig, rustSig signal.RawSignal
+	for _, s := range signals {
+		switch s.FilePath {
+		case "go.mod":
+			goSig = s
+		case "Cargo.toml":
+			rustSig = s
+		}
+	}
+
+	assert.Equal(t, "go.mod", goSig.FilePath)
+	assert.Contains(t, goSig.Title, "github.com/foo/bar")
+
+	assert.Equal(t, "Cargo.toml", rustSig.FilePath)
+	assert.Contains(t, rustSig.Title, "serde")
+}
+
+func TestVulnCollector_CargoParseError(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), validGoMod(), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[dependencies\nbroken"), 0o600))
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{{
+			ID:          "GO-2024-0001",
+			Summary:     "Go vuln",
+			Ecosystem:   "Go",
+			PackageName: "github.com/foo/bar",
+			Version:     "v1.0.0",
+			Severity:    "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+		}},
+	}}
+
+	// Malformed Cargo.toml should be skipped gracefully; Go signals still emitted.
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "go.mod", signals[0].FilePath)
+}
+
+func TestVulnCollector_RustTags(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), validGoMod(), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Cargo.toml"), validCargoToml(), 0o600))
+
+	goVuln := VulnDetail{
+		ID:          "GO-2024-0001",
+		Summary:     "Go vuln",
+		Ecosystem:   "Go",
+		PackageName: "github.com/foo/bar",
+		Version:     "v1.0.0",
+		Severity:    "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+	}
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{goVuln, crateVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 2)
+
+	for _, s := range signals {
+		if s.FilePath == "go.mod" {
+			assert.NotContains(t, s.Tags, "rust", "Go signal should not have rust tag")
+		} else {
+			assert.Contains(t, s.Tags, "rust", "Rust signal should have rust tag")
+		}
+	}
+}
+
+func TestVulnCollector_CargoNoFix(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Cargo.toml"), validCargoToml(), 0o600))
+
+	vuln := crateVulnDetail()
+	vuln.FixedVersion = ""
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{vuln},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+
+	assert.Contains(t, signals[0].Description, "No fix available for serde 1.0.197")
+	assert.Equal(t, "Cargo.toml", signals[0].FilePath)
+}
