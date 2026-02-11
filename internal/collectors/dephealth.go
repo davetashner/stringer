@@ -20,7 +20,7 @@ func init() {
 	collector.Register(&DepHealthCollector{})
 }
 
-// DepHealthMetrics holds structured dependency data parsed from go.mod.
+// DepHealthMetrics holds structured dependency data parsed from manifests.
 type DepHealthMetrics struct {
 	ModulePath   string
 	GoVersion    string
@@ -30,6 +30,8 @@ type DepHealthMetrics struct {
 	Archived     []string
 	Deprecated   []string
 	Stale        []string
+	Yanked       []string
+	Ecosystems   []string // ecosystems detected (e.g., "go", "npm", "cargo")
 }
 
 // ModuleDep represents a single require directive.
@@ -55,28 +57,76 @@ type ModuleRetract struct {
 	Rationale string
 }
 
-// DepHealthCollector parses go.mod to extract dependency information and
-// emits signals for local replace directives, retracted versions, archived
-// repos, deprecated modules, and stale dependencies.
+// DepHealthCollector parses dependency manifests (go.mod, package.json,
+// Cargo.toml, pom.xml, *.csproj, requirements.txt, pyproject.toml) to extract
+// dependency information and emits signals for deprecated, yanked, archived,
+// and stale dependencies across multiple ecosystems.
 type DepHealthCollector struct {
-	metrics     *DepHealthMetrics
-	ghAPI       dephealthGitHubAPI
-	proxyClient moduleProxyClient
+	metrics      *DepHealthMetrics
+	ghAPI        dephealthGitHubAPI
+	proxyClient  moduleProxyClient
+	npmClient    npmRegistryClient
+	cratesClient cratesRegistryClient
+	mavenClient  mavenRegistryClient
+	nugetClient  nugetRegistryClient
+	pypiClient   pypiRegistryClient
 }
 
 // Name returns the collector name used for registration and filtering.
 func (c *DepHealthCollector) Name() string { return "dephealth" }
 
-// Collect parses the go.mod file in repoPath and returns signals for
+// Collect parses dependency manifests in repoPath and returns signals for
 // actionable findings (local replaces, retracted versions, archived repos,
-// deprecated modules, stale dependencies).
+// deprecated modules, yanked versions, stale dependencies) across Go, npm,
+// Cargo, Maven, NuGet, and Python ecosystems.
 func (c *DepHealthCollector) Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error) {
+	metrics := &DepHealthMetrics{}
+	var signals []signal.RawSignal
+
+	// --- Go ecosystem (go.mod) ---
+	goSignals, err := c.collectGoHealth(ctx, repoPath, opts, metrics)
+	if err != nil {
+		return nil, err
+	}
+	signals = append(signals, goSignals...)
+
+	// --- npm ecosystem (package.json) ---
+	npmSignals := c.collectNpmHealth(ctx, repoPath, metrics)
+	signals = append(signals, npmSignals...)
+
+	// --- Rust/Cargo ecosystem (Cargo.toml) ---
+	cargoSignals := c.collectCargoHealth(ctx, repoPath, metrics)
+	signals = append(signals, cargoSignals...)
+
+	// --- Java/Maven ecosystem (pom.xml) ---
+	mavenSignals := c.collectMavenHealth(ctx, repoPath, metrics)
+	signals = append(signals, mavenSignals...)
+
+	// --- C#/NuGet ecosystem (*.csproj) ---
+	nugetSignals := c.collectNuGetHealth(ctx, repoPath, metrics)
+	signals = append(signals, nugetSignals...)
+
+	// --- Python/PyPI ecosystem (requirements.txt, pyproject.toml) ---
+	pypiSignals := c.collectPyPIHealth(ctx, repoPath, metrics)
+	signals = append(signals, pypiSignals...)
+
+	// If no ecosystems found at all, return nil.
+	if len(metrics.Ecosystems) == 0 {
+		slog.Info("no dependency manifests found, skipping dephealth collector")
+		return nil, nil
+	}
+
+	c.metrics = metrics
+	return signals, nil
+}
+
+// collectGoHealth handles go.mod parsing and Go-specific dependency checks.
+func (c *DepHealthCollector) collectGoHealth(ctx context.Context, repoPath string, opts signal.CollectorOpts, metrics *DepHealthMetrics) ([]signal.RawSignal, error) {
 	goModPath := filepath.Join(repoPath, "go.mod")
 
 	data, err := FS.ReadFile(goModPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			slog.Info("no go.mod found, skipping dephealth collector")
 			return nil, nil
 		}
 		return nil, fmt.Errorf("reading go.mod: %w", err)
@@ -87,7 +137,8 @@ func (c *DepHealthCollector) Collect(ctx context.Context, repoPath string, opts 
 		return nil, fmt.Errorf("parsing go.mod: %w", err)
 	}
 
-	metrics := &DepHealthMetrics{}
+	metrics.Ecosystems = append(metrics.Ecosystems, "go")
+
 	if f.Module != nil {
 		metrics.ModulePath = f.Module.Mod.Path
 	}
@@ -215,8 +266,148 @@ func (c *DepHealthCollector) Collect(ctx context.Context, repoPath string, opts 
 	}
 	signals = append(signals, deprecatedSignals...)
 
-	c.metrics = metrics
 	return signals, nil
+}
+
+// collectNpmHealth parses package.json and checks the npm registry for deprecated packages.
+func (c *DepHealthCollector) collectNpmHealth(ctx context.Context, repoPath string, metrics *DepHealthMetrics) []signal.RawSignal {
+	data, err := FS.ReadFile(filepath.Join(repoPath, "package.json"))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("dephealth: reading package.json", "error", err)
+		}
+		return nil
+	}
+
+	deps, err := parseNpmDeps(data)
+	if err != nil {
+		slog.Warn("dephealth: parsing package.json", "error", err)
+		return nil
+	}
+	if len(deps) == 0 {
+		return nil
+	}
+
+	metrics.Ecosystems = append(metrics.Ecosystems, "npm")
+
+	client := c.npmClient
+	if client == nil {
+		client = &realNpmRegistryClient{}
+	}
+
+	npmSignals := checkNpmDeps(ctx, client, deps, "package.json")
+	for _, s := range npmSignals {
+		metrics.Deprecated = append(metrics.Deprecated, s.Title)
+	}
+	return npmSignals
+}
+
+// collectCargoHealth parses Cargo.toml and checks crates.io for yanked crates.
+func (c *DepHealthCollector) collectCargoHealth(ctx context.Context, repoPath string, metrics *DepHealthMetrics) []signal.RawSignal {
+	data, err := FS.ReadFile(filepath.Join(repoPath, "Cargo.toml"))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("dephealth: reading Cargo.toml", "error", err)
+		}
+		return nil
+	}
+
+	deps, err := parseCargoDeps(data)
+	if err != nil {
+		slog.Warn("dephealth: parsing Cargo.toml", "error", err)
+		return nil
+	}
+	if len(deps) == 0 {
+		return nil
+	}
+
+	metrics.Ecosystems = append(metrics.Ecosystems, "cargo")
+
+	client := c.cratesClient
+	if client == nil {
+		client = &realCratesRegistryClient{}
+	}
+
+	cargoSignals := checkCratesDeps(ctx, client, deps)
+	for _, s := range cargoSignals {
+		metrics.Yanked = append(metrics.Yanked, s.Title)
+	}
+	return cargoSignals
+}
+
+// collectMavenHealth parses pom.xml and checks Maven Central for stale artifacts.
+func (c *DepHealthCollector) collectMavenHealth(ctx context.Context, repoPath string, metrics *DepHealthMetrics) []signal.RawSignal {
+	data, err := FS.ReadFile(filepath.Join(repoPath, "pom.xml"))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("dephealth: reading pom.xml", "error", err)
+		}
+		return nil
+	}
+
+	deps, err := parseMavenDeps(data)
+	if err != nil {
+		slog.Warn("dephealth: parsing pom.xml", "error", err)
+		return nil
+	}
+	if len(deps) == 0 {
+		return nil
+	}
+
+	metrics.Ecosystems = append(metrics.Ecosystems, "maven")
+
+	client := c.mavenClient
+	if client == nil {
+		client = &realMavenRegistryClient{}
+	}
+
+	mavenSignals := checkMavenDeps(ctx, client, deps, "pom.xml")
+	for _, s := range mavenSignals {
+		metrics.Stale = append(metrics.Stale, s.Title)
+	}
+	return mavenSignals
+}
+
+// collectNuGetHealth parses .csproj files and checks NuGet for deprecated packages.
+func (c *DepHealthCollector) collectNuGetHealth(ctx context.Context, repoPath string, metrics *DepHealthMetrics) []signal.RawSignal {
+	filePath, deps := parseCsprojQueries(repoPath)
+	if len(deps) == 0 {
+		return nil
+	}
+
+	metrics.Ecosystems = append(metrics.Ecosystems, "nuget")
+
+	client := c.nugetClient
+	if client == nil {
+		client = &realNuGetRegistryClient{}
+	}
+
+	nugetSignals := checkNuGetDeps(ctx, client, deps, filePath)
+	for _, s := range nugetSignals {
+		metrics.Deprecated = append(metrics.Deprecated, s.Title)
+	}
+	return nugetSignals
+}
+
+// collectPyPIHealth parses Python manifests and checks PyPI for deprecated packages.
+func (c *DepHealthCollector) collectPyPIHealth(ctx context.Context, repoPath string, metrics *DepHealthMetrics) []signal.RawSignal {
+	filePath, deps := parsePythonQueries(repoPath)
+	if len(deps) == 0 {
+		return nil
+	}
+
+	metrics.Ecosystems = append(metrics.Ecosystems, "python")
+
+	client := c.pypiClient
+	if client == nil {
+		client = &realPyPIRegistryClient{}
+	}
+
+	pypiSignals := checkPyPIDeps(ctx, client, deps, filePath)
+	for _, s := range pypiSignals {
+		metrics.Deprecated = append(metrics.Deprecated, s.Title)
+	}
+	return pypiSignals
 }
 
 // Metrics returns structured dependency data from the last Collect call.
