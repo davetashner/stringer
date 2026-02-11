@@ -3,11 +3,18 @@ package config
 
 // Config represents the contents of a .stringer.yaml file.
 type Config struct {
-	OutputFormat string                     `yaml:"output_format,omitempty"`
-	MaxIssues    int                        `yaml:"max_issues,omitempty"`
-	NoLLM        bool                       `yaml:"no_llm,omitempty"`
-	BeadsAware   *bool                      `yaml:"beads_aware,omitempty"`
-	Collectors   map[string]CollectorConfig `yaml:"collectors,omitempty"`
+	OutputFormat      string                     `yaml:"output_format,omitempty"`
+	MaxIssues         int                        `yaml:"max_issues,omitempty"`
+	NoLLM             bool                       `yaml:"no_llm,omitempty"`
+	BeadsAware        *bool                      `yaml:"beads_aware,omitempty"`
+	Collectors        map[string]CollectorConfig `yaml:"collectors,omitempty"`
+	PriorityOverrides []PriorityOverrideConfig   `yaml:"priority_overrides,omitempty"`
+}
+
+// PriorityOverrideConfig maps a file-path glob pattern to a fixed priority.
+type PriorityOverrideConfig struct {
+	Pattern  string `yaml:"pattern"`
+	Priority int    `yaml:"priority"`
 }
 
 // CollectorConfig holds per-collector settings in the config file.

@@ -76,12 +76,17 @@ func (b *BeadsFormatter) Format(signals []signal.RawSignal, w io.Writer) error {
 
 // signalToBead converts a RawSignal into a beadRecord.
 func (b *BeadsFormatter) signalToBead(sig signal.RawSignal) beadRecord {
+	priority := mapConfidenceToPriority(sig.Confidence)
+	if sig.Priority != nil {
+		priority = *sig.Priority
+	}
+
 	rec := beadRecord{
 		ID:          b.generateID(sig),
 		Title:       sig.Title,
 		Description: buildDescription(sig),
 		Type:        mapKindToType(sig.Kind),
-		Priority:    mapConfidenceToPriority(sig.Confidence),
+		Priority:    priority,
 		Status:      "open",
 		CreatedAt:   formatTimestamp(sig.Timestamp),
 		CreatedBy:   resolveAuthor(sig.Author),
