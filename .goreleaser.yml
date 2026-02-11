@@ -79,7 +79,7 @@ release:
   github:
     owner: davetashner
     name: stringer
-  draft: false
+  draft: true
   prerelease: auto
   name_template: "{{.Tag}}"
   extra_files:
