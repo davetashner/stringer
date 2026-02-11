@@ -433,3 +433,228 @@ func TestExtractCVE(t *testing.T) {
 		})
 	}
 }
+
+// --- Java manifest tests ---
+
+func validPomXML() []byte {
+	return []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <groupId>com.example</groupId>
+  <artifactId>myapp</artifactId>
+  <version>1.0.0</version>
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-core</artifactId>
+      <version>5.3.0</version>
+    </dependency>
+  </dependencies>
+</project>`)
+}
+
+func validBuildGradle() []byte {
+	return []byte(`plugins { id 'java' }
+implementation 'org.springframework:spring-core:5.3.0'
+`)
+}
+
+func validBuildGradleKts() []byte {
+	return []byte(`plugins { id("java") }
+implementation("org.springframework:spring-core:5.3.0")
+`)
+}
+
+func mavenVulnDetail() VulnDetail {
+	return VulnDetail{
+		ID:           "GHSA-1234-5678-abcd",
+		Aliases:      []string{"CVE-2023-20861"},
+		Summary:      "Spring Expression DoS",
+		Ecosystem:    "Maven",
+		PackageName:  "org.springframework:spring-core",
+		Version:      "5.3.0",
+		FixedVersion: "5.3.27",
+		Severity:     "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+	}
+}
+
+func TestVulnCollector_PomXmlOnly(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "pom.xml"), validPomXML(), 0o600))
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{mavenVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+
+	sig := signals[0]
+	assert.Equal(t, "pom.xml", sig.FilePath)
+	assert.Equal(t, "vuln", sig.Source)
+	assert.Contains(t, sig.Title, "org.springframework:spring-core")
+	assert.Contains(t, sig.Title, "CVE-2023-20861")
+	assert.Contains(t, sig.Description, "Upgrade org.springframework:spring-core from 5.3.0 to 5.3.27")
+	assert.Contains(t, sig.Tags, "java")
+	assert.Contains(t, sig.Tags, "security")
+
+	metrics := c.Metrics().(*VulnMetrics)
+	assert.Equal(t, "Maven", metrics.Vulns[0].Ecosystem)
+	assert.Equal(t, "pom.xml", metrics.Vulns[0].FilePath)
+}
+
+func TestVulnCollector_GradleOnly(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "build.gradle"), validBuildGradle(), 0o600))
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{mavenVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+
+	assert.Equal(t, "build.gradle", signals[0].FilePath)
+	assert.Contains(t, signals[0].Tags, "java")
+}
+
+func TestVulnCollector_GradleKts(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "build.gradle.kts"), validBuildGradleKts(), 0o600))
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{mavenVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+
+	assert.Equal(t, "build.gradle.kts", signals[0].FilePath)
+	assert.Contains(t, signals[0].Tags, "java")
+}
+
+func TestVulnCollector_GoAndMaven(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), validGoMod(), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "pom.xml"), validPomXML(), 0o600))
+
+	goVuln := VulnDetail{
+		ID:           "GO-2024-0001",
+		Aliases:      []string{"CVE-2024-0001"},
+		Summary:      "Go vuln",
+		Ecosystem:    "Go",
+		PackageName:  "github.com/foo/bar",
+		Version:      "v1.0.0",
+		FixedVersion: "v1.1.0",
+		Severity:     "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+	}
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{goVuln, mavenVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 2)
+
+	// Find Go and Maven signals by FilePath.
+	var goSig, mavenSig signal.RawSignal
+	for _, s := range signals {
+		switch s.FilePath {
+		case "go.mod":
+			goSig = s
+		case "pom.xml":
+			mavenSig = s
+		}
+	}
+
+	assert.Equal(t, "go.mod", goSig.FilePath)
+	assert.Contains(t, goSig.Title, "github.com/foo/bar")
+
+	assert.Equal(t, "pom.xml", mavenSig.FilePath)
+	assert.Contains(t, mavenSig.Title, "org.springframework:spring-core")
+}
+
+func TestVulnCollector_JavaTags(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), validGoMod(), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "pom.xml"), validPomXML(), 0o600))
+
+	goVuln := VulnDetail{
+		ID:          "GO-2024-0001",
+		Summary:     "Go vuln",
+		Ecosystem:   "Go",
+		PackageName: "github.com/foo/bar",
+		Version:     "v1.0.0",
+		Severity:    "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+	}
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{goVuln, mavenVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 2)
+
+	for _, s := range signals {
+		if s.FilePath == "go.mod" {
+			assert.NotContains(t, s.Tags, "java", "Go signal should not have java tag")
+		} else {
+			assert.Contains(t, s.Tags, "java", "Maven signal should have java tag")
+		}
+	}
+}
+
+func TestVulnCollector_PomParseError(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), validGoMod(), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "pom.xml"), []byte("<<<not valid xml>>>"), 0o600))
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{{
+			ID:          "GO-2024-0001",
+			Summary:     "Go vuln",
+			Ecosystem:   "Go",
+			PackageName: "github.com/foo/bar",
+			Version:     "v1.0.0",
+			Severity:    "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+		}},
+	}}
+
+	// Malformed pom.xml should be skipped gracefully; Go signals still emitted.
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "go.mod", signals[0].FilePath)
+}
+
+func TestVulnCollector_NoManifests(t *testing.T) {
+	dir := t.TempDir()
+	c := &VulnCollector{osv: &mockOSVClient{}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	assert.NoError(t, err)
+	assert.Nil(t, signals)
+}
+
+func TestVulnCollector_MavenNoFix(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "pom.xml"), validPomXML(), 0o600))
+
+	vuln := mavenVulnDetail()
+	vuln.FixedVersion = ""
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{vuln},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+
+	assert.Contains(t, signals[0].Description, "No fix available for org.springframework:spring-core 5.3.0")
+	assert.Equal(t, "pom.xml", signals[0].FilePath)
+}

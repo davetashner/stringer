@@ -35,6 +35,8 @@ type VulnEntry struct {
 	FixedVersion string
 	Summary      string
 	Severity     string
+	Ecosystem    string
+	FilePath     string
 }
 
 // VulnCollector detects known vulnerabilities in Go module dependencies
@@ -47,36 +49,53 @@ type VulnCollector struct {
 // Name returns the collector name used for registration and filtering.
 func (c *VulnCollector) Name() string { return "vuln" }
 
-// Collect parses go.mod in repoPath, queries OSV.dev for known vulnerabilities,
-// and returns signals with severity-based confidence scoring.
+// Collect parses dependency manifests (go.mod, pom.xml, build.gradle/kts) in repoPath,
+// queries OSV.dev for known vulnerabilities, and returns signals with severity-based
+// confidence scoring.
 func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.CollectorOpts) ([]signal.RawSignal, error) {
-	goModPath := filepath.Join(repoPath, "go.mod")
-
-	data, err := FS.ReadFile(goModPath)
+	// Gather queries from Go manifest (fatal on parse error).
+	goQueries, err := parseGoModQueries(repoPath)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			slog.Info("no go.mod found, skipping vuln collector")
-			return nil, nil
+		return nil, err
+	}
+
+	// Gather queries from Java manifests (non-fatal on parse error).
+	pomQueries := parsePomQueries(repoPath)
+	gradleFile, gradleQueries := parseGradleQueries(repoPath)
+
+	// Build combined query list with file/ecosystem tracking.
+	// fileMap tracks which manifest a query came from; used for dedup and signal emission.
+	type queryMeta struct {
+		filePath  string
+		ecosystem string
+	}
+	fileMap := make(map[string]queryMeta) // key: "ecosystem|name|version"
+	var queries []PackageQuery
+
+	for _, q := range goQueries {
+		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
+		if _, exists := fileMap[key]; !exists {
+			fileMap[key] = queryMeta{filePath: "go.mod", ecosystem: "Go"}
+			queries = append(queries, q)
 		}
-		return nil, fmt.Errorf("reading go.mod: %w", err)
+	}
+	for _, q := range pomQueries {
+		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
+		if _, exists := fileMap[key]; !exists {
+			fileMap[key] = queryMeta{filePath: "pom.xml", ecosystem: "Maven"}
+			queries = append(queries, q)
+		}
+	}
+	for _, q := range gradleQueries {
+		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
+		if _, exists := fileMap[key]; !exists {
+			fileMap[key] = queryMeta{filePath: gradleFile, ecosystem: "Maven"}
+			queries = append(queries, q)
+		}
 	}
 
-	f, err := modfile.Parse("go.mod", data, nil)
-	if err != nil {
-		return nil, fmt.Errorf("parsing go.mod: %w", err)
-	}
-
-	if len(f.Require) == 0 {
+	if len(queries) == 0 {
 		return nil, nil
-	}
-
-	queries := make([]PackageQuery, len(f.Require))
-	for i, req := range f.Require {
-		queries[i] = PackageQuery{
-			Ecosystem: "Go",
-			Name:      req.Mod.Path,
-			Version:   req.Mod.Version,
-		}
 	}
 
 	client := c.osv
@@ -106,13 +125,19 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 		if r.FixedVersion != "" {
 			desc = fmt.Sprintf("%s\n\nUpgrade %s from %s to %s.", r.Summary, r.PackageName, r.Version, r.FixedVersion)
 		} else {
-			desc = fmt.Sprintf("%s\n\nNo fix available.", r.Summary)
+			desc = fmt.Sprintf("%s\n\nNo fix available for %s %s.", r.Summary, r.PackageName, r.Version)
 		}
 
 		severity := severityFromCVSS(r.Severity)
 		confidence := confidenceForSeverity(severity)
 
+		// Look up the manifest file for this result.
+		meta := fileMap[r.Ecosystem+"|"+r.PackageName+"|"+r.Version]
+
 		tags := []string{"security", "vulnerable-dependency"}
+		if meta.ecosystem == "Maven" {
+			tags = append(tags, "java")
+		}
 		if cve != "" {
 			tags = append(tags, cve)
 		}
@@ -121,7 +146,7 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 		signals = append(signals, signal.RawSignal{
 			Source:      "vuln",
 			Kind:        "vulnerable-dependency",
-			FilePath:    "go.mod",
+			FilePath:    meta.filePath,
 			Title:       title,
 			Description: desc,
 			Confidence:  confidence,
@@ -136,12 +161,88 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 			FixedVersion: r.FixedVersion,
 			Summary:      r.Summary,
 			Severity:     severity,
+			Ecosystem:    meta.ecosystem,
+			FilePath:     meta.filePath,
 		})
 	}
 
 	metrics.TotalVulns = len(signals)
 	c.metrics = metrics
 	return signals, nil
+}
+
+// parseGoModQueries reads go.mod and returns PackageQuery entries for OSV lookup.
+// Returns nil, nil if no go.mod exists. Parse errors are fatal (returned as error).
+func parseGoModQueries(repoPath string) ([]PackageQuery, error) {
+	data, err := FS.ReadFile(filepath.Join(repoPath, "go.mod"))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading go.mod: %w", err)
+	}
+
+	f, err := modfile.Parse("go.mod", data, nil)
+	if err != nil {
+		return nil, fmt.Errorf("parsing go.mod: %w", err)
+	}
+
+	if len(f.Require) == 0 {
+		return nil, nil
+	}
+
+	queries := make([]PackageQuery, len(f.Require))
+	for i, req := range f.Require {
+		queries[i] = PackageQuery{
+			Ecosystem: "Go",
+			Name:      req.Mod.Path,
+			Version:   req.Mod.Version,
+		}
+	}
+	return queries, nil
+}
+
+// parsePomQueries reads pom.xml and returns PackageQuery entries for OSV lookup.
+// Returns nil if no pom.xml exists or on parse error (non-fatal, logged as warning).
+func parsePomQueries(repoPath string) []PackageQuery {
+	data, err := FS.ReadFile(filepath.Join(repoPath, "pom.xml"))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("vuln: reading pom.xml", "error", err)
+		}
+		return nil
+	}
+
+	queries, err := parseMavenDeps(data)
+	if err != nil {
+		slog.Warn("vuln: parsing pom.xml", "error", err)
+		return nil
+	}
+	return queries
+}
+
+// parseGradleQueries reads build.gradle or build.gradle.kts and returns the
+// chosen filename and PackageQuery entries for OSV lookup.
+// Returns "", nil if no Gradle build file exists or on parse error (non-fatal).
+func parseGradleQueries(repoPath string) (string, []PackageQuery) {
+	for _, name := range []string{"build.gradle", "build.gradle.kts"} {
+		data, err := FS.ReadFile(filepath.Join(repoPath, name))
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			slog.Warn("vuln: reading "+name, "error", err)
+			return "", nil
+		}
+
+		queries, err := parseGradleDeps(data)
+		if err != nil {
+			slog.Warn("vuln: parsing "+name, "error", err)
+			return "", nil
+		}
+		return name, queries
+	}
+	return "", nil
 }
 
 // Metrics returns structured vulnerability data from the last Collect call.
