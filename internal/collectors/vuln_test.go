@@ -1202,3 +1202,169 @@ func TestVulnCollector_PythonParseError(t *testing.T) {
 	require.Len(t, signals, 1)
 	assert.Equal(t, "go.mod", signals[0].FilePath)
 }
+
+// --- Node.js package.json tests ---
+
+func validPackageJSON() []byte {
+	return []byte(`{
+		"name": "myapp",
+		"version": "1.0.0",
+		"dependencies": {
+			"express": "^4.18.2",
+			"lodash": "4.17.21"
+		}
+	}`)
+}
+
+func npmVulnDetail() VulnDetail {
+	return VulnDetail{
+		ID:           "GHSA-29mw-wpgm-hmr9",
+		Aliases:      []string{"CVE-2024-29041"},
+		Summary:      "Open redirect in express",
+		Ecosystem:    "npm",
+		PackageName:  "express",
+		Version:      "4.18.2",
+		FixedVersion: "4.19.2",
+		Severity:     "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N",
+	}
+}
+
+func TestVulnCollector_PackageJSONOnly(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), validPackageJSON(), 0o600))
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{npmVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+
+	sig := signals[0]
+	assert.Equal(t, "package.json", sig.FilePath)
+	assert.Equal(t, "vuln", sig.Source)
+	assert.Contains(t, sig.Title, "express")
+	assert.Contains(t, sig.Title, "CVE-2024-29041")
+	assert.Contains(t, sig.Description, "Upgrade express from 4.18.2 to 4.19.2")
+	assert.Contains(t, sig.Tags, "nodejs")
+	assert.Contains(t, sig.Tags, "security")
+
+	metrics := c.Metrics().(*VulnMetrics)
+	assert.Equal(t, "npm", metrics.Vulns[0].Ecosystem)
+	assert.Equal(t, "package.json", metrics.Vulns[0].FilePath)
+}
+
+func TestVulnCollector_GoAndNpm(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), validGoMod(), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), validPackageJSON(), 0o600))
+
+	goVuln := VulnDetail{
+		ID:           "GO-2024-0001",
+		Aliases:      []string{"CVE-2024-0001"},
+		Summary:      "Go vuln",
+		Ecosystem:    "Go",
+		PackageName:  "github.com/foo/bar",
+		Version:      "v1.0.0",
+		FixedVersion: "v1.1.0",
+		Severity:     "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+	}
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{goVuln, npmVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 2)
+
+	var goSig, npmSig signal.RawSignal
+	for _, s := range signals {
+		switch s.FilePath {
+		case "go.mod":
+			goSig = s
+		case "package.json":
+			npmSig = s
+		}
+	}
+
+	assert.Equal(t, "go.mod", goSig.FilePath)
+	assert.Contains(t, goSig.Title, "github.com/foo/bar")
+
+	assert.Equal(t, "package.json", npmSig.FilePath)
+	assert.Contains(t, npmSig.Title, "express")
+}
+
+func TestVulnCollector_NodejsTags(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), validGoMod(), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), validPackageJSON(), 0o600))
+
+	goVuln := VulnDetail{
+		ID:          "GO-2024-0001",
+		Summary:     "Go vuln",
+		Ecosystem:   "Go",
+		PackageName: "github.com/foo/bar",
+		Version:     "v1.0.0",
+		Severity:    "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+	}
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{goVuln, npmVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 2)
+
+	for _, s := range signals {
+		if s.FilePath == "go.mod" {
+			assert.NotContains(t, s.Tags, "nodejs", "Go signal should not have nodejs tag")
+		} else {
+			assert.Contains(t, s.Tags, "nodejs", "npm signal should have nodejs tag")
+		}
+	}
+}
+
+func TestVulnCollector_NpmNoFix(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), validPackageJSON(), 0o600))
+
+	vuln := npmVulnDetail()
+	vuln.FixedVersion = ""
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{vuln},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+
+	assert.Contains(t, signals[0].Description, "No fix available for express 4.18.2")
+	assert.Equal(t, "package.json", signals[0].FilePath)
+}
+
+func TestVulnCollector_NpmParseError(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), validGoMod(), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte("{broken json"), 0o600))
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{{
+			ID:          "GO-2024-0001",
+			Summary:     "Go vuln",
+			Ecosystem:   "Go",
+			PackageName: "github.com/foo/bar",
+			Version:     "v1.0.0",
+			Severity:    "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+		}},
+	}}
+
+	// Malformed package.json should be skipped gracefully; Go signals still emitted.
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "go.mod", signals[0].FilePath)
+}
