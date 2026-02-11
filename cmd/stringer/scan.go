@@ -43,6 +43,8 @@ var (
 	scanExcludeCollectors string
 	scanIncludeDemoPaths  bool
 	scanPaths             []string
+	scanCluster           bool
+	scanClusterThreshold  float64
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -79,6 +81,8 @@ func init() {
 	scanCmd.Flags().StringVarP(&scanExcludeCollectors, "exclude-collectors", "x", "", "comma-separated list of collectors to skip")
 	scanCmd.Flags().BoolVar(&scanIncludeDemoPaths, "include-demo-paths", false, "include demo/example/tutorial paths in noise-prone signals")
 	scanCmd.Flags().StringSliceVar(&scanPaths, "paths", nil, "restrict scanning to specific files or directories (comma-separated)")
+	scanCmd.Flags().BoolVar(&scanCluster, "cluster", false, "enable LLM-based signal clustering")
+	scanCmd.Flags().Float64Var(&scanClusterThreshold, "cluster-threshold", 0.7, "similarity threshold for signal pre-filtering (0.0-1.0)")
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
