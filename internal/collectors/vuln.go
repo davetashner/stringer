@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -49,7 +50,7 @@ type VulnCollector struct {
 // Name returns the collector name used for registration and filtering.
 func (c *VulnCollector) Name() string { return "vuln" }
 
-// Collect parses dependency manifests (go.mod, pom.xml, build.gradle/kts, Cargo.toml)
+// Collect parses dependency manifests (go.mod, pom.xml, build.gradle/kts, Cargo.toml, *.csproj)
 // in repoPath, queries OSV.dev for known vulnerabilities, and returns signals with
 // severity-based confidence scoring.
 func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.CollectorOpts) ([]signal.RawSignal, error) {
@@ -65,6 +66,9 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 
 	// Gather queries from Rust manifest (non-fatal on parse error).
 	cargoQueries := parseCargoQueries(repoPath)
+
+	// Gather queries from .NET manifests (non-fatal on parse error).
+	csprojFile, csprojQueries := parseCsprojQueries(repoPath)
 
 	// Build combined query list with file/ecosystem tracking.
 	// fileMap tracks which manifest a query came from; used for dedup and signal emission.
@@ -100,6 +104,13 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
 		if _, exists := fileMap[key]; !exists {
 			fileMap[key] = queryMeta{filePath: "Cargo.toml", ecosystem: "crates.io"}
+			queries = append(queries, q)
+		}
+	}
+	for _, q := range csprojQueries {
+		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
+		if _, exists := fileMap[key]; !exists {
+			fileMap[key] = queryMeta{filePath: csprojFile, ecosystem: "NuGet"}
 			queries = append(queries, q)
 		}
 	}
@@ -150,6 +161,9 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 		}
 		if meta.ecosystem == "crates.io" {
 			tags = append(tags, "rust")
+		}
+		if meta.ecosystem == "NuGet" {
+			tags = append(tags, "csharp")
 		}
 		if cve != "" {
 			tags = append(tags, cve)
@@ -275,6 +289,80 @@ func parseCargoQueries(repoPath string) []PackageQuery {
 		return nil
 	}
 	return queries
+}
+
+// findCsprojFiles walks repoPath up to depth 2 and returns relative paths
+// to *.csproj files. This covers root-level and one-subdirectory layouts
+// (e.g., src/MyApp/MyApp.csproj) without expensive deep tree walks.
+func findCsprojFiles(repoPath string) []string {
+	var files []string
+	_ = FS.WalkDir(repoPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil //nolint:nilerr // skip inaccessible paths
+		}
+
+		rel, relErr := filepath.Rel(repoPath, path)
+		if relErr != nil {
+			return nil
+		}
+
+		depth := strings.Count(rel, string(filepath.Separator))
+		if d.IsDir() && depth >= 2 {
+			return fs.SkipDir
+		}
+
+		if !d.IsDir() && strings.HasSuffix(d.Name(), ".csproj") {
+			files = append(files, rel)
+		}
+
+		return nil
+	})
+	return files
+}
+
+// parseCsprojQueries discovers .csproj files in repoPath, parses each for
+// NuGet package references, and returns an aggregate display filename and
+// combined queries (deduplicated by package name).
+func parseCsprojQueries(repoPath string) (string, []PackageQuery) {
+	csprojFiles := findCsprojFiles(repoPath)
+	if len(csprojFiles) == 0 {
+		return "", nil
+	}
+
+	seen := make(map[string]bool)
+	var queries []PackageQuery
+
+	for _, f := range csprojFiles {
+		data, err := FS.ReadFile(filepath.Join(repoPath, f))
+		if err != nil {
+			slog.Warn("vuln: reading "+f, "error", err)
+			continue
+		}
+
+		parsed, err := parseCsprojDeps(data)
+		if err != nil {
+			slog.Warn("vuln: parsing "+f, "error", err)
+			continue
+		}
+
+		for _, q := range parsed {
+			if !seen[q.Name] {
+				seen[q.Name] = true
+				queries = append(queries, q)
+			}
+		}
+	}
+
+	if len(queries) == 0 {
+		return "", nil
+	}
+
+	filePath := csprojFiles[0]
+	if len(csprojFiles) > 1 {
+		filePath = "*.csproj"
+	}
+
+	return filePath, queries
 }
 
 // Metrics returns structured vulnerability data from the last Collect call.

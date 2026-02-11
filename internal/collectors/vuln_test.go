@@ -824,3 +824,170 @@ func TestVulnCollector_CargoNoFix(t *testing.T) {
 	assert.Contains(t, signals[0].Description, "No fix available for serde 1.0.197")
 	assert.Equal(t, "Cargo.toml", signals[0].FilePath)
 }
+
+// --- C#/.NET .csproj tests ---
+
+func validCsproj() []byte {
+	return []byte(`<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+    <PackageReference Include="Serilog" Version="3.1.0" />
+  </ItemGroup>
+</Project>`)
+}
+
+func nugetVulnDetail() VulnDetail {
+	return VulnDetail{
+		ID:           "GHSA-5crp-9r3c-p9vr",
+		Aliases:      []string{"CVE-2024-12345"},
+		Summary:      "Deserialization vulnerability in Newtonsoft.Json",
+		Ecosystem:    "NuGet",
+		PackageName:  "Newtonsoft.Json",
+		Version:      "13.0.1",
+		FixedVersion: "13.0.4",
+		Severity:     "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+	}
+}
+
+func TestVulnCollector_CsprojOnly(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "MyApp.csproj"), validCsproj(), 0o600))
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{nugetVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+
+	sig := signals[0]
+	assert.Equal(t, "MyApp.csproj", sig.FilePath)
+	assert.Equal(t, "vuln", sig.Source)
+	assert.Contains(t, sig.Title, "Newtonsoft.Json")
+	assert.Contains(t, sig.Title, "CVE-2024-12345")
+	assert.Contains(t, sig.Description, "Upgrade Newtonsoft.Json from 13.0.1 to 13.0.4")
+	assert.Contains(t, sig.Tags, "csharp")
+	assert.Contains(t, sig.Tags, "security")
+
+	metrics := c.Metrics().(*VulnMetrics)
+	assert.Equal(t, "NuGet", metrics.Vulns[0].Ecosystem)
+	assert.Equal(t, "MyApp.csproj", metrics.Vulns[0].FilePath)
+}
+
+func TestVulnCollector_GoAndCsproj(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), validGoMod(), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "MyApp.csproj"), validCsproj(), 0o600))
+
+	goVuln := VulnDetail{
+		ID:           "GO-2024-0001",
+		Aliases:      []string{"CVE-2024-0001"},
+		Summary:      "Go vuln",
+		Ecosystem:    "Go",
+		PackageName:  "github.com/foo/bar",
+		Version:      "v1.0.0",
+		FixedVersion: "v1.1.0",
+		Severity:     "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+	}
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{goVuln, nugetVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 2)
+
+	var goSig, csharpSig signal.RawSignal
+	for _, s := range signals {
+		switch s.FilePath {
+		case "go.mod":
+			goSig = s
+		case "MyApp.csproj":
+			csharpSig = s
+		}
+	}
+
+	assert.Equal(t, "go.mod", goSig.FilePath)
+	assert.Contains(t, goSig.Title, "github.com/foo/bar")
+
+	assert.Equal(t, "MyApp.csproj", csharpSig.FilePath)
+	assert.Contains(t, csharpSig.Title, "Newtonsoft.Json")
+}
+
+func TestVulnCollector_CsprojParseError(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), validGoMod(), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Bad.csproj"), []byte("<<<not valid xml>>>"), 0o600))
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{{
+			ID:          "GO-2024-0001",
+			Summary:     "Go vuln",
+			Ecosystem:   "Go",
+			PackageName: "github.com/foo/bar",
+			Version:     "v1.0.0",
+			Severity:    "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+		}},
+	}}
+
+	// Malformed .csproj should be skipped gracefully; Go signals still emitted.
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "go.mod", signals[0].FilePath)
+}
+
+func TestVulnCollector_CsharpTags(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), validGoMod(), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "MyApp.csproj"), validCsproj(), 0o600))
+
+	goVuln := VulnDetail{
+		ID:          "GO-2024-0001",
+		Summary:     "Go vuln",
+		Ecosystem:   "Go",
+		PackageName: "github.com/foo/bar",
+		Version:     "v1.0.0",
+		Severity:    "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+	}
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{goVuln, nugetVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 2)
+
+	for _, s := range signals {
+		if s.FilePath == "go.mod" {
+			assert.NotContains(t, s.Tags, "csharp", "Go signal should not have csharp tag")
+		} else {
+			assert.Contains(t, s.Tags, "csharp", "NuGet signal should have csharp tag")
+		}
+	}
+}
+
+func TestVulnCollector_CsprojNoFix(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "MyApp.csproj"), validCsproj(), 0o600))
+
+	vuln := nugetVulnDetail()
+	vuln.FixedVersion = ""
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{vuln},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+
+	assert.Contains(t, signals[0].Description, "No fix available for Newtonsoft.Json 13.0.1")
+	assert.Equal(t, "MyApp.csproj", signals[0].FilePath)
+}
