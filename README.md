@@ -13,7 +13,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 
-> **Status: v0.6.0.** Seven collectors, four output formats, report command with health analysis, parallel pipeline with signal deduplication, delta scanning, per-collector timeouts, beads-aware dedup, MCP server for agent integration, and `stringer init` for easy setup. See [Current Limitations](#current-limitations) for what's not here yet.
+> **Status: v0.8.0.** Seven collectors (including multi-ecosystem vulnerability scanning), four output formats, report command with health analysis, parallel pipeline with signal deduplication, delta scanning, per-collector timeouts, beads-aware dedup, MCP server for agent integration, and `stringer init` for easy setup. See [Current Limitations](#current-limitations) for what's not here yet.
 
 **Codebase archaeology for [Beads](https://github.com/steveyegge/beads).** Mine your repo for actionable work items, output them as Beads-formatted issues, and give your AI agents instant situational awareness.
 
@@ -42,7 +42,7 @@ Stringer solves the cold-start problem. It mines signals already present in your
 
 ## Why Stringer?
 
-**Static analysis on your laptop, not your token budget.** Stringer runs locally — no API keys, no network calls, no per-request costs. It extracts signals that are already sitting in your codebase using deterministic static analysis.
+**Static analysis on your laptop, not your token budget.** Stringer runs locally — no API keys, no per-request costs. Most collectors use deterministic static analysis with zero network calls. The vuln and GitHub collectors make targeted API calls (to osv.dev and GitHub) but require no paid subscriptions.
 
 **Pre-process the easy stuff so agents start informed.** Without Stringer, an AI agent boots up on a new codebase and has to discover TODOs, stale branches, risky bus-factor modules, and open GitHub issues on its own — burning inference tokens on mechanical work. Stringer does that extraction up front on local CPU, so agents begin with structured context instead of a blank slate.
 
@@ -58,7 +58,7 @@ Stringer solves the cold-start problem. It mines signals already present in your
 - **Lottery risk analyzer** (`lotteryrisk`) — Flags directories with low lottery risk (single-author ownership risk) using git blame and commit history with recency weighting.
 - **GitHub collector** (`github`) — Imports open issues, pull requests, and actionable review comments from GitHub. With `--include-closed`, also generates pre-closed beads from merged PRs and closed issues with architectural module context. Requires `GITHUB_TOKEN` env var.
 - **Dependency health collector** (`dephealth`) — Detects archived, deprecated, and stale Go module dependencies using GitHub API and Go module proxy.
-- **Vulnerability scanner** (`vuln`) — Detects known CVEs in Go module dependencies via govulncheck. Graceful degradation when govulncheck is unavailable.
+- **Vulnerability scanner** (`vuln`) — Detects known CVEs across seven ecosystems via [OSV.dev](https://osv.dev/): Go (`go.mod`), Java/Maven (`pom.xml`), Java/Gradle (`build.gradle`/`.kts`), Rust (`Cargo.toml`), C#/.NET (`*.csproj`), Python (`requirements.txt`/`pyproject.toml`), and Node.js (`package.json`). No language toolchains required — only network access to osv.dev. Severity-based confidence scoring from CVSS vectors.
 
 ### Output Formats
 
@@ -425,7 +425,7 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 ## Current Limitations
 
 - **No LLM clustering.** The `--no-llm` flag exists but is a noop. There is no LLM pass to cluster related signals or infer dependencies.
-- **Go-only dependency scanning.** Dependency health and vulnerability scanning currently support Go modules only.
+- **Go-only dependency health.** The dependency health collector (`dephealth`) currently supports Go modules only. Vulnerability scanning (`vuln`) supports seven ecosystems.
 - **No global config.** Per-repo `.stringer.yaml` is supported, but there is no global `~/.stringer.yaml`.
 - **Line-sensitive hashing.** Moving a TODO to a different line changes its ID, which means `bd import` sees it as a new issue. Delta scanning (`--delta`) detects moved signals but doesn't update beads IDs.
 - **No monorepo support.** Scanning targets a single repository root. Per-workspace scanning is planned.
@@ -434,7 +434,7 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 
 Planned for future releases:
 
-- **Multi-language dependency scanning** — Extend dependency health and vulnerability scanning beyond Go modules
+- **Multi-language dependency health** — Extend dependency health scanning beyond Go modules (npm, PyPI, Maven, etc.)
 - **LLM clustering pass** — Group related signals, infer dependencies, prioritize
 - **Monorepo support** — Per-workspace scanning and scoped output
 
