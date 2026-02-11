@@ -83,27 +83,23 @@ type DirectoryTestRatio struct {
 // PatternsCollector detects structural code-quality patterns such as
 // oversized files, missing tests, and low test-to-source ratios.
 type PatternsCollector struct {
-	testRoots     []string // cached parallel test root dirs (e.g., "tests/", "test/")
-	testRootsInit bool     // whether testRoots has been initialized
-	metrics       *PatternsMetrics
+	metrics *PatternsMetrics
 }
 
 // Name returns the collector name used for registration and filtering.
 func (c *PatternsCollector) Name() string { return "patterns" }
 
 // detectTestRoots finds parallel test directories at the repo root.
-func (c *PatternsCollector) detectTestRoots(repoPath string) {
-	if c.testRootsInit {
-		return
-	}
-	c.testRootsInit = true
+func detectTestRoots(repoPath string) []string {
 	candidates := []string{"tests", "test", "spec", "__tests__", "benches"}
+	var roots []string
 	for _, dir := range candidates {
 		info, err := FS.Stat(filepath.Join(repoPath, dir))
 		if err == nil && info.IsDir() {
-			c.testRoots = append(c.testRoots, dir)
+			roots = append(roots, dir)
 		}
 	}
+	return roots
 }
 
 // Collect walks source files in repoPath, detects pattern-based signals, and
@@ -112,7 +108,7 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 	excludes := mergeExcludes(opts.ExcludePatterns)
 
 	// Detect parallel test directories before the walk.
-	c.detectTestRoots(repoPath)
+	testRoots := detectTestRoots(repoPath)
 
 	// Determine large-file threshold (configurable via opts).
 	threshold := defaultLargeFileThreshold
@@ -218,9 +214,9 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 			// with meaningful size. Suppressed in demo/example paths, test root
 			// dirs, and generated files by default.
 			if lineCount >= minSourceLinesForTestCheck &&
-				!isUnderTestRoot(relPath, c.testRoots) &&
+				!isUnderTestRoot(relPath, testRoots) &&
 				!isGeneratedFile(path) {
-				if !hasTestCounterpart(path, relPath, repoPath, c.testRoots) {
+				if !hasTestCounterpart(path, relPath, repoPath, testRoots) {
 					if opts.IncludeDemoPaths || !isDemoPath(relPath) {
 						signals = append(signals, signal.RawSignal{
 							Source:      "patterns",
