@@ -78,7 +78,7 @@ Scan a repository for actionable work items.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `path` | string | `.` | Repository path to scan |
-| `collectors` | string | all | Comma-separated list of collectors (`todos`, `gitlog`, `patterns`, `lotteryrisk`, `github`) |
+| `collectors` | string | all | Comma-separated list of collectors (`todos`, `gitlog`, `patterns`, `lotteryrisk`, `github`, `dephealth`, `vuln`) |
 | `format` | string | `json` | Output format: `json`, `beads`, `markdown`, `tasks` |
 | `max_issues` | int | 0 | Cap output count (0 = unlimited) |
 | `min_confidence` | float | 0 | Filter signals below this threshold (0.0-1.0) |
