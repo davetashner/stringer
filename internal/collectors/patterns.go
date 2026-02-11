@@ -97,7 +97,7 @@ func (c *PatternsCollector) detectTestRoots(repoPath string) {
 		return
 	}
 	c.testRootsInit = true
-	candidates := []string{"tests", "test", "spec", "__tests__"}
+	candidates := []string{"tests", "test", "spec", "__tests__", "benches"}
 	for _, dir := range candidates {
 		info, err := FS.Stat(filepath.Join(repoPath, dir))
 		if err == nil && info.IsDir() {
@@ -383,6 +383,28 @@ func isTestFile(relPath string) bool {
 			return true
 		}
 	}
+	// Rust: files in tests/ directory (integration tests) or benches/ directory.
+	// Also recognize the uncommon foo_test.rs naming.
+	if strings.HasSuffix(base, ".rs") {
+		dir := filepath.Dir(relPath)
+		parts := strings.Split(filepath.ToSlash(dir), "/")
+		for _, p := range parts {
+			if p == "tests" || p == "benches" {
+				return true
+			}
+		}
+		name := strings.TrimSuffix(base, ".rs")
+		if strings.HasSuffix(name, "_test") {
+			return true
+		}
+	}
+	// C#: *Tests.cs, *Test.cs (NUnit/xUnit/MSTest conventions)
+	if strings.HasSuffix(base, ".cs") {
+		name := strings.TrimSuffix(base, ".cs")
+		if strings.HasSuffix(name, "Tests") || strings.HasSuffix(name, "Test") {
+			return true
+		}
+	}
 	return false
 }
 
@@ -436,6 +458,57 @@ func hasTestCounterpart(absPath, relPath, repoPath string, testRoots []string) b
 			nameWithoutExt+"Test.kt",
 			nameWithoutExt+"Spec.kt",
 		)
+	case ".rs":
+		// Rust: foo.rs → foo_test.rs (uncommon but exists)
+		candidates = append(candidates, nameWithoutExt+"_test.rs")
+
+		// Check for inline tests (#[cfg(test)]) before looking for external files.
+		if hasInlineTests(absPath) {
+			return true
+		}
+
+		// Check tests/ directory at repo root for integration tests.
+		// tests/foo.rs or tests/foo/mod.rs
+		testsDir := filepath.Join(repoPath, "tests")
+		if _, err := FS.Stat(filepath.Join(testsDir, nameWithoutExt+".rs")); err == nil {
+			return true
+		}
+		if _, err := FS.Stat(filepath.Join(testsDir, nameWithoutExt, "mod.rs")); err == nil {
+			return true
+		}
+	case ".cs":
+		// C#: Foo.cs → FooTests.cs, FooTest.cs
+		candidates = append(candidates,
+			nameWithoutExt+"Tests.cs",
+			nameWithoutExt+"Test.cs",
+		)
+
+		// Check parallel .Tests project directories.
+		// MyApp/Foo.cs → MyApp.Tests/FooTests.cs, MyApp.Tests/FooTest.cs
+		// Also check MyApp.UnitTests/ and MyApp.IntegrationTests/
+		csDir := filepath.Dir(relPath)
+		csParts := strings.Split(filepath.ToSlash(csDir), "/")
+		if len(csParts) > 0 {
+			projectDir := csParts[0]
+			rest := ""
+			if len(csParts) > 1 {
+				rest = strings.Join(csParts[1:], "/")
+			}
+			for _, suffix := range []string{".Tests", ".UnitTests", ".IntegrationTests"} {
+				testProjectDir := projectDir + suffix
+				var testDirPath string
+				if rest != "" {
+					testDirPath = filepath.Join(repoPath, testProjectDir, filepath.FromSlash(rest))
+				} else {
+					testDirPath = filepath.Join(repoPath, testProjectDir)
+				}
+				for _, testName := range []string{nameWithoutExt + "Tests.cs", nameWithoutExt + "Test.cs"} {
+					if _, err := FS.Stat(filepath.Join(testDirPath, testName)); err == nil {
+						return true
+					}
+				}
+			}
+		}
 	default:
 		return false
 	}
@@ -542,6 +615,31 @@ func isGeneratedFile(path string) bool {
 	if scanner.Scan() {
 		line := scanner.Text()
 		if strings.Contains(line, "Code generated") {
+			return true
+		}
+	}
+	return false
+}
+
+// hasInlineTests checks if a Rust source file contains inline tests using
+// the #[cfg(test)] attribute. Rust inline test modules are conventionally
+// placed at the bottom of source files, so the entire file is scanned.
+func hasInlineTests(path string) bool {
+	if !strings.HasSuffix(path, ".rs") {
+		return false
+	}
+
+	f, err := FS.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close() //nolint:errcheck // read-only file
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "#[cfg(test)]" {
 			return true
 		}
 	}
