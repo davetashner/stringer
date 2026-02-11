@@ -991,3 +991,214 @@ func TestVulnCollector_CsprojNoFix(t *testing.T) {
 	assert.Contains(t, signals[0].Description, "No fix available for Newtonsoft.Json 13.0.1")
 	assert.Equal(t, "MyApp.csproj", signals[0].FilePath)
 }
+
+// --- Python requirements.txt / pyproject.toml tests ---
+
+func validRequirementsTxt() []byte {
+	return []byte(`requests==2.31.0
+django~=4.2.0
+`)
+}
+
+func validPyprojectToml() []byte {
+	return []byte(`[project]
+name = "myapp"
+version = "1.0.0"
+dependencies = [
+    "requests>=2.31.0",
+    "flask==3.0.0",
+]
+`)
+}
+
+func pypiVulnDetail() VulnDetail {
+	return VulnDetail{
+		ID:           "PYSEC-2024-0001",
+		Aliases:      []string{"CVE-2024-88888"},
+		Summary:      "SSRF vulnerability in requests",
+		Ecosystem:    "PyPI",
+		PackageName:  "requests",
+		Version:      "2.31.0",
+		FixedVersion: "2.32.0",
+		Severity:     "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+	}
+}
+
+func TestVulnCollector_RequirementsTxtOnly(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), validRequirementsTxt(), 0o600))
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{pypiVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+
+	sig := signals[0]
+	assert.Equal(t, "requirements.txt", sig.FilePath)
+	assert.Equal(t, "vuln", sig.Source)
+	assert.Contains(t, sig.Title, "requests")
+	assert.Contains(t, sig.Title, "CVE-2024-88888")
+	assert.Contains(t, sig.Description, "Upgrade requests from 2.31.0 to 2.32.0")
+	assert.Contains(t, sig.Tags, "python")
+	assert.Contains(t, sig.Tags, "security")
+
+	metrics := c.Metrics().(*VulnMetrics)
+	assert.Equal(t, "PyPI", metrics.Vulns[0].Ecosystem)
+	assert.Equal(t, "requirements.txt", metrics.Vulns[0].FilePath)
+}
+
+func TestVulnCollector_PyprojectOnly(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "pyproject.toml"), validPyprojectToml(), 0o600))
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{pypiVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+
+	sig := signals[0]
+	assert.Equal(t, "pyproject.toml", sig.FilePath)
+	assert.Contains(t, sig.Tags, "python")
+
+	metrics := c.Metrics().(*VulnMetrics)
+	assert.Equal(t, "PyPI", metrics.Vulns[0].Ecosystem)
+	assert.Equal(t, "pyproject.toml", metrics.Vulns[0].FilePath)
+}
+
+func TestVulnCollector_RequirementsTxtPrecedence(t *testing.T) {
+	// When both files exist, requirements.txt takes precedence.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), validRequirementsTxt(), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "pyproject.toml"), validPyprojectToml(), 0o600))
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{pypiVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+
+	assert.Equal(t, "requirements.txt", signals[0].FilePath)
+}
+
+func TestVulnCollector_GoAndPython(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), validGoMod(), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), validRequirementsTxt(), 0o600))
+
+	goVuln := VulnDetail{
+		ID:           "GO-2024-0001",
+		Aliases:      []string{"CVE-2024-0001"},
+		Summary:      "Go vuln",
+		Ecosystem:    "Go",
+		PackageName:  "github.com/foo/bar",
+		Version:      "v1.0.0",
+		FixedVersion: "v1.1.0",
+		Severity:     "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+	}
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{goVuln, pypiVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 2)
+
+	var goSig, pythonSig signal.RawSignal
+	for _, s := range signals {
+		switch s.FilePath {
+		case "go.mod":
+			goSig = s
+		case "requirements.txt":
+			pythonSig = s
+		}
+	}
+
+	assert.Equal(t, "go.mod", goSig.FilePath)
+	assert.Contains(t, goSig.Title, "github.com/foo/bar")
+
+	assert.Equal(t, "requirements.txt", pythonSig.FilePath)
+	assert.Contains(t, pythonSig.Title, "requests")
+}
+
+func TestVulnCollector_PythonTags(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), validGoMod(), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), validRequirementsTxt(), 0o600))
+
+	goVuln := VulnDetail{
+		ID:          "GO-2024-0001",
+		Summary:     "Go vuln",
+		Ecosystem:   "Go",
+		PackageName: "github.com/foo/bar",
+		Version:     "v1.0.0",
+		Severity:    "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+	}
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{goVuln, pypiVulnDetail()},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 2)
+
+	for _, s := range signals {
+		if s.FilePath == "go.mod" {
+			assert.NotContains(t, s.Tags, "python", "Go signal should not have python tag")
+		} else {
+			assert.Contains(t, s.Tags, "python", "Python signal should have python tag")
+		}
+	}
+}
+
+func TestVulnCollector_PythonNoFix(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), validRequirementsTxt(), 0o600))
+
+	vuln := pypiVulnDetail()
+	vuln.FixedVersion = ""
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{vuln},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+
+	assert.Contains(t, signals[0].Description, "No fix available for requests 2.31.0")
+	assert.Equal(t, "requirements.txt", signals[0].FilePath)
+}
+
+func TestVulnCollector_PythonParseError(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), validGoMod(), 0o600))
+	// requirements.txt can't really have parse errors (line-based), so test pyproject.toml fallback.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte("[project\nbroken"), 0o600))
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{{
+			ID:          "GO-2024-0001",
+			Summary:     "Go vuln",
+			Ecosystem:   "Go",
+			PackageName: "github.com/foo/bar",
+			Version:     "v1.0.0",
+			Severity:    "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+		}},
+	}}
+
+	// Malformed pyproject.toml should be skipped gracefully; Go signals still emitted.
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "go.mod", signals[0].FilePath)
+}

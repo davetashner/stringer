@@ -50,9 +50,9 @@ type VulnCollector struct {
 // Name returns the collector name used for registration and filtering.
 func (c *VulnCollector) Name() string { return "vuln" }
 
-// Collect parses dependency manifests (go.mod, pom.xml, build.gradle/kts, Cargo.toml, *.csproj)
-// in repoPath, queries OSV.dev for known vulnerabilities, and returns signals with
-// severity-based confidence scoring.
+// Collect parses dependency manifests (go.mod, pom.xml, build.gradle/kts, Cargo.toml, *.csproj,
+// requirements.txt, pyproject.toml) in repoPath, queries OSV.dev for known vulnerabilities,
+// and returns signals with severity-based confidence scoring.
 func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.CollectorOpts) ([]signal.RawSignal, error) {
 	// Gather queries from Go manifest (fatal on parse error).
 	goQueries, err := parseGoModQueries(repoPath)
@@ -69,6 +69,9 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 
 	// Gather queries from .NET manifests (non-fatal on parse error).
 	csprojFile, csprojQueries := parseCsprojQueries(repoPath)
+
+	// Gather queries from Python manifests (non-fatal on parse error).
+	pythonFile, pythonQueries := parsePythonQueries(repoPath)
 
 	// Build combined query list with file/ecosystem tracking.
 	// fileMap tracks which manifest a query came from; used for dedup and signal emission.
@@ -111,6 +114,13 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
 		if _, exists := fileMap[key]; !exists {
 			fileMap[key] = queryMeta{filePath: csprojFile, ecosystem: "NuGet"}
+			queries = append(queries, q)
+		}
+	}
+	for _, q := range pythonQueries {
+		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
+		if _, exists := fileMap[key]; !exists {
+			fileMap[key] = queryMeta{filePath: pythonFile, ecosystem: "PyPI"}
 			queries = append(queries, q)
 		}
 	}
@@ -164,6 +174,9 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 		}
 		if meta.ecosystem == "NuGet" {
 			tags = append(tags, "csharp")
+		}
+		if meta.ecosystem == "PyPI" {
+			tags = append(tags, "python")
 		}
 		if cve != "" {
 			tags = append(tags, cve)
@@ -363,6 +376,44 @@ func parseCsprojQueries(repoPath string) (string, []PackageQuery) {
 	}
 
 	return filePath, queries
+}
+
+// parsePythonQueries reads requirements.txt and/or pyproject.toml and returns the
+// chosen filename and PackageQuery entries for OSV lookup.
+// Returns "", nil if no Python manifest exists or on parse error (non-fatal).
+// If both files exist, requirements.txt takes precedence (it's the lockfile equivalent).
+func parsePythonQueries(repoPath string) (string, []PackageQuery) {
+	// Try requirements.txt first (more common, often pinned).
+	data, err := FS.ReadFile(filepath.Join(repoPath, "requirements.txt"))
+	if err == nil {
+		queries, parseErr := parsePythonRequirements(data)
+		if parseErr != nil {
+			slog.Warn("vuln: parsing requirements.txt", "error", parseErr)
+			return "", nil
+		}
+		if len(queries) > 0 {
+			return "requirements.txt", queries
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		slog.Warn("vuln: reading requirements.txt", "error", err)
+	}
+
+	// Fall back to pyproject.toml.
+	data, err = FS.ReadFile(filepath.Join(repoPath, "pyproject.toml"))
+	if err == nil {
+		queries, parseErr := parsePyprojectDeps(data)
+		if parseErr != nil {
+			slog.Warn("vuln: parsing pyproject.toml", "error", parseErr)
+			return "", nil
+		}
+		if len(queries) > 0 {
+			return "pyproject.toml", queries
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		slog.Warn("vuln: reading pyproject.toml", "error", err)
+	}
+
+	return "", nil
 }
 
 // Metrics returns structured vulnerability data from the last Collect call.
