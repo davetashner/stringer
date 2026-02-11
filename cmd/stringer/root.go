@@ -46,5 +46,6 @@ func init() {
 	rootCmd.AddCommand(contextCmd)
 	rootCmd.AddCommand(reportCmd)
 	rootCmd.AddCommand(mcpCmd)
+	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(versionCmd)
 }
