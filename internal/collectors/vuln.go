@@ -51,8 +51,8 @@ type VulnCollector struct {
 func (c *VulnCollector) Name() string { return "vuln" }
 
 // Collect parses dependency manifests (go.mod, pom.xml, build.gradle/kts, Cargo.toml, *.csproj,
-// requirements.txt, pyproject.toml) in repoPath, queries OSV.dev for known vulnerabilities,
-// and returns signals with severity-based confidence scoring.
+// requirements.txt, pyproject.toml, package.json) in repoPath, queries OSV.dev for known
+// vulnerabilities, and returns signals with severity-based confidence scoring.
 func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.CollectorOpts) ([]signal.RawSignal, error) {
 	// Gather queries from Go manifest (fatal on parse error).
 	goQueries, err := parseGoModQueries(repoPath)
@@ -72,6 +72,9 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 
 	// Gather queries from Python manifests (non-fatal on parse error).
 	pythonFile, pythonQueries := parsePythonQueries(repoPath)
+
+	// Gather queries from Node.js manifest (non-fatal on parse error).
+	npmQueries := parseNpmQueries(repoPath)
 
 	// Build combined query list with file/ecosystem tracking.
 	// fileMap tracks which manifest a query came from; used for dedup and signal emission.
@@ -121,6 +124,13 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
 		if _, exists := fileMap[key]; !exists {
 			fileMap[key] = queryMeta{filePath: pythonFile, ecosystem: "PyPI"}
+			queries = append(queries, q)
+		}
+	}
+	for _, q := range npmQueries {
+		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
+		if _, exists := fileMap[key]; !exists {
+			fileMap[key] = queryMeta{filePath: "package.json", ecosystem: "npm"}
 			queries = append(queries, q)
 		}
 	}
@@ -177,6 +187,9 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 		}
 		if meta.ecosystem == "PyPI" {
 			tags = append(tags, "python")
+		}
+		if meta.ecosystem == "npm" {
+			tags = append(tags, "nodejs")
 		}
 		if cve != "" {
 			tags = append(tags, cve)
@@ -414,6 +427,25 @@ func parsePythonQueries(repoPath string) (string, []PackageQuery) {
 	}
 
 	return "", nil
+}
+
+// parseNpmQueries reads package.json and returns PackageQuery entries for OSV lookup.
+// Returns nil if no package.json exists or on parse error (non-fatal, logged as warning).
+func parseNpmQueries(repoPath string) []PackageQuery {
+	data, err := FS.ReadFile(filepath.Join(repoPath, "package.json"))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("vuln: reading package.json", "error", err)
+		}
+		return nil
+	}
+
+	queries, err := parseNpmDeps(data)
+	if err != nil {
+		slog.Warn("vuln: parsing package.json", "error", err)
+		return nil
+	}
+	return queries
 }
 
 // Metrics returns structured vulnerability data from the last Collect call.
