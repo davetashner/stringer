@@ -33,20 +33,43 @@ git push origin v0.x.0
 
 ### 3. Automated Release
 
-Pushing a `v*` tag triggers `.github/workflows/release.yml`, which:
+Pushing a `v*` tag triggers `.github/workflows/release.yml`, a 3-stage pipeline:
 
-1. Runs GoReleaser (`.goreleaser.yml`)
-2. Builds cross-platform binaries (linux/darwin/windows, amd64/arm64)
-3. Generates SHA-256 checksums
-4. Creates a GitHub Release with a filtered changelog (excludes docs/test/chore/ci commits)
-5. Publishes a Homebrew formula to `davetashner/homebrew-tap` (requires `HOMEBREW_TAP_TOKEN` secret)
+**Stage 1 — GoReleaser (draft release)**
+
+1. Runs `go test -race` and `govulncheck` as pre-flight checks
+2. Runs GoReleaser (`.goreleaser.yml`) to:
+   - Build cross-platform binaries (linux/darwin/windows, amd64/arm64)
+   - Generate SHA-256 checksums (`checksums.txt`)
+   - Generate SBOMs for each archive (`*.sbom.json`)
+   - Sign all artifacts with cosign (keyless via Sigstore/Fulcio OIDC)
+   - Create a **draft** GitHub Release with a filtered changelog
+   - Publish a Homebrew formula to `davetashner/homebrew-tap`
+3. Outputs base64-encoded binary hashes for provenance generation
+
+> **Important:** `.goreleaser.yml` must set `draft: true` so the release remains mutable for the provenance job to upload assets.
+
+**Stage 2 — SLSA Provenance**
+
+4. The `provenance` job runs `slsa-framework/slsa-github-generator` (L2) to generate and upload a provenance attestation (`multiple.intoto.jsonl`) to the draft release
+5. Uses `draft-release: true` to target the existing draft
+
+**Stage 3 — Publish**
+
+6. The `publish` job undrafts the release via `gh release edit --draft=false`, making it publicly visible with all artifacts, signatures, SBOMs, and provenance attached
 
 ### 4. Verify
 
 - Check the [Releases page](https://github.com/davetashner/stringer/releases) for the new release
-- Verify binaries are attached and checksums are correct
+- Verify all expected assets are attached:
+  - Platform archives (`.tar.gz`, `.zip`)
+  - Checksums (`checksums.txt`)
+  - Cosign signatures (`.sig` files)
+  - SBOMs (`.sbom.json` files)
+  - SLSA provenance (`multiple.intoto.jsonl`)
 - Test installation: `brew install davetashner/tap/stringer` (if Homebrew tap is set up)
 - Test binary: `stringer version` should show the new version
+- Verify provenance: `slsa-verifier verify-artifact <binary> --source-uri github.com/davetashner/stringer`
 
 ## Version Injection
 
