@@ -33,15 +33,14 @@ stringer/
 │   │   └── mcpjson.go          # Generate .mcp.json for Claude Code
 │   ├── collector/          # Collector registry and interface
 │   │   └── collector.go        # Register(), List(), Get(), Collector interface
-│   ├── collectors/         # Signal extraction modules
+│   ├── collectors/         # Signal extraction modules (one file per collector)
 │   │   ├── todos.go            # TODO/FIXME/HACK/XXX/BUG/OPTIMIZE scanner
 │   │   ├── gitlog.go           # Reverts, high-churn files, stale branches
 │   │   ├── patterns.go         # Large files, low test coverage ratios
-│   │   ├── lotteryrisk.go      # Lottery risk analysis (ownership risk per directory)
+│   │   ├── lotteryrisk*.go     # Lottery risk: core, ownership math, review analysis
 │   │   ├── github.go           # GitHub issues, PRs, and review comments
 │   │   ├── dephealth.go        # Dependency health (archived, stale, deprecated)
-│   │   ├── vuln.go             # Vulnerability scanner (govulncheck integration)
-│   │   ├── vuln_osv.go         # OSV.dev client for multi-ecosystem vuln queries
+│   │   ├── vuln*.go            # Vuln scanner: core (OSV.dev), ecosystem parsers
 │   │   └── duration.go         # Duration parsing helpers
 │   ├── config/             # .stringer.yaml config file support
 │   │   ├── config.go           # Config and CollectorConfig structs
@@ -116,7 +115,7 @@ stringer/
 └── CLAUDE.md
 ```
 
-**Note:** The collector architecture is extensible (see [Adding a new collector](#adding-a-new-collector)). Stringer currently has seven collectors (todos, gitlog, patterns, lotteryrisk, github, dephealth, vuln) and four output formats (beads, json, markdown, tasks). See [docs/release-strategy.md](docs/release-strategy.md) for versioning and release process.
+**Note:** The collector architecture is extensible (see [Adding a new collector](#adding-a-new-collector)). Collectors self-register via `init()` — run `stringer scan --help` for the current list. Output formatters follow the same pattern — run `stringer scan --format=help` or see `internal/output/`. See [docs/release-strategy.md](docs/release-strategy.md) for versioning and release process.
 
 ## Tech Stack
 
