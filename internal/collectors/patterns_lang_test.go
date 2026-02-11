@@ -312,10 +312,9 @@ func TestDetectTestRoots_BenchesDirectory(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "benches"), 0o750))
 
-	c := &PatternsCollector{}
-	c.detectTestRoots(dir)
+	roots := detectTestRoots(dir)
 
-	assert.Contains(t, c.testRoots, "benches")
+	assert.Contains(t, roots, "benches")
 }
 
 // =============================================================================

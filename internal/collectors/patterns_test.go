@@ -1117,28 +1117,25 @@ func TestDetectTestRoots(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "tests"), 0o750))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "__tests__"), 0o750))
 
-	c := &PatternsCollector{}
-	c.detectTestRoots(dir)
+	roots := detectTestRoots(dir)
 
-	assert.True(t, c.testRootsInit)
-	assert.Contains(t, c.testRoots, "tests")
-	assert.Contains(t, c.testRoots, "__tests__")
-	assert.NotContains(t, c.testRoots, "test")
-	assert.NotContains(t, c.testRoots, "spec")
+	assert.Contains(t, roots, "tests")
+	assert.Contains(t, roots, "__tests__")
+	assert.NotContains(t, roots, "test")
+	assert.NotContains(t, roots, "spec")
 }
 
-func TestDetectTestRoots_OnlyRunsOnce(t *testing.T) {
+func TestDetectTestRoots_RecomputesEachCall(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "tests"), 0o750))
 
-	c := &PatternsCollector{}
-	c.detectTestRoots(dir)
-	assert.Len(t, c.testRoots, 1)
+	roots := detectTestRoots(dir)
+	assert.Len(t, roots, 1)
 
-	// Create another directory — calling again should not update.
+	// Create another directory — calling again should find it.
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "test"), 0o750))
-	c.detectTestRoots(dir)
-	assert.Len(t, c.testRoots, 1, "detectTestRoots should only run once")
+	roots2 := detectTestRoots(dir)
+	assert.Len(t, roots2, 2, "detectTestRoots should find newly added directories")
 }
 
 // --- Timestamp enrichment tests ---
@@ -1430,7 +1427,7 @@ func TestPatternsCollector_CountLinesOpenFailure(t *testing.T) {
 	assert.Empty(t, signals)
 }
 
-func TestPatternsCollector_StatFailureInDetectTestRoots(t *testing.T) {
+func TestDetectTestRoots_StatFailure(t *testing.T) {
 	oldFS := FS
 	defer func() { FS = oldFS }()
 
@@ -1441,10 +1438,8 @@ func TestPatternsCollector_StatFailureInDetectTestRoots(t *testing.T) {
 		},
 	}
 
-	c := &PatternsCollector{}
-	c.detectTestRoots("/tmp/fake")
-	assert.True(t, c.testRootsInit)
-	assert.Empty(t, c.testRoots)
+	roots := detectTestRoots("/tmp/fake")
+	assert.Empty(t, roots)
 }
 
 func TestEnrichTimestamps_NonGitDir(t *testing.T) {
