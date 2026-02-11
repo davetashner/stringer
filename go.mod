@@ -3,6 +3,7 @@ module github.com/davetashner/stringer
 go 1.24.0
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/fatih/color v1.18.0
 	github.com/go-git/go-git/v5 v5.16.5
 	github.com/google/go-github/v68 v68.0.0

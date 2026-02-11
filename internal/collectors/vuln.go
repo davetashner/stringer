@@ -49,9 +49,9 @@ type VulnCollector struct {
 // Name returns the collector name used for registration and filtering.
 func (c *VulnCollector) Name() string { return "vuln" }
 
-// Collect parses dependency manifests (go.mod, pom.xml, build.gradle/kts) in repoPath,
-// queries OSV.dev for known vulnerabilities, and returns signals with severity-based
-// confidence scoring.
+// Collect parses dependency manifests (go.mod, pom.xml, build.gradle/kts, Cargo.toml)
+// in repoPath, queries OSV.dev for known vulnerabilities, and returns signals with
+// severity-based confidence scoring.
 func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.CollectorOpts) ([]signal.RawSignal, error) {
 	// Gather queries from Go manifest (fatal on parse error).
 	goQueries, err := parseGoModQueries(repoPath)
@@ -62,6 +62,9 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 	// Gather queries from Java manifests (non-fatal on parse error).
 	pomQueries := parsePomQueries(repoPath)
 	gradleFile, gradleQueries := parseGradleQueries(repoPath)
+
+	// Gather queries from Rust manifest (non-fatal on parse error).
+	cargoQueries := parseCargoQueries(repoPath)
 
 	// Build combined query list with file/ecosystem tracking.
 	// fileMap tracks which manifest a query came from; used for dedup and signal emission.
@@ -90,6 +93,13 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
 		if _, exists := fileMap[key]; !exists {
 			fileMap[key] = queryMeta{filePath: gradleFile, ecosystem: "Maven"}
+			queries = append(queries, q)
+		}
+	}
+	for _, q := range cargoQueries {
+		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
+		if _, exists := fileMap[key]; !exists {
+			fileMap[key] = queryMeta{filePath: "Cargo.toml", ecosystem: "crates.io"}
 			queries = append(queries, q)
 		}
 	}
@@ -137,6 +147,9 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 		tags := []string{"security", "vulnerable-dependency"}
 		if meta.ecosystem == "Maven" {
 			tags = append(tags, "java")
+		}
+		if meta.ecosystem == "crates.io" {
+			tags = append(tags, "rust")
 		}
 		if cve != "" {
 			tags = append(tags, cve)
@@ -243,6 +256,25 @@ func parseGradleQueries(repoPath string) (string, []PackageQuery) {
 		return name, queries
 	}
 	return "", nil
+}
+
+// parseCargoQueries reads Cargo.toml and returns PackageQuery entries for OSV lookup.
+// Returns nil if no Cargo.toml exists or on parse error (non-fatal, logged as warning).
+func parseCargoQueries(repoPath string) []PackageQuery {
+	data, err := FS.ReadFile(filepath.Join(repoPath, "Cargo.toml"))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("vuln: reading Cargo.toml", "error", err)
+		}
+		return nil
+	}
+
+	queries, err := parseCargoDeps(data)
+	if err != nil {
+		slog.Warn("vuln: parsing Cargo.toml", "error", err)
+		return nil
+	}
+	return queries
 }
 
 // Metrics returns structured vulnerability data from the last Collect call.
