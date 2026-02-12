@@ -19,7 +19,7 @@ import (
 func TestGenerateConfig_SecurityFilePermissions(t *testing.T) {
 	dir := t.TempDir()
 
-	_, err := GenerateConfig(dir, true, false)
+	_, err := GenerateConfig(dir, true, false, nil)
 	require.NoError(t, err)
 
 	info, err := os.Stat(filepath.Join(dir, config.FileName))
@@ -48,7 +48,7 @@ func TestGenerateConfig_SecurityOutputWithinRepoPath(t *testing.T) {
 	dir := t.TempDir()
 	parent := filepath.Dir(dir)
 
-	_, err := GenerateConfig(dir, true, false)
+	_, err := GenerateConfig(dir, true, false, nil)
 	require.NoError(t, err)
 
 	// The config file must exist inside dir, not in parent.
@@ -69,7 +69,7 @@ func TestGenerateConfig_SecurityOutputWithinRepoPath(t *testing.T) {
 func TestGenerateConfig_SecurityNoTemplateLeakage(t *testing.T) {
 	dir := t.TempDir()
 
-	_, err := GenerateConfig(dir, true, false)
+	_, err := GenerateConfig(dir, true, false, nil)
 	require.NoError(t, err)
 
 	data, err := os.ReadFile(filepath.Join(dir, config.FileName)) //nolint:gosec // test path
@@ -137,7 +137,7 @@ func TestGenerateConfig_SecurityRepoPathIsFile_Fails(t *testing.T) {
 	require.NoError(t, os.WriteFile(filePath, []byte("hello"), 0o600))
 
 	// Attempting to write config into a file path should fail.
-	_, err := GenerateConfig(filePath, true, false)
+	_, err := GenerateConfig(filePath, true, false, nil)
 	require.Error(t, err, "writing config to a file-as-directory should fail")
 }
 

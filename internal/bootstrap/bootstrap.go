@@ -1,6 +1,8 @@
 package bootstrap
 
 import (
+	"io"
+
 	"github.com/davetashner/stringer/internal/docs"
 	"github.com/davetashner/stringer/internal/testable"
 )
@@ -11,8 +13,11 @@ var FS testable.FileSystem = testable.DefaultFS
 
 // InitConfig holds the inputs for the init command.
 type InitConfig struct {
-	RepoPath string
-	Force    bool
+	RepoPath    string
+	Force       bool
+	Interactive bool      // Run the interactive wizard.
+	Stdin       io.Reader // For wizard prompts (required if Interactive).
+	Stdout      io.Writer // For wizard output (required if Interactive).
 }
 
 // Action records a single file operation performed during init.
@@ -47,8 +52,15 @@ func Run(cfg InitConfig) (*InitResult, error) {
 		HasGitHub: hasGitHub,
 	}
 
-	// 3. Generate .stringer.yaml.
-	configAction, err := GenerateConfig(cfg.RepoPath, hasGitHub, cfg.Force)
+	// 3. Run wizard if interactive, then generate .stringer.yaml.
+	var wizard *WizardResult
+	if cfg.Interactive {
+		wizard, err = RunWizard(cfg.Stdin, cfg.Stdout, cfg.RepoPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+	configAction, err := GenerateConfig(cfg.RepoPath, hasGitHub, cfg.Force, wizard)
 	if err != nil {
 		return nil, err
 	}
