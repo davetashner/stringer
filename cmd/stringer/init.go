@@ -11,7 +11,10 @@ import (
 )
 
 // Init-specific flag values.
-var initForce bool
+var (
+	initForce       bool
+	initInteractive bool
+)
 
 // initCmd is the subcommand for bootstrapping stringer in a repository.
 var initCmd = &cobra.Command{
@@ -21,6 +24,9 @@ var initCmd = &cobra.Command{
 and generating a starter configuration. Creates .stringer.yaml with sensible
 defaults and appends a stringer integration section to AGENTS.md.
 
+Use --interactive to walk through a guided wizard that lets you choose
+collectors, tune thresholds, and validate API tokens.
+
 This command is non-destructive by default: it skips files that already exist.
 Use --force to regenerate .stringer.yaml.`,
 	Args: cobra.MaximumNArgs(1),
@@ -29,6 +35,7 @@ Use --force to regenerate .stringer.yaml.`,
 
 func init() {
 	initCmd.Flags().BoolVar(&initForce, "force", false, "overwrite existing .stringer.yaml")
+	initCmd.Flags().BoolVarP(&initInteractive, "interactive", "i", false, "run the interactive setup wizard")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -58,8 +65,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 	slog.Info("initializing stringer", "path", absPath)
 
 	result, err := bootstrap.Run(bootstrap.InitConfig{
-		RepoPath: absPath,
-		Force:    initForce,
+		RepoPath:    absPath,
+		Force:       initForce,
+		Interactive: initInteractive,
+		Stdin:       cmd.InOrStdin(),
+		Stdout:      cmd.OutOrStdout(),
 	})
 	if err != nil {
 		return fmt.Errorf("stringer: init failed (%v)", err)

@@ -28,7 +28,7 @@ func TestGenerateConfig_WriteFileFailure(t *testing.T) {
 		},
 	}
 
-	_, err := GenerateConfig("/fake/repo", true, false)
+	_, err := GenerateConfig("/fake/repo", true, false, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "writing .stringer.yaml")
 	assert.Contains(t, err.Error(), "disk full")
@@ -48,7 +48,7 @@ func TestGenerateConfig_ForceSkipsStat(t *testing.T) {
 		},
 	}
 
-	action, err := GenerateConfig(dir, false, true)
+	action, err := GenerateConfig(dir, false, true, nil)
 	require.NoError(t, err)
 	assert.False(t, statCalled, "Stat should not be called when force=true")
 	assert.Equal(t, "created", action.Operation)
