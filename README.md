@@ -44,7 +44,7 @@ Stringer solves the cold-start problem. It mines signals already present in your
 
 **Static analysis on your laptop, not your token budget.** Stringer runs locally — no API keys, no per-request costs. Most collectors use deterministic static analysis with zero network calls. The vuln and GitHub collectors make targeted API calls (to osv.dev and GitHub) but require no paid subscriptions.
 
-**Pre-process the easy stuff so agents start informed.** Without Stringer, an AI agent boots up on a new codebase and has to discover TODOs, stale branches, risky bus-factor modules, and open GitHub issues on its own — burning inference tokens on mechanical work. Stringer does that extraction up front on local CPU, so agents begin with structured context instead of a blank slate.
+**Pre-process the easy stuff so agents start informed.** Without Stringer, an AI agent boots up on a new codebase and has to discover TODOs, stale branches, lottery-risk modules, and open GitHub issues on its own — burning inference tokens on mechanical work. Stringer does that extraction up front on local CPU, so agents begin with structured context instead of a blank slate.
 
 **LLM-optional by design.** Core scanning needs zero API keys. The planned LLM pass (signal clustering, dependency inference) adds intelligence on top but is never required. You control where the money goes.
 
