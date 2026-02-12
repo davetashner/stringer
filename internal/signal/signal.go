@@ -31,6 +31,8 @@ type RawSignal struct {
 	Tags        []string  // Free-form tags for clustering hints.
 	ClosedAt    time.Time // When this signal was closed/resolved (zero if open).
 	Priority    *int      // LLM-inferred priority (1-4). Nil = use confidence mapping.
+	Blocks      []string  // Bead IDs this signal blocks (downstream depends on this).
+	DependsOn   []string  // Bead IDs this signal depends on (upstream blockers).
 }
 
 // CollectorOpts holds per-collector configuration options.

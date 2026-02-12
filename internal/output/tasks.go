@@ -131,7 +131,7 @@ func signalToTask(s signal.RawSignal) taskRecord {
 	}
 
 	return taskRecord{
-		ID:          signalID(s, "str-"),
+		ID:          SignalID(s, "str-"),
 		Subject:     subjectForSignal(s),
 		Description: descriptionForSignal(s),
 		ActiveForm:  activeFormForSignal(s),

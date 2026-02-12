@@ -48,6 +48,7 @@ var (
 	scanCluster           bool
 	scanClusterThreshold  float64
 	scanInferPriority     bool
+	scanInferDeps         bool
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -87,6 +88,7 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanCluster, "cluster", false, "enable LLM-based signal clustering")
 	scanCmd.Flags().Float64Var(&scanClusterThreshold, "cluster-threshold", 0.7, "similarity threshold for signal pre-filtering (0.0-1.0)")
 	scanCmd.Flags().BoolVar(&scanInferPriority, "infer-priority", false, "use LLM to assign P1-P4 priorities to signals")
+	scanCmd.Flags().BoolVar(&scanInferDeps, "infer-deps", false, "use LLM to detect dependencies between signals")
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
@@ -162,25 +164,39 @@ func runScan(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// 6. LLM-based priority inference.
-	if scanInferPriority {
+	// 6. LLM-based analysis (priority inference, dependency detection).
+	if scanInferPriority || scanInferDeps {
 		provider, provErr := llm.NewAnthropicProvider()
 		if provErr != nil {
-			return exitError(ExitInvalidArgs, "stringer: --infer-priority requires ANTHROPIC_API_KEY (%v)", provErr)
+			return exitError(ExitInvalidArgs, "stringer: LLM features require ANTHROPIC_API_KEY (%v)", provErr)
 		}
-		var overrides []analysis.PriorityOverride
-		if fileCfg != nil {
-			for _, o := range fileCfg.PriorityOverrides {
-				overrides = append(overrides, analysis.PriorityOverride{
-					Pattern:  o.Pattern,
-					Priority: o.Priority,
-				})
+
+		if scanInferPriority {
+			var overrides []analysis.PriorityOverride
+			if fileCfg != nil {
+				for _, o := range fileCfg.PriorityOverrides {
+					overrides = append(overrides, analysis.PriorityOverride{
+						Pattern:  o.Pattern,
+						Priority: o.Priority,
+					})
+				}
+			}
+			var inferErr error
+			result.Signals, inferErr = analysis.InferPriorities(cmd.Context(), result.Signals, provider, overrides)
+			if inferErr != nil {
+				slog.Warn("priority inference error", "error", inferErr)
 			}
 		}
-		var inferErr error
-		result.Signals, inferErr = analysis.InferPriorities(cmd.Context(), result.Signals, provider, overrides)
-		if inferErr != nil {
-			slog.Warn("priority inference error", "error", inferErr)
+
+		if scanInferDeps {
+			idPrefix := "str-"
+			deps, depErr := analysis.InferDependencies(cmd.Context(), result.Signals, provider, idPrefix)
+			if depErr != nil {
+				slog.Warn("dependency inference error", "error", depErr)
+			} else if len(deps) > 0 {
+				analysis.ApplyDepsToSignals(result.Signals, deps, idPrefix)
+				slog.Info("dependencies inferred", "count", len(deps))
+			}
 		}
 	}
 

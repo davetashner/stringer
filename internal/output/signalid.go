@@ -7,10 +7,10 @@ import (
 	"github.com/davetashner/stringer/internal/signal"
 )
 
-// signalID produces a deterministic ID from signal content.
+// SignalID produces a deterministic ID from signal content.
 // It hashes Source + Kind + FilePath + Line + Title using SHA-256,
 // truncates to 8 hex characters, and prepends the given prefix.
-func signalID(sig signal.RawSignal, prefix string) string {
+func SignalID(sig signal.RawSignal, prefix string) string {
 	h := sha256.New()
 	// Write each field separated by null bytes to avoid collisions
 	// from field concatenation (e.g., "ab"+"c" vs "a"+"bc").
