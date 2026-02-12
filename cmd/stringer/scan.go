@@ -10,10 +10,12 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/davetashner/stringer/internal/analysis"
 	"github.com/davetashner/stringer/internal/beads"
 	"github.com/davetashner/stringer/internal/collector"
 	_ "github.com/davetashner/stringer/internal/collectors"
 	"github.com/davetashner/stringer/internal/config"
+	"github.com/davetashner/stringer/internal/llm"
 	"github.com/davetashner/stringer/internal/output"
 	"github.com/davetashner/stringer/internal/pipeline"
 	"github.com/davetashner/stringer/internal/signal"
@@ -45,6 +47,8 @@ var (
 	scanPaths             []string
 	scanCluster           bool
 	scanClusterThreshold  float64
+	scanInferPriority     bool
+	scanInferDeps         bool
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -83,6 +87,8 @@ func init() {
 	scanCmd.Flags().StringSliceVar(&scanPaths, "paths", nil, "restrict scanning to specific files or directories (comma-separated)")
 	scanCmd.Flags().BoolVar(&scanCluster, "cluster", false, "enable LLM-based signal clustering")
 	scanCmd.Flags().Float64Var(&scanClusterThreshold, "cluster-threshold", 0.7, "similarity threshold for signal pre-filtering (0.0-1.0)")
+	scanCmd.Flags().BoolVar(&scanInferPriority, "infer-priority", false, "use LLM to assign P1-P4 priorities to signals")
+	scanCmd.Flags().BoolVar(&scanInferDeps, "infer-deps", false, "use LLM to detect dependencies between signals")
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
@@ -158,20 +164,56 @@ func runScan(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// 6. Determine exit code based on collector results.
+	// 6. LLM-based analysis (priority inference, dependency detection).
+	if scanInferPriority || scanInferDeps {
+		provider, provErr := llm.NewAnthropicProvider()
+		if provErr != nil {
+			return exitError(ExitInvalidArgs, "stringer: LLM features require ANTHROPIC_API_KEY (%v)", provErr)
+		}
+
+		if scanInferPriority {
+			var overrides []analysis.PriorityOverride
+			if fileCfg != nil {
+				for _, o := range fileCfg.PriorityOverrides {
+					overrides = append(overrides, analysis.PriorityOverride{
+						Pattern:  o.Pattern,
+						Priority: o.Priority,
+					})
+				}
+			}
+			var inferErr error
+			result.Signals, inferErr = analysis.InferPriorities(cmd.Context(), result.Signals, provider, overrides)
+			if inferErr != nil {
+				slog.Warn("priority inference error", "error", inferErr)
+			}
+		}
+
+		if scanInferDeps {
+			idPrefix := "str-"
+			deps, depErr := analysis.InferDependencies(cmd.Context(), result.Signals, provider, idPrefix)
+			if depErr != nil {
+				slog.Warn("dependency inference error", "error", depErr)
+			} else if len(deps) > 0 {
+				analysis.ApplyDepsToSignals(result.Signals, deps, idPrefix)
+				slog.Info("dependencies inferred", "count", len(deps))
+			}
+		}
+	}
+
+	// 7. Determine exit code based on collector results.
 	exitCode := computeExitCode(result, scanStrict)
 
-	// 7. Handle dry-run.
+	// 8. Handle dry-run.
 	if scanDryRun {
 		return printDryRun(cmd, result, exitCode)
 	}
 
-	// 8. Write formatted output.
+	// 9. Write formatted output.
 	if err := writeScanOutput(cmd, result, scanCfg); err != nil {
 		return err
 	}
 
-	// 9. Save delta state from ALL signals (pre-filter), not just new ones.
+	// 10. Save delta state from ALL signals (pre-filter), not just new ones.
 	if scanDelta {
 		newState := state.Build(absPath, collectorNames, allSignals)
 		if err := state.Save(absPath, newState); err != nil {

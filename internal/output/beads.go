@@ -25,6 +25,8 @@ type beadRecord struct {
 	Labels      []string `json:"labels,omitempty"`
 	ClosedAt    string   `json:"closed_at,omitempty"`
 	CloseReason string   `json:"close_reason,omitempty"`
+	Blocks      []string `json:"blocks,omitempty"`
+	DependsOn   []string `json:"depends_on,omitempty"`
 }
 
 func init() {
@@ -76,16 +78,23 @@ func (b *BeadsFormatter) Format(signals []signal.RawSignal, w io.Writer) error {
 
 // signalToBead converts a RawSignal into a beadRecord.
 func (b *BeadsFormatter) signalToBead(sig signal.RawSignal) beadRecord {
+	priority := mapConfidenceToPriority(sig.Confidence)
+	if sig.Priority != nil {
+		priority = *sig.Priority
+	}
+
 	rec := beadRecord{
 		ID:          b.generateID(sig),
 		Title:       sig.Title,
 		Description: buildDescription(sig),
 		Type:        mapKindToType(sig.Kind),
-		Priority:    mapConfidenceToPriority(sig.Confidence),
+		Priority:    priority,
 		Status:      "open",
 		CreatedAt:   formatTimestamp(sig.Timestamp),
 		CreatedBy:   resolveAuthor(sig.Author),
 		Labels:      b.buildLabels(sig),
+		Blocks:      sig.Blocks,
+		DependsOn:   sig.DependsOn,
 	}
 
 	if hasTag(sig.Tags, "pre-closed") {
@@ -122,13 +131,13 @@ func deriveCloseReason(kind string) string {
 }
 
 // generateID produces a deterministic ID from signal content.
-// It delegates to the shared signalID helper and applies convention overrides.
+// It delegates to the shared SignalID helper and applies convention overrides.
 func (b *BeadsFormatter) generateID(sig signal.RawSignal) string {
 	prefix := "str-"
 	if b.conventions != nil && b.conventions.IDPrefix != "" {
 		prefix = b.conventions.IDPrefix
 	}
-	return signalID(sig, prefix)
+	return SignalID(sig, prefix)
 }
 
 // mapKindToType maps a signal Kind to a bead type.
