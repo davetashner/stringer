@@ -104,3 +104,63 @@ func TestWrite_EmptyConfig(t *testing.T) {
 	require.NoError(t, Write(&buf, cfg))
 	assert.Contains(t, buf.String(), "{}")
 }
+
+func TestLoadRaw_MissingFile(t *testing.T) {
+	m, err := LoadRaw(filepath.Join(t.TempDir(), "nonexistent.yaml"))
+	require.NoError(t, err)
+	assert.NotNil(t, m)
+	assert.Empty(t, m)
+}
+
+func TestLoadRaw_ValidFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("output_format: json\nmax_issues: 50\n"), 0o600))
+
+	m, err := LoadRaw(path)
+	require.NoError(t, err)
+	assert.Equal(t, "json", m["output_format"])
+	assert.Equal(t, 50, m["max_issues"])
+}
+
+func TestLoadRaw_InvalidYAML(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bad.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("{{invalid yaml"), 0o600))
+
+	_, err := LoadRaw(path)
+	assert.Error(t, err)
+}
+
+func TestLoadRaw_EmptyFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "empty.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(""), 0o600))
+
+	m, err := LoadRaw(path)
+	require.NoError(t, err)
+	assert.NotNil(t, m)
+	assert.Empty(t, m)
+}
+
+func TestWriteFile_CreatesParentDirs(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sub", "dir", "config.yaml")
+
+	data := map[string]any{"output_format": "json"}
+	require.NoError(t, WriteFile(path, data))
+
+	assert.FileExists(t, path)
+
+	m, err := LoadRaw(path)
+	require.NoError(t, err)
+	assert.Equal(t, "json", m["output_format"])
+}
+
+func TestWriteFile_Overwrites(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+
+	require.NoError(t, WriteFile(path, map[string]any{"output_format": "json"}))
+	require.NoError(t, WriteFile(path, map[string]any{"output_format": "markdown"}))
+
+	m, err := LoadRaw(path)
+	require.NoError(t, err)
+	assert.Equal(t, "markdown", m["output_format"])
+}
