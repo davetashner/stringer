@@ -1,0 +1,38 @@
+# .stringer.yaml — Minimal config for large repositories
+#
+# Keeps scan times fast with conservative limits.
+# Start here and increase limits as needed.
+
+output_format: beads
+max_issues: 50
+no_llm: true
+
+collectors:
+  todos:
+    enabled: true
+    min_confidence: 0.6
+    exclude_patterns:
+      - vendor/**
+      - node_modules/**
+      - third_party/**
+      - "*.generated.*"
+
+  gitlog:
+    enabled: true
+    git_depth: 200
+    git_since: 3m
+
+  patterns:
+    enabled: false
+
+  lotteryrisk:
+    enabled: false
+
+  github:
+    enabled: false
+
+  dephealth:
+    enabled: false
+
+  vuln:
+    enabled: true
