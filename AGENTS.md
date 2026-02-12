@@ -16,8 +16,12 @@ stringer/
 │   ├── context.go              # context subcommand
 │   ├── docs.go                 # docs subcommand
 │   ├── init.go                 # init subcommand (bootstrap stringer in a repo)
+│   ├── config.go               # config get/set/list subcommands
+│   ├── collectors.go           # collectors list/info subcommands
 │   ├── mcp.go                  # mcp serve subcommand (MCP server)
+│   ├── validate.go             # validate subcommand (JSONL validation)
 │   ├── version.go              # version subcommand
+│   ├── configwiring.go         # shared flag-to-config wiring
 │   ├── exitcodes.go            # exit code constants
 │   └── fs.go                   # filesystem helpers
 ├── internal/
@@ -42,11 +46,17 @@ stringer/
 │   │   ├── dephealth.go        # Dependency health (archived, stale, deprecated)
 │   │   ├── vuln*.go            # Vuln scanner: core (OSV.dev), ecosystem parsers
 │   │   └── duration.go         # Duration parsing helpers
+│   ├── analysis/           # LLM-powered analysis
+│   │   ├── cluster.go          # Signal clustering via LLM
+│   │   ├── priority.go         # Priority inference via LLM
+│   │   └── dependency.go       # Dependency detection via LLM
 │   ├── config/             # .stringer.yaml config file support
 │   │   ├── config.go           # Config and CollectorConfig structs
-│   │   ├── yaml.go             # Load() and Write() — YAML marshal/unmarshal
+│   │   ├── yaml.go             # Load(), Write(), LoadRaw(), WriteFile()
 │   │   ├── validate.go         # Validate() — multi-error validation
-│   │   └── merge.go            # Merge() — file config + CLI merge
+│   │   ├── merge.go            # Merge() — file config + CLI merge
+│   │   ├── keypath.go          # Dot-notation key path navigation
+│   │   └── global.go           # Global config (~/.config/stringer/)
 │   ├── context/            # Context generation (stringer context)
 │   │   ├── generator.go        # Context generation orchestration
 │   │   ├── githistory.go       # Git history analysis for context
@@ -58,6 +68,10 @@ stringer/
 │   │   └── updater.go          # Update existing AGENTS.md preserving manual sections
 │   ├── gitcli/             # Native git CLI wrapper (DR-011)
 │   │   └── gitcli.go           # Shell out to git for blame and ownership
+│   ├── llm/                # LLM provider abstraction
+│   │   ├── provider.go         # Provider interface and registry
+│   │   ├── anthropic.go        # Anthropic Claude provider
+│   │   └── openai.go           # OpenAI-compatible provider
 │   ├── log/                # Structured logging
 │   │   └── log.go              # slog-based logging helpers
 │   ├── mcpserver/          # MCP server for AI agent integration
@@ -91,6 +105,8 @@ stringer/
 │   │   └── signal.go           # RawSignal, ScanConfig, ScanResult, CollectorOpts
 │   ├── state/              # Delta scan state persistence
 │   │   └── state.go            # Load/Save/FilterNew/Build for .stringer/last-scan.json
+│   ├── validate/           # JSONL validation for bd import compatibility
+│   │   └── validate.go         # Validate() — field-level JSONL validation
 │   └── testable/           # Interfaces for test mock injection
 │       ├── exec.go             # CommandExecutor interface
 │       ├── exec_mock.go        # Mock command executor
@@ -98,9 +114,12 @@ stringer/
 │       ├── mock_fs.go          # Mock filesystem
 │       ├── git.go              # GitOpener interface
 │       └── git_mock.go         # Mock git opener
+├── test/
+│   └── integration/        # End-to-end integration tests
 ├── eval/                   # Evaluation harness for stress-testing
 ├── testdata/
-│   └── fixtures/           # Test fixture repos
+│   ├── fixtures/           # Test fixture repos
+│   └── golden/             # Golden file outputs
 ├── docs/
 │   ├── decisions/          # Decision records (001-012)
 │   ├── agent-integration.md    # MCP setup and tool reference
@@ -337,6 +356,9 @@ type RawSignal struct {
     Confidence  float64   // 0.0-1.0, how certain we are this is real work
     Tags        []string  // Free-form tags for clustering hints
     ClosedAt    time.Time // When this signal was closed/resolved (zero if open)
+    Priority    *int      // LLM-inferred priority (1-4). Nil = use confidence mapping.
+    Blocks      []string  // Bead IDs this signal blocks
+    DependsOn   []string  // Bead IDs this signal depends on
 }
 ```
 
@@ -387,6 +409,8 @@ Optional but valuable:
 | `PR Size Guard` | Warns at 500 lines, fails at 1000 non-test lines (PRs only) |
 | `Doc Staleness` | AGENTS.md interface code blocks match source; warns on internal Go changes without doc update (PRs only) |
 | `Fuzz` | Fuzz testing for input parsing (mcpserver, config, beads) |
+| `Backlog Health` | Beads backlog consistency checks |
+| `Analyze` / `CodeQL` | Static analysis and security scanning |
 
 A separate [OpenSSF Scorecard](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer) workflow runs on the default branch to track supply chain security posture.
 

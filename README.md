@@ -13,7 +13,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 
-> **Status: v0.8.0.** Seven collectors (including multi-ecosystem vulnerability scanning), four output formats, report command with health analysis, parallel pipeline with signal deduplication, delta scanning, per-collector timeouts, beads-aware dedup, MCP server for agent integration, and `stringer init` for easy setup. See [Current Limitations](#current-limitations) for what's not here yet.
+> **Status: v0.9.0.** Seven collectors (including multi-ecosystem vulnerability scanning), four output formats, report command with health analysis, parallel pipeline with signal deduplication, delta scanning, LLM-powered signal clustering and priority inference, MCP server for agent integration, interactive `stringer init` wizard, and CLI config management. See [Current Limitations](#current-limitations) for what's not here yet.
 
 **Codebase archaeology for [Beads](https://github.com/steveyegge/beads).** Mine your repo for actionable work items, output them as Beads-formatted issues, and give your AI agents instant situational awareness.
 
@@ -46,7 +46,7 @@ Stringer solves the cold-start problem. It mines signals already present in your
 
 **Pre-process the easy stuff so agents start informed.** Without Stringer, an AI agent boots up on a new codebase and has to discover TODOs, stale branches, lottery-risk modules, and open GitHub issues on its own — burning inference tokens on mechanical work. Stringer does that extraction up front on local CPU, so agents begin with structured context instead of a blank slate.
 
-**LLM-optional by design.** Core scanning needs zero API keys. The planned LLM pass (signal clustering, dependency inference) adds intelligence on top but is never required. You control where the money goes.
+**LLM-optional by design.** Core scanning needs zero API keys. The LLM pass (signal clustering, priority inference, dependency detection) adds intelligence on top but is never required. You control where the money goes.
 
 ## What It Does Today
 
@@ -198,7 +198,9 @@ stringer scan [path] [flags]
 | `--collector-timeout`   |       |         | Per-collector timeout (e.g. 60s, 2m); 0 = no timeout      |
 | `--paths`               |       |         | Restrict scanning to specific files or directories         |
 | `--include-demo-paths`  |       |         | Include demo/example/tutorial paths in noise-prone signals |
-| `--no-llm`              |       |         | Skip LLM clustering pass (noop — reserved for future use) |
+| `--infer-priority`      |       |         | Use LLM to infer priority from signal context             |
+| `--infer-deps`          |       |         | Use LLM to detect dependencies between signals            |
+| `--no-llm`              |       |         | Skip all LLM passes (clustering, priority, dependencies)  |
 
 **Global flags:** `--quiet` (`-q`), `--verbose` (`-v`), `--no-color`, `--help` (`-h`)
 
@@ -239,7 +241,9 @@ collectors:
     history_depth: 90d
 ```
 
-**Precedence:** CLI flags > `.stringer.yaml` > defaults
+**Precedence:** CLI flags > `.stringer.yaml` > global config > defaults
+
+Stringer also supports a global config at `~/.config/stringer/config.yaml` (or `$XDG_CONFIG_HOME/stringer/config.yaml`). Repo-level settings override global settings. Use `stringer config set --global` to manage it.
 
 If no config file exists, stringer uses its built-in defaults (all collectors enabled, beads format, no issue cap).
 
@@ -321,6 +325,40 @@ When run, `stringer init`:
 | Flag      | Short | Default | Description                          |
 | --------- | ----- | ------- | ------------------------------------ |
 | `--force` |       |         | Overwrite existing `.stringer.yaml`  |
+
+### `stringer config`
+
+View and modify stringer configuration from the CLI. Supports dot-notation key paths and both repo-level and global config.
+
+```bash
+stringer config list                          # show all settings with source
+stringer config get output_format             # get a single value
+stringer config set output_format json        # set a value in .stringer.yaml
+stringer config set collectors.todos.min_confidence 0.8
+stringer config set --global no_llm true      # set in global config
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `get <key>` | Get a config value by dot-notation key path |
+| `set <key> <value>` | Set a config value (auto-detects type) |
+| `list` | List all values with source annotations (repo/global) |
+
+Use `--global` on `get`/`set` to target `~/.config/stringer/config.yaml` instead of the repo-level `.stringer.yaml`.
+
+### `stringer collectors`
+
+List and inspect registered collectors.
+
+```bash
+stringer collectors list         # table of all collectors with status
+stringer collectors info todos   # detailed info, signal types, config options
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | Show all collectors with name, status, and description |
+| `info <name>` | Show detailed info including signal types and config options |
 
 ## Agent Integration
 
@@ -424,9 +462,7 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 
 ## Current Limitations
 
-- **No LLM clustering.** The `--no-llm` flag exists but is a noop. There is no LLM pass to cluster related signals or infer dependencies.
 - **Go-only dependency health.** The dependency health collector (`dephealth`) currently supports Go modules only. Vulnerability scanning (`vuln`) supports seven ecosystems.
-- **No global config.** Per-repo `.stringer.yaml` is supported, but there is no global `~/.stringer.yaml`.
 - **Line-sensitive hashing.** Moving a TODO to a different line changes its ID, which means `bd import` sees it as a new issue. Delta scanning (`--delta`) detects moved signals but doesn't update beads IDs.
 - **No monorepo support.** Scanning targets a single repository root. Per-workspace scanning is planned.
 
@@ -435,8 +471,8 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 Planned for future releases:
 
 - **Multi-language dependency health** — Extend dependency health scanning beyond Go modules (npm, PyPI, Maven, etc.)
-- **LLM clustering pass** — Group related signals, infer dependencies, prioritize
 - **Monorepo support** — Per-workspace scanning and scoped output
+- **HTML dashboard** — Self-contained HTML report with charts and interactive filtering
 
 ## Design Principles
 
@@ -444,7 +480,7 @@ Planned for future releases:
 
 **Composable collectors.** Each collector is independent, testable, and implements one Go interface. Adding a new signal source means implementing `Collector` with `Name()` and `Collect()` methods.
 
-**LLM-optional.** Core scanning works without API keys. The LLM pass (when implemented) will add clustering and dependency inference but won't be required.
+**LLM-optional.** Core scanning works without API keys. The LLM pass adds signal clustering, priority inference, and dependency detection but is never required. Use `--no-llm` to skip it entirely.
 
 **Idempotent.** Running stringer twice on the same repo produces the same output. Content-based hashing ensures deterministic IDs.
 
@@ -458,7 +494,7 @@ Planned for future releases:
 
 ## Contributing
 
-See [AGENTS.md](./AGENTS.md) for architecture details, the collector interface, and development workflow. This project uses Beads for task tracking — run `bd ready --json` to find open work.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, workflow, and guidelines. See [AGENTS.md](./AGENTS.md) for architecture details and the collector interface. This project uses Beads for task tracking — run `bd ready --json` to find open work.
 
 ## License
 

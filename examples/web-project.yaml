@@ -1,0 +1,43 @@
+# .stringer.yaml — JavaScript/TypeScript web project
+#
+# Focuses on TODO scanning, git history, and vulnerability detection.
+# Excludes build output and dependency directories.
+
+output_format: beads
+max_issues: 200
+
+collectors:
+  todos:
+    enabled: true
+    min_confidence: 0.3
+    exclude_patterns:
+      - node_modules/**
+      - dist/**
+      - build/**
+      - .next/**
+      - coverage/**
+
+  gitlog:
+    enabled: true
+    git_depth: 500
+    git_since: 3m
+
+  patterns:
+    enabled: true
+    large_file_threshold: 500
+    exclude_patterns:
+      - "*.min.js"
+      - "*.bundle.js"
+      - package-lock.json
+      - yarn.lock
+
+  vuln:
+    enabled: true
+
+  lotteryrisk:
+    enabled: true
+    directory_depth: 2
+
+  # Disable Go-specific collectors for JS/TS projects
+  dephealth:
+    enabled: false

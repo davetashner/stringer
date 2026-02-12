@@ -1,0 +1,42 @@
+# .stringer.yaml — Go project configuration
+#
+# Copy this file to your repository root as .stringer.yaml
+# or run `stringer init .` to auto-generate one.
+
+output_format: beads
+max_issues: 100
+
+collectors:
+  todos:
+    enabled: true
+    min_confidence: 0.4
+    exclude_patterns:
+      - vendor/**
+      - testdata/**
+
+  gitlog:
+    enabled: true
+    git_depth: 1000
+    git_since: 6m
+
+  patterns:
+    enabled: true
+    large_file_threshold: 1000
+
+  lotteryrisk:
+    enabled: true
+    lottery_risk_threshold: 2
+    directory_depth: 3
+    max_blame_files: 100
+
+  dephealth:
+    enabled: true
+
+  vuln:
+    enabled: true
+
+  github:
+    enabled: true
+    include_prs: true
+    include_closed: false
+    max_issues_per_collector: 50
