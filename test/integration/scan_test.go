@@ -310,6 +310,64 @@ func TestScan_DeltaDryRun(t *testing.T) {
 	assert.Equal(t, string(before), string(after), "dry-run should not modify state file")
 }
 
+func TestScan_BdImportRoundTrip(t *testing.T) {
+	// Skip if bd is not installed.
+	bdPath, err := exec.LookPath("bd")
+	if err != nil {
+		t.Skip("bd not on PATH, skipping round-trip test")
+	}
+
+	binary := buildBinary(t)
+	fixture := fixtureDir(t, "sample-repo")
+	outFile := filepath.Join(t.TempDir(), "output.jsonl")
+
+	// Step 1: Scan fixture to JSONL file.
+	scanCmd := exec.Command(binary, "scan", fixture, "--collectors=todos", "-o", outFile, "--quiet") //nolint:gosec // test helper
+	scanOut, err := scanCmd.CombinedOutput()
+	require.NoError(t, err, "scan failed:\n%s", scanOut)
+
+	// Read and verify the output has signals.
+	data, err := os.ReadFile(outFile) //nolint:gosec // test fixture
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	require.Equal(t, 11, len(lines), "expected 11 signals from sample-repo fixture")
+
+	// Step 2: Validate JSONL with stringer validate.
+	valCmd := exec.Command(binary, "validate", outFile) //nolint:gosec // test helper
+	valOut, err := valCmd.CombinedOutput()
+	require.NoError(t, err, "validate failed:\n%s", valOut)
+
+	// Step 3: Init a temp bd repo and import.
+	bdDir := t.TempDir()
+	initCmd := exec.Command(bdPath, "init", "--no-db", "--prefix", "str") //nolint:gosec // test helper
+	initCmd.Dir = bdDir
+	initOut, err := initCmd.CombinedOutput()
+	require.NoError(t, err, "bd init failed:\n%s", initOut)
+
+	// Import the JSONL.
+	importCmd := exec.Command(bdPath, "import", "-i", outFile) //nolint:gosec // test helper
+	importCmd.Dir = bdDir
+	importOut, err := importCmd.CombinedOutput()
+	require.NoError(t, err, "bd import failed:\n%s", importOut)
+
+	// Step 4: Verify issues were created via bd list.
+	listCmd := exec.Command(bdPath, "list", "--json") //nolint:gosec // test helper
+	listCmd.Dir = bdDir
+	listOut, err := listCmd.Output()
+	require.NoError(t, err, "bd list failed")
+
+	var issues []map[string]interface{}
+	require.NoError(t, json.Unmarshal(listOut, &issues), "bd list output is not valid JSON")
+	assert.Equal(t, 11, len(issues), "bd should have imported all 11 issues")
+
+	// Verify each imported issue has expected fields.
+	for i, issue := range issues {
+		assert.NotEmpty(t, issue["id"], "issue %d missing id", i)
+		assert.NotEmpty(t, issue["title"], "issue %d missing title", i)
+		assert.NotEmpty(t, issue["status"], "issue %d missing status", i)
+	}
+}
+
 func TestScan_ErrorMessages(t *testing.T) {
 	binary := buildBinary(t)
 
