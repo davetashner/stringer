@@ -95,6 +95,20 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanNoWorkspaces, "no-workspaces", false, "disable monorepo auto-detection, scan root as single directory")
 }
 
+// scanContext holds shared state across the scan lifecycle, reducing parameter
+// passing between stages.
+type scanContext struct {
+	cmd            *cobra.Command
+	absPath        string
+	gitRoot        string
+	workspaces     []workspaceEntry
+	scanCfg        signal.ScanConfig
+	fileCfg        *config.Config
+	result         *signal.ScanResult
+	collectorNames []string
+	allSignals     []signal.RawSignal // pre-filter signals for delta state
+}
+
 func runScan(cmd *cobra.Command, args []string) error {
 	// 1. Resolve scan path and find git root.
 	repoPath := "."
@@ -111,27 +125,71 @@ func runScan(cmd *cobra.Command, args []string) error {
 			"stringer: --min-confidence must be between 0.0 and 1.0 (got %.2f)", scanMinConfidence)
 	}
 
-	// 2. Detect workspaces.
-	workspaces := resolveWorkspaces(absPath, scanNoWorkspaces, scanWorkspace)
+	sc := &scanContext{
+		cmd:        cmd,
+		absPath:    absPath,
+		gitRoot:    gitRoot,
+		workspaces: resolveWorkspaces(absPath, scanNoWorkspaces, scanWorkspace),
+		result:     &signal.ScanResult{Metrics: make(map[string]any)},
+	}
 
-	// 3. Load root config for output format and filters.
-	scanCfg, fileCfg, err := loadScanConfig(cmd, absPath, gitRoot)
+	// 2. Load root config for output format and filters.
+	sc.scanCfg, sc.fileCfg, err = loadScanConfig(cmd, absPath, gitRoot)
 	if err != nil {
 		return err
 	}
 
-	// 4. Run pipeline per workspace and aggregate results.
-	var (
-		result         = &signal.ScanResult{Metrics: make(map[string]any)}
-		collectorNames []string
-	)
-	for _, ws := range workspaces {
+	// 3. Run pipeline per workspace and aggregate results.
+	if err := sc.runPipeline(); err != nil {
+		return err
+	}
+
+	// 4. Filter results (delta, beads dedup, confidence, kind).
+	sc.allSignals = sc.result.Signals
+	if err := sc.filterResults(); err != nil {
+		return err
+	}
+
+	// 5. LLM-based analysis (priority inference, dependency detection).
+	if err := sc.runLLMAnalysis(); err != nil {
+		return err
+	}
+
+	// 6. Determine exit code based on collector results.
+	exitCode := computeExitCode(sc.result, scanStrict)
+
+	// 7. Handle dry-run.
+	if scanDryRun {
+		return printDryRun(cmd, sc.result, exitCode)
+	}
+
+	// 8. Write formatted output.
+	if err := writeScanOutput(cmd, sc.result, sc.scanCfg); err != nil {
+		return err
+	}
+
+	// 9. Save delta state from ALL signals (pre-filter), not just new ones.
+	if scanDelta {
+		if err := saveDeltaState(absPath, sc.collectorNames, sc.allSignals, sc.workspaces); err != nil {
+			return exitError(ExitTotalFailure, "stringer: failed to save delta state (%v)", err)
+		}
+	}
+
+	if exitCode != ExitOK {
+		return exitError(exitCode, "")
+	}
+	return nil
+}
+
+// runPipeline runs the scan pipeline for each workspace and aggregates results.
+func (sc *scanContext) runPipeline() error {
+	for _, ws := range sc.workspaces {
 		wsPath := ws.Path
 		if ws.Name != "" {
 			slog.Info("scanning workspace", "name", ws.Name, "path", ws.Rel)
 		}
 
-		wsCfg, _, err := loadScanConfig(cmd, wsPath, gitRoot)
+		wsCfg, _, err := loadScanConfig(sc.cmd, wsPath, sc.gitRoot)
 		if err != nil {
 			return err
 		}
@@ -148,12 +206,12 @@ func runScan(cmd *cobra.Command, args []string) error {
 			cn = collector.List()
 			sort.Strings(cn)
 		}
-		if collectorNames == nil {
-			collectorNames = cn
+		if sc.collectorNames == nil {
+			sc.collectorNames = cn
 		}
 		slog.Info("scanning", "collectors", len(cn))
 
-		wsResult, err := p.Run(cmd.Context())
+		wsResult, err := p.Run(sc.cmd.Context())
 		if err != nil {
 			return exitError(ExitTotalFailure, "stringer: scan failed (%v)", err)
 		}
@@ -165,15 +223,15 @@ func runScan(cmd *cobra.Command, args []string) error {
 		}
 
 		// Aggregate into combined result.
-		result.Signals = append(result.Signals, wsResult.Signals...)
-		result.Results = append(result.Results, wsResult.Results...)
-		result.Duration += wsResult.Duration
+		sc.result.Signals = append(sc.result.Signals, wsResult.Signals...)
+		sc.result.Results = append(sc.result.Results, wsResult.Results...)
+		sc.result.Duration += wsResult.Duration
 		for k, v := range wsResult.Metrics {
-			result.Metrics[k] = v
+			sc.result.Metrics[k] = v
 		}
 	}
 
-	for _, cr := range result.Results {
+	for _, cr := range sc.result.Results {
 		if cr.Err != nil {
 			slog.Error("collector failed", "name", cr.Collector, "error", cr.Err, "duration", cr.Duration)
 		} else {
@@ -184,7 +242,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	// Warn when an explicitly requested collector produced no signals and no error.
 	if scanCollectors != "" {
 		resultByName := make(map[string]bool)
-		for _, cr := range result.Results {
+		for _, cr := range sc.result.Results {
 			if cr.Err == nil && len(cr.Signals) > 0 {
 				resultByName[cr.Collector] = true
 			}
@@ -197,71 +255,49 @@ func runScan(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 5. Filter results (delta, beads dedup, confidence, kind).
-	allSignals := result.Signals // keep full list for state saving
-	if err := filterScanResults(cmd, result, absPath, fileCfg, scanCfg, collectorNames, allSignals, workspaces); err != nil {
-		return err
+	return nil
+}
+
+// runLLMAnalysis runs optional LLM-based priority inference and dependency
+// detection on the scan results.
+func (sc *scanContext) runLLMAnalysis() error {
+	if !scanInferPriority && !scanInferDeps {
+		return nil
 	}
 
-	// 6. LLM-based analysis (priority inference, dependency detection).
-	if scanInferPriority || scanInferDeps {
-		provider, provErr := llm.NewAnthropicProvider()
-		if provErr != nil {
-			return exitError(ExitInvalidArgs, "stringer: LLM features require ANTHROPIC_API_KEY (%v)", provErr)
-		}
+	provider, provErr := llm.NewAnthropicProvider()
+	if provErr != nil {
+		return exitError(ExitInvalidArgs, "stringer: LLM features require ANTHROPIC_API_KEY (%v)", provErr)
+	}
 
-		if scanInferPriority {
-			var overrides []analysis.PriorityOverride
-			if fileCfg != nil {
-				for _, o := range fileCfg.PriorityOverrides {
-					overrides = append(overrides, analysis.PriorityOverride{
-						Pattern:  o.Pattern,
-						Priority: o.Priority,
-					})
-				}
-			}
-			var inferErr error
-			result.Signals, inferErr = analysis.InferPriorities(cmd.Context(), result.Signals, provider, overrides)
-			if inferErr != nil {
-				slog.Warn("priority inference error", "error", inferErr)
+	if scanInferPriority {
+		var overrides []analysis.PriorityOverride
+		if sc.fileCfg != nil {
+			for _, o := range sc.fileCfg.PriorityOverrides {
+				overrides = append(overrides, analysis.PriorityOverride{
+					Pattern:  o.Pattern,
+					Priority: o.Priority,
+				})
 			}
 		}
-
-		if scanInferDeps {
-			idPrefix := "str-"
-			deps, depErr := analysis.InferDependencies(cmd.Context(), result.Signals, provider, idPrefix)
-			if depErr != nil {
-				slog.Warn("dependency inference error", "error", depErr)
-			} else if len(deps) > 0 {
-				analysis.ApplyDepsToSignals(result.Signals, deps, idPrefix)
-				slog.Info("dependencies inferred", "count", len(deps))
-			}
+		var inferErr error
+		sc.result.Signals, inferErr = analysis.InferPriorities(sc.cmd.Context(), sc.result.Signals, provider, overrides)
+		if inferErr != nil {
+			slog.Warn("priority inference error", "error", inferErr)
 		}
 	}
 
-	// 7. Determine exit code based on collector results.
-	exitCode := computeExitCode(result, scanStrict)
-
-	// 8. Handle dry-run.
-	if scanDryRun {
-		return printDryRun(cmd, result, exitCode)
-	}
-
-	// 9. Write formatted output.
-	if err := writeScanOutput(cmd, result, scanCfg); err != nil {
-		return err
-	}
-
-	// 10. Save delta state from ALL signals (pre-filter), not just new ones.
-	if scanDelta {
-		if err := saveDeltaState(absPath, collectorNames, allSignals, workspaces); err != nil {
-			return exitError(ExitTotalFailure, "stringer: failed to save delta state (%v)", err)
+	if scanInferDeps {
+		idPrefix := "str-"
+		deps, depErr := analysis.InferDependencies(sc.cmd.Context(), sc.result.Signals, provider, idPrefix)
+		if depErr != nil {
+			slog.Warn("dependency inference error", "error", depErr)
+		} else if len(deps) > 0 {
+			analysis.ApplyDepsToSignals(sc.result.Signals, deps, idPrefix)
+			slog.Info("dependencies inferred", "count", len(deps))
 		}
 	}
 
-	if exitCode != ExitOK {
-		return exitError(exitCode, "")
-	}
 	return nil
 }
 
@@ -404,62 +440,51 @@ func loadScanConfig(cmd *cobra.Command, absPath, gitRoot string) (signal.ScanCon
 	return scanCfg, fileCfg, nil
 }
 
-// filterScanResults applies post-pipeline filters to the scan result: delta
+// filterResults applies post-pipeline filters to the scan result: delta
 // filtering, beads-aware dedup, confidence threshold, and kind filter. It
-// mutates result.Signals in place. allSignals is the unfiltered signal list
-// used for delta diff computation. workspaces is needed for workspace-scoped
-// beads dedup.
-func filterScanResults(
-	cmd *cobra.Command,
-	result *signal.ScanResult,
-	absPath string,
-	fileCfg *config.Config,
-	scanCfg signal.ScanConfig,
-	collectorNames []string,
-	allSignals []signal.RawSignal,
-	workspaces []workspaceEntry,
-) error {
+// mutates sc.result.Signals in place.
+func (sc *scanContext) filterResults() error {
 	// Delta filtering: load previous state, filter to new signals.
 	if scanDelta {
-		prevState, err := state.Load(absPath)
+		prevState, err := state.Load(sc.absPath)
 		if err != nil {
 			return exitError(ExitTotalFailure, "stringer: failed to load delta state (%v)", err)
 		}
-		if prevState != nil && !state.CollectorsMatch(prevState, collectorNames) {
+		if prevState != nil && !state.CollectorsMatch(prevState, sc.collectorNames) {
 			slog.Warn("collector mismatch from previous scan, treating all signals as new")
 			prevState = nil
 		}
-		newSignals := state.FilterNew(allSignals, prevState)
-		slog.Info("delta filter", "total", len(allSignals), "new", len(newSignals))
-		result.Signals = newSignals
+		newSignals := state.FilterNew(sc.allSignals, prevState)
+		slog.Info("delta filter", "total", len(sc.allSignals), "new", len(newSignals))
+		sc.result.Signals = newSignals
 
 		// Compute and display diff summary to stderr.
 		if prevState != nil {
-			currentState := state.Build(absPath, collectorNames, allSignals)
+			currentState := state.Build(sc.absPath, sc.collectorNames, sc.allSignals)
 			diff := state.ComputeDiff(prevState, currentState)
-			if err := state.FormatDiff(diff, absPath, cmd.ErrOrStderr()); err != nil {
+			if err := state.FormatDiff(diff, sc.absPath, sc.cmd.ErrOrStderr()); err != nil {
 				slog.Warn("failed to write diff summary", "error", err)
 			}
 
 			// Emit resolved TODOs as pre-closed signals.
-			resolvedTodos := state.BuildResolvedTodoSignals(absPath, diff.Removed)
+			resolvedTodos := state.BuildResolvedTodoSignals(sc.absPath, diff.Removed)
 			if len(resolvedTodos) > 0 {
 				slog.Info("resolved TODOs detected", "count", len(resolvedTodos))
-				result.Signals = append(result.Signals, resolvedTodos...)
+				sc.result.Signals = append(sc.result.Signals, resolvedTodos...)
 			}
 		}
 	}
 
 	// Beads-aware dedup: filter signals already tracked as beads.
-	beadsAwareEnabled := fileCfg.BeadsAware == nil || *fileCfg.BeadsAware
+	beadsAwareEnabled := sc.fileCfg.BeadsAware == nil || *sc.fileCfg.BeadsAware
 	if beadsAwareEnabled {
-		existingBeads, beadsErr := beads.LoadBeads(absPath)
+		existingBeads, beadsErr := beads.LoadBeads(sc.absPath)
 		if beadsErr != nil {
 			slog.Warn("failed to load existing beads", "error", beadsErr)
 		}
 
 		// Also check workspace-level beads directories.
-		for _, ws := range workspaces {
+		for _, ws := range sc.workspaces {
 			if ws.Name == "" {
 				continue
 			}
@@ -472,13 +497,13 @@ func filterScanResults(
 		}
 
 		if existingBeads != nil {
-			before := len(result.Signals)
-			result.Signals = beads.FilterAgainstExisting(result.Signals, existingBeads)
-			slog.Info("beads dedup", "before", before, "after", len(result.Signals),
-				"filtered", before-len(result.Signals))
+			before := len(sc.result.Signals)
+			sc.result.Signals = beads.FilterAgainstExisting(sc.result.Signals, existingBeads)
+			slog.Info("beads dedup", "before", before, "after", len(sc.result.Signals),
+				"filtered", before-len(sc.result.Signals))
 
 			// Adopt beads conventions for output formatting.
-			if scanCfg.OutputFormat == "beads" {
+			if sc.scanCfg.OutputFormat == "beads" {
 				if conventions := beads.DetectConventions(existingBeads); conventions != nil {
 					if f, _ := output.GetFormatter("beads"); f != nil {
 						if bf, ok := f.(*output.BeadsFormatter); ok {
@@ -493,13 +518,13 @@ func filterScanResults(
 	// Post-pipeline confidence filter.
 	if scanMinConfidence > 0 {
 		var filtered []signal.RawSignal
-		for _, sig := range result.Signals {
+		for _, sig := range sc.result.Signals {
 			if sig.Confidence >= scanMinConfidence {
 				filtered = append(filtered, sig)
 			}
 		}
-		slog.Info("confidence filter", "before", len(result.Signals), "after", len(filtered), "min", scanMinConfidence)
-		result.Signals = filtered
+		slog.Info("confidence filter", "before", len(sc.result.Signals), "after", len(filtered), "min", scanMinConfidence)
+		sc.result.Signals = filtered
 	}
 
 	// Post-pipeline kind filter.
@@ -509,13 +534,13 @@ func filterScanResults(
 			kinds[strings.TrimSpace(strings.ToLower(k))] = true
 		}
 		var filtered []signal.RawSignal
-		for _, sig := range result.Signals {
+		for _, sig := range sc.result.Signals {
 			if kinds[sig.Kind] {
 				filtered = append(filtered, sig)
 			}
 		}
-		slog.Info("kind filter", "before", len(result.Signals), "after", len(filtered), "kinds", scanKind)
-		result.Signals = filtered
+		slog.Info("kind filter", "before", len(sc.result.Signals), "after", len(filtered), "kinds", scanKind)
+		sc.result.Signals = filtered
 	}
 
 	return nil

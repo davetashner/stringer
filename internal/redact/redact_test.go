@@ -6,6 +6,7 @@ import (
 )
 
 func TestString_RedactsKnownEnvVars(t *testing.T) {
+	resetCache()
 	const secret = "ghp_TESTSECRETVALUE1234567890" //nolint:gosec // fake test credential
 	t.Setenv("GITHUB_TOKEN", secret)
 
@@ -21,6 +22,7 @@ func TestString_RedactsKnownEnvVars(t *testing.T) {
 }
 
 func TestString_NoSecretSetIsNoop(t *testing.T) {
+	resetCache()
 	// Ensure env var is unset for this test.
 	os.Unsetenv("GITHUB_TOKEN") //nolint:errcheck // test cleanup
 
@@ -33,6 +35,7 @@ func TestString_NoSecretSetIsNoop(t *testing.T) {
 }
 
 func TestString_ShortValuesIgnored(t *testing.T) {
+	resetCache()
 	// Values under 4 chars could cause false-positive redaction.
 	t.Setenv("GITHUB_TOKEN", "abc")
 
@@ -45,6 +48,7 @@ func TestString_ShortValuesIgnored(t *testing.T) {
 }
 
 func TestString_MultipleSecrets(t *testing.T) {
+	resetCache()
 	t.Setenv("GITHUB_TOKEN", "test-token-aaaa")
 	t.Setenv("ANTHROPIC_API_KEY", "test-token-bbbb")
 
