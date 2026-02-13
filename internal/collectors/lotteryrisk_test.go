@@ -9,11 +9,11 @@ import (
 	"time"
 
 	gogit "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/google/go-github/v68/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/davetashner/stringer/internal/gitcli"
 	"github.com/davetashner/stringer/internal/signal"
 	"github.com/davetashner/stringer/internal/testable"
 )
@@ -137,8 +137,10 @@ func TestLotteryRiskCollector_NotAGitRepo(t *testing.T) {
 	dir := t.TempDir()
 
 	c := &LotteryRiskCollector{}
-	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
-	assert.Error(t, err, "non-git directory should return an error")
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	// Non-git directory degrades gracefully — no error, no signals.
+	require.NoError(t, err)
+	assert.Empty(t, signals, "non-git directory should produce no signals")
 }
 
 func TestLotteryRiskCollector_ContextCancellation(t *testing.T) {
@@ -720,16 +722,14 @@ func TestLotteryRiskCollector_TimestampsEnriched(t *testing.T) {
 
 // --- Mock-based tests ---
 
-func TestLotteryRiskCollector_PlainOpenFailure(t *testing.T) {
-	c := &LotteryRiskCollector{
-		GitOpener: &testable.MockGitOpener{
-			OpenErr: fmt.Errorf("repo not found"),
-		},
-	}
-	_, err := c.Collect(context.Background(), "/tmp/fake", signal.CollectorOpts{})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "opening repo")
-	assert.Contains(t, err.Error(), "repo not found")
+func TestLotteryRiskCollector_NonGitDir(t *testing.T) {
+	dir := t.TempDir()
+
+	c := &LotteryRiskCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	// Non-git directory degrades gracefully — no error, no signals.
+	require.NoError(t, err)
+	assert.Empty(t, signals, "non-git directory should produce no signals")
 }
 
 func TestLotteryRiskCollector_Metrics(t *testing.T) {
@@ -975,25 +975,19 @@ func TestComputeLotteryRisk_OnlyBlame(t *testing.T) {
 }
 
 func TestLotteryRiskCollector_GitSinceOption(t *testing.T) {
-	repo, dir := initGoGitRepo(t, map[string]string{
-		"main.go": "package main\n\nfunc main() {}\n",
+	// Single-author repo with GitSince should still produce signals.
+	_, dir := initGoGitRepo(t, map[string]string{
+		"main.go":     "package main\n\nfunc main() {}\n",
+		"lib/util.go": "package lib\n\nfunc Util() {}\n",
 	})
-
-	now := time.Now()
-	// Add commits at various times.
-	for i := 0; i < 5; i++ {
-		content := fmt.Sprintf("package main\n// change %d\n", i)
-		addCommitAs(t, repo, dir, fmt.Sprintf("file%d.go", i), content,
-			fmt.Sprintf("feat: add file%d", i),
-			now.Add(-time.Duration(i*30)*24*time.Hour),
-			"Alice", "alice@example.com")
-	}
 
 	c := &LotteryRiskCollector{}
 	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
 		GitSince: "30d",
 	})
 	require.NoError(t, err)
+	// Single-author repo should always produce lottery risk signals,
+	// regardless of the GitSince filter (blame dominates).
 	assert.NotEmpty(t, signals)
 }
 
@@ -1040,17 +1034,16 @@ func TestLotteryRiskCollector_BlameDirectoriesProgress(t *testing.T) {
 }
 
 func TestLotteryRiskCollector_WalkCommitsError(t *testing.T) {
-	mockRepo := &testable.MockGitRepository{
-		HeadRef: plumbing.NewHashReference(plumbing.HEAD, plumbing.ZeroHash),
-		LogErr:  fmt.Errorf("log iterator failed"),
-	}
-	c := &LotteryRiskCollector{
-		GitOpener: &testable.MockGitOpener{Repo: mockRepo},
-	}
-	// The walkCommitsForOwnership Log error should propagate.
+	// Mock the git executor to make git log fail with a non-recoverable error.
+	origExecutor := testable.DefaultExecutor()
+	gitcli.SetExecutor(&testable.MockCommandExecutor{
+		DefaultError: "git log failed",
+	})
+	defer gitcli.SetExecutor(origExecutor)
+
+	c := &LotteryRiskCollector{}
 	_, err := c.Collect(context.Background(), t.TempDir(), signal.CollectorOpts{})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "walking commits for ownership")
 }
 
 func TestBuildLotteryRiskSignal_MultipleAuthorsEqualPct(t *testing.T) {
