@@ -34,6 +34,7 @@ func TestFormatterInterface(t *testing.T) {
 func restoreFormatters() {
 	resetFmtForTesting()
 	RegisterFormatter(NewBeadsFormatter())
+	RegisterFormatter(NewHTMLFormatter())
 	RegisterFormatter(NewJSONFormatter())
 	RegisterFormatter(NewMarkdownFormatter())
 	RegisterFormatter(NewTasksFormatter())
