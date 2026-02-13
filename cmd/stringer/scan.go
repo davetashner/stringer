@@ -49,6 +49,8 @@ var (
 	scanClusterThreshold  float64
 	scanInferPriority     bool
 	scanInferDeps         bool
+	scanWorkspace         string
+	scanNoWorkspaces      bool
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -89,6 +91,8 @@ func init() {
 	scanCmd.Flags().Float64Var(&scanClusterThreshold, "cluster-threshold", 0.7, "similarity threshold for signal pre-filtering (0.0-1.0)")
 	scanCmd.Flags().BoolVar(&scanInferPriority, "infer-priority", false, "use LLM to assign P1-P4 priorities to signals")
 	scanCmd.Flags().BoolVar(&scanInferDeps, "infer-deps", false, "use LLM to detect dependencies between signals")
+	scanCmd.Flags().StringVar(&scanWorkspace, "workspace", "", "scan only named workspace(s) (comma-separated)")
+	scanCmd.Flags().BoolVar(&scanNoWorkspaces, "no-workspaces", false, "disable monorepo auto-detection, scan root as single directory")
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
@@ -107,31 +111,66 @@ func runScan(cmd *cobra.Command, args []string) error {
 			"stringer: --min-confidence must be between 0.0 and 1.0 (got %.2f)", scanMinConfidence)
 	}
 
-	// 2. Load config, merge CLI flags, validate.
+	// 2. Detect workspaces.
+	workspaces := resolveWorkspaces(absPath, scanNoWorkspaces, scanWorkspace)
+
+	// 3. Load root config for output format and filters.
 	scanCfg, fileCfg, err := loadScanConfig(cmd, absPath, gitRoot)
 	if err != nil {
 		return err
 	}
 
-	// 3. Create pipeline.
-	p, err := pipeline.New(scanCfg)
-	if err != nil {
-		available := collector.List()
-		sort.Strings(available)
-		return exitError(ExitInvalidArgs, "stringer: %v (available: %s)", err, strings.Join(available, ", "))
-	}
+	// 4. Run pipeline per workspace and aggregate results.
+	var (
+		result         = &signal.ScanResult{Metrics: make(map[string]any)}
+		collectorNames []string
+	)
+	for _, ws := range workspaces {
+		wsPath := ws.Path
+		if ws.Name != "" {
+			slog.Info("scanning workspace", "name", ws.Name, "path", ws.Rel)
+		}
 
-	// 4. Run pipeline.
-	collectorNames := scanCfg.Collectors
-	if len(collectorNames) == 0 {
-		collectorNames = collector.List()
-		sort.Strings(collectorNames)
-	}
-	slog.Info("scanning", "collectors", len(collectorNames))
+		wsCfg, _, err := loadScanConfig(cmd, wsPath, gitRoot)
+		if err != nil {
+			return err
+		}
 
-	result, err := p.Run(cmd.Context())
-	if err != nil {
-		return exitError(ExitTotalFailure, "stringer: scan failed (%v)", err)
+		p, err := pipeline.New(wsCfg)
+		if err != nil {
+			available := collector.List()
+			sort.Strings(available)
+			return exitError(ExitInvalidArgs, "stringer: %v (available: %s)", err, strings.Join(available, ", "))
+		}
+
+		cn := wsCfg.Collectors
+		if len(cn) == 0 {
+			cn = collector.List()
+			sort.Strings(cn)
+		}
+		if collectorNames == nil {
+			collectorNames = cn
+		}
+		slog.Info("scanning", "collectors", len(cn))
+
+		wsResult, err := p.Run(cmd.Context())
+		if err != nil {
+			return exitError(ExitTotalFailure, "stringer: scan failed (%v)", err)
+		}
+
+		// Stamp workspace on signals and adjust file paths.
+		stampWorkspace(ws, wsResult.Signals)
+		for i := range wsResult.Results {
+			stampWorkspace(ws, wsResult.Results[i].Signals)
+		}
+
+		// Aggregate into combined result.
+		result.Signals = append(result.Signals, wsResult.Signals...)
+		result.Results = append(result.Results, wsResult.Results...)
+		result.Duration += wsResult.Duration
+		for k, v := range wsResult.Metrics {
+			result.Metrics[k] = v
+		}
 	}
 
 	for _, cr := range result.Results {

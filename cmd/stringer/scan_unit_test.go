@@ -38,6 +38,8 @@ func resetScanFlags() {
 	scanGitDepth = 0
 	scanGitSince = ""
 	scanExcludeCollectors = ""
+	scanWorkspace = ""
+	scanNoWorkspaces = false
 
 	// Reset cobra flag "Changed" state and values to avoid test contamination.
 	scanCmd.Flags().VisitAll(func(f *pflag.Flag) {
