@@ -18,7 +18,7 @@ import (
 
 // defaultLargeFileThreshold is the default large-file threshold in lines.
 // Files exceeding this are flagged. Can be overridden via CollectorOpts.
-const defaultLargeFileThreshold = 1000
+const defaultLargeFileThreshold = 1500
 
 // minSourceLinesForTestCheck is the minimum number of lines a source file must
 // have before we report a missing-test signal. Very small files (stubs, config)
@@ -185,7 +185,7 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 		}
 
 		// C3.1: Large file detection.
-		if lineCount > threshold {
+		if lineCount > threshold && !isGeneratedFile(path) {
 			confidence := largeFileConfidence(lineCount, threshold)
 			signals = append(signals, signal.RawSignal{
 				Source:      "patterns",
