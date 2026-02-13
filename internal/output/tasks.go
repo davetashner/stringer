@@ -255,6 +255,9 @@ func metadataForSignal(s signal.RawSignal) map[string]string {
 	if !s.ClosedAt.IsZero() {
 		m["closed_at"] = s.ClosedAt.UTC().Format("2006-01-02T15:04:05Z")
 	}
+	if s.Workspace != "" {
+		m["workspace"] = s.Workspace
+	}
 
 	return m
 }

@@ -80,6 +80,7 @@ type htmlData struct {
 	TodoAgeBuckets []ageBucket
 	SignalRows     []signalRow
 	ChartData      map[string]any
+	HasWorkspaces  bool
 }
 
 type collectorCount struct {
@@ -110,6 +111,7 @@ type signalRow struct {
 	Confidence  float64
 	Priority    int
 	Description string
+	Workspace   string
 }
 
 func (h *HTMLFormatter) buildData(signals []signal.RawSignal, now time.Time) htmlData {
@@ -127,6 +129,7 @@ func (h *HTMLFormatter) buildData(signals []signal.RawSignal, now time.Time) htm
 		LotteryRisk:    buildLotteryEntries(signals),
 		TodoAgeBuckets: buildTodoAgeBuckets(signals, now),
 		SignalRows:     buildSignalRows(signals),
+		HasWorkspaces:  hasMultipleWorkspaces(signals),
 	}
 
 	data.ChartData = h.buildChartData(data)
@@ -240,9 +243,26 @@ func buildSignalRows(signals []signal.RawSignal) []signalRow {
 			Confidence:  s.Confidence,
 			Priority:    p,
 			Description: s.Description,
+			Workspace:   s.Workspace,
 		}
 	}
 	return rows
+}
+
+// hasMultipleWorkspaces returns true if signals come from more than one workspace.
+func hasMultipleWorkspaces(signals []signal.RawSignal) bool {
+	seen := ""
+	for _, s := range signals {
+		ws := s.Workspace
+		if seen == "" {
+			seen = ws
+			continue
+		}
+		if ws != seen {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *HTMLFormatter) buildChartData(data htmlData) map[string]any {

@@ -222,5 +222,8 @@ func (b *BeadsFormatter) buildLabels(sig signal.RawSignal) []string {
 	if sig.Source != "" {
 		labels = append(labels, sig.Source)
 	}
+	if sig.Workspace != "" {
+		labels = append(labels, "workspace:"+sig.Workspace)
+	}
 	return labels
 }
