@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: ["1.24", "1.25"]
+        go-version: ["1.24", "1.26"]
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: "1.25"
+          go-version: "1.26"
       - run: go vet ./...
 
   fmt:
@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: "1.25"
+          go-version: "1.26"
       - name: Check gofmt
         run: |
           unformatted=$(gofmt -l .)
@@ -59,10 +59,10 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: "1.25"
+          go-version: "1.26"
       - uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
-          version: v2.8.0
+          version: v2.9.0
 
   tidy:
     name: Tidy
@@ -71,7 +71,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: "1.25"
+          go-version: "1.26"
       - run: go mod tidy
       - run: go mod verify
       - name: Check for changes
@@ -84,7 +84,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: "1.25"
+          go-version: "1.26"
       - name: Run tests with coverage
         run: go test -race -count=1 -coverprofile=coverage.out ./...
       - name: Check coverage threshold
@@ -104,7 +104,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: "1.25"
+          go-version: "1.26"
       - uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1.0.4
 
   binary-size:
@@ -114,7 +114,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: "1.25"
+          go-version: "1.26"
       - name: Build binary
         run: go build -o stringer ./cmd/stringer
       - name: Check binary size
@@ -205,7 +205,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: "1.25"
+          go-version: "1.26"
       - name: Run go generate
         run: go generate ./...
       - name: Check for uncommitted changes
@@ -224,7 +224,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: "1.25"
+          go-version: "1.26"
       - name: Install go-licenses
         run: go install github.com/google/go-licenses@v1.6.0
       - name: Check licenses
@@ -247,7 +247,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: "1.25"
+          go-version: "1.26"
       - name: Check for archived dependencies
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -524,7 +524,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
         with:
-          go-version: "1.25"
+          go-version: "1.26"
       - name: Run fuzz tests
         run: |
           go test -fuzz=FuzzResolvePath -fuzztime=10s -run=^$ ./internal/mcpserver/
