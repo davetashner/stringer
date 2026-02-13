@@ -164,6 +164,13 @@ func TestShouldExclude(t *testing.T) {
 		{name: "src_file", relPath: "internal/foo/bar.go", patterns: []string{"vendor/**", "node_modules/**"}, want: false},
 		{name: "empty_patterns", relPath: "any.go", patterns: nil, want: false},
 		{name: "nested_vendor", relPath: "vendor/github.com/pkg/errors/errors.go", patterns: []string{"vendor/**"}, want: true},
+		// Interior matching: pattern matches at any directory depth.
+		{name: "wwwroot_lib_interior", relPath: "samples/foo/wwwroot/lib/bootstrap.js", patterns: []string{"wwwroot/lib/**"}, want: true},
+		{name: "wwwroot_lib_root", relPath: "wwwroot/lib/jquery.js", patterns: []string{"wwwroot/lib/**"}, want: true},
+		{name: "wwwroot_lib_exact", relPath: "wwwroot/lib", patterns: []string{"wwwroot/lib/**"}, want: true},
+		{name: "third_party_interior", relPath: "samples/foo/third_party/proto.go", patterns: []string{"third_party/**"}, want: true},
+		{name: "no_false_match_lib", relPath: "libfoo/bar.go", patterns: []string{"wwwroot/lib/**"}, want: false},
+		{name: "no_false_match_extern", relPath: "myextern/code.go", patterns: []string{"extern/**"}, want: false},
 	}
 
 	for _, tt := range tests {
@@ -1374,6 +1381,24 @@ func TestScanFile_RealCommentsStillMatch(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Len(t, signals, 6, "all real comment patterns should still match")
+}
+
+func TestCollect_VendoredWwwrootLibExcluded(t *testing.T) {
+	repoPath := initTestGitRepo(t, map[string]string{
+		"main.go": "// TODO: real work item\n",
+		"project/wwwroot/lib/bootstrap/dist/js/bootstrap.js": "// TODO: vendored todo\n",
+		"project/wwwroot/lib/jquery/jquery.min.js":           "// TODO: vendored jquery\n",
+		"third_party/proto/gen.go":                           "// TODO: generated\n",
+		"sub/external/dep.go":                                "// TODO: external dep\n",
+	})
+
+	c := &TodoCollector{}
+	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	// Only the real work item in main.go should survive.
+	require.Len(t, signals, 1, "only main.go TODO should remain after vendor exclusion")
+	assert.Equal(t, "main.go", signals[0].FilePath)
 }
 
 func TestIsBinaryFile_MockOpenError(t *testing.T) {
