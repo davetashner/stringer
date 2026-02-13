@@ -39,6 +39,10 @@ func resetCache() {
 	cacheOnce = sync.Once{}
 }
 
+// ResetForTest resets the cached secrets so tests in other packages can
+// verify redaction behavior after setting env vars with t.Setenv.
+func ResetForTest() { resetCache() }
+
 // String replaces any occurrence of a known sensitive environment variable
 // value with "[REDACTED]". Returns the original string if no secrets are found.
 // Secret values are cached on first call for performance.
