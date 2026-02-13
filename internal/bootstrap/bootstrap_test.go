@@ -1,8 +1,10 @@
 package bootstrap
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -82,6 +84,28 @@ func TestRun_ForceRegeneratesConfig(t *testing.T) {
 	assert.Equal(t, "created", result.Actions[0].Operation)
 	assert.Contains(t, result.Actions[0].Description, "regenerated")
 	assert.Equal(t, "skipped", result.Actions[1].Operation)
+}
+
+func TestRun_Interactive(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n\ngo 1.22\n"), 0o600))
+
+	// Provide enough newlines to accept all wizard defaults.
+	input := strings.Repeat("\n", 20)
+	var out bytes.Buffer
+
+	result, err := Run(InitConfig{
+		RepoPath:    dir,
+		Interactive: true,
+		Stdin:       strings.NewReader(input),
+		Stdout:      &out,
+	})
+	require.NoError(t, err)
+
+	assert.Equal(t, "Go", result.Language)
+	assert.Len(t, result.Actions, 3)
+	assert.Equal(t, "created", result.Actions[0].Operation)
+	assert.Contains(t, out.String(), "Welcome to stringer init!")
 }
 
 func TestRun_ExistingAGENTSMD(t *testing.T) {

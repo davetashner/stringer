@@ -265,6 +265,31 @@ func TestValidateGitHubToken_NetworkError(t *testing.T) {
 	assert.False(t, validateGitHubToken("any_token"))
 }
 
+func TestPromptYesNo_EOF(t *testing.T) {
+	// Empty reader — scanner.Scan() returns false immediately.
+	scanner := bufio.NewScanner(strings.NewReader(""))
+	assert.True(t, promptYesNo(scanner, true), "should return default true on EOF")
+	assert.False(t, promptYesNo(scanner, false), "should return default false on EOF")
+}
+
+func TestPromptString_EOF(t *testing.T) {
+	scanner := bufio.NewScanner(strings.NewReader(""))
+	assert.Equal(t, "fallback", promptString(scanner, "fallback"))
+}
+
+func TestPromptInt_EOF(t *testing.T) {
+	scanner := bufio.NewScanner(strings.NewReader(""))
+	assert.Equal(t, 42, promptInt(scanner, 42))
+}
+
+func TestValidateAnthropicKey_NetworkError(t *testing.T) {
+	old := httpClient
+	defer func() { httpClient = old }()
+	httpClient = &mockHTTPClient{Err: fmt.Errorf("connection refused")}
+
+	assert.False(t, validateAnthropicKey("sk-ant-any"))
+}
+
 func TestValidateAnthropicKey_Success(t *testing.T) {
 	old := httpClient
 	defer func() { httpClient = old }()
@@ -279,6 +304,105 @@ func TestValidateAnthropicKey_Failure(t *testing.T) {
 	httpClient = &mockHTTPClient{StatusCode: http.StatusUnauthorized}
 
 	assert.False(t, validateAnthropicKey("bad_key"))
+}
+
+func TestRunWizard_WithGitHub(t *testing.T) {
+	old := httpClient
+	defer func() { httpClient = old }()
+	// Mock HTTP client returns OK for both GitHub and Anthropic key validation.
+	httpClient = &mockHTTPClient{StatusCode: http.StatusOK}
+
+	dir := initGitRepo(t, "https://github.com/octocat/hello-world.git")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n\ngo 1.22\n"), 0o600))
+
+	lines := []string{
+		"",            // todos: default (yes)
+		"",            // gitlog: default (yes)
+		"",            // patterns: default (yes)
+		"",            // lotteryrisk: default (yes)
+		"",            // github: default (yes, remote detected)
+		"",            // dephealth: default (yes)
+		"",            // vuln: default (yes)
+		"",            // git_depth: default
+		"",            // git_since: default
+		"",            // large_file_threshold: default
+		"",            // lottery_risk_threshold: default
+		"ghp_test",    // github token
+		"sk-ant-test", // anthropic key
+	}
+	input := strings.Join(lines, "\n") + "\n"
+	var out bytes.Buffer
+
+	result, err := RunWizard(strings.NewReader(input), &out, dir)
+	require.NoError(t, err)
+
+	assert.True(t, result.Collectors["github"])
+	assert.True(t, result.GitHubTokenValid)
+	assert.True(t, result.AnthropicKeyValid)
+
+	output := out.String()
+	assert.Contains(t, output, "GitHub: octocat/hello-world")
+	assert.Contains(t, output, "valid!")
+}
+
+func TestRunWizard_InvalidTokens(t *testing.T) {
+	old := httpClient
+	defer func() { httpClient = old }()
+	// Mock HTTP client returns Unauthorized for both tokens.
+	httpClient = &mockHTTPClient{StatusCode: http.StatusUnauthorized}
+
+	dir := initGitRepo(t, "https://github.com/octocat/hello-world.git")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n\ngo 1.22\n"), 0o600))
+
+	lines := []string{
+		"", "", "", "", "", "", "", // 7 collectors: all defaults
+		"", "", "", "", // 4 thresholds: defaults
+		"bad_token", // github token
+		"bad_key",   // anthropic key
+	}
+	input := strings.Join(lines, "\n") + "\n"
+	var out bytes.Buffer
+
+	result, err := RunWizard(strings.NewReader(input), &out, dir)
+	require.NoError(t, err)
+
+	assert.False(t, result.GitHubTokenValid)
+	assert.False(t, result.AnthropicKeyValid)
+	assert.Contains(t, out.String(), "invalid or expired")
+}
+
+func TestRunWizard_AnthropicKeyOnly(t *testing.T) {
+	old := httpClient
+	defer func() { httpClient = old }()
+	httpClient = &mockHTTPClient{StatusCode: http.StatusOK}
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n\ngo 1.22\n"), 0o600))
+
+	lines := []string{
+		"", "", "", "", "", "", "", // 7 collectors: all defaults (no github)
+		"", "", "", "", // 4 thresholds
+		"sk-ant-valid", // anthropic key
+	}
+	input := strings.Join(lines, "\n") + "\n"
+	var out bytes.Buffer
+
+	result, err := RunWizard(strings.NewReader(input), &out, dir)
+	require.NoError(t, err)
+	assert.True(t, result.AnthropicKeyValid)
+}
+
+func TestRunWizard_NoGitHubLanguageOnly(t *testing.T) {
+	// Covers the branch: analysis.Language != "" but no GitHub remote.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module test\n\ngo 1.22\n"), 0o600))
+
+	input := strings.Repeat("\n", 20)
+	var out bytes.Buffer
+
+	_, err := RunWizard(strings.NewReader(input), &out, dir)
+	require.NoError(t, err)
+	assert.Contains(t, out.String(), "Detected: Go project")
 }
 
 func TestDefaultCollectors_GitHubDetected(t *testing.T) {

@@ -7,13 +7,13 @@
 </picture>
 
 [![CI](https://github.com/davetashner/stringer/actions/workflows/ci.yml/badge.svg)](https://github.com/davetashner/stringer/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-90%25+-brightgreen)](https://github.com/davetashner/stringer/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-91%25-brightgreen)](https://github.com/davetashner/stringer/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/davetashner/stringer)](https://goreportcard.com/report/github.com/davetashner/stringer)
 [![Release](https://img.shields.io/github/v/release/davetashner/stringer)](https://github.com/davetashner/stringer/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 
-> **Status: v0.9.0.** Seven collectors (including multi-ecosystem vulnerability scanning), four output formats, report command with health analysis, parallel pipeline with signal deduplication, delta scanning, LLM-powered signal clustering and priority inference, MCP server for agent integration, interactive `stringer init` wizard, and CLI config management. See [Current Limitations](#current-limitations) for what's not here yet.
+> **Status: v1.0.0.** Seven collectors (including multi-ecosystem vulnerability scanning), four output formats, report command with health analysis, parallel pipeline with signal deduplication, delta scanning, LLM-powered signal clustering and priority inference, MCP server for agent integration, interactive `stringer init` wizard, and CLI config management. See [Current Limitations](#current-limitations) for what's not here yet.
 
 **Codebase archaeology for [Beads](https://github.com/steveyegge/beads).** Mine your repo for actionable work items, output them as Beads-formatted issues, and give your AI agents instant situational awareness.
 

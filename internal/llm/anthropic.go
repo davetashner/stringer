@@ -39,6 +39,7 @@ type anthropicConfig struct {
 	apiKey     string
 	model      string
 	maxRetries int
+	baseURL    string
 }
 
 // WithAPIKey sets the API key. If not provided, the provider reads
@@ -60,6 +61,14 @@ func WithModel(model string) AnthropicOption {
 func WithMaxRetries(n int) AnthropicOption {
 	return func(c *anthropicConfig) {
 		c.maxRetries = n
+	}
+}
+
+// WithBaseURL overrides the API base URL. This is intended for testing
+// with httptest servers and should not be used in production.
+func WithBaseURL(baseURL string) AnthropicOption {
+	return func(c *anthropicConfig) {
+		c.baseURL = baseURL
 	}
 }
 
@@ -85,6 +94,9 @@ func NewAnthropicProvider(opts ...AnthropicOption) (*AnthropicProvider, error) {
 	clientOpts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithMaxRetries(cfg.maxRetries),
+	}
+	if cfg.baseURL != "" {
+		clientOpts = append(clientOpts, option.WithBaseURL(cfg.baseURL))
 	}
 
 	client := anthropic.NewClient(clientOpts...)
