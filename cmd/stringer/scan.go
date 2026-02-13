@@ -49,6 +49,8 @@ var (
 	scanClusterThreshold  float64
 	scanInferPriority     bool
 	scanInferDeps         bool
+	scanWorkspace         string
+	scanNoWorkspaces      bool
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -89,6 +91,8 @@ func init() {
 	scanCmd.Flags().Float64Var(&scanClusterThreshold, "cluster-threshold", 0.7, "similarity threshold for signal pre-filtering (0.0-1.0)")
 	scanCmd.Flags().BoolVar(&scanInferPriority, "infer-priority", false, "use LLM to assign P1-P4 priorities to signals")
 	scanCmd.Flags().BoolVar(&scanInferDeps, "infer-deps", false, "use LLM to detect dependencies between signals")
+	scanCmd.Flags().StringVar(&scanWorkspace, "workspace", "", "scan only named workspace(s) (comma-separated)")
+	scanCmd.Flags().BoolVar(&scanNoWorkspaces, "no-workspaces", false, "disable monorepo auto-detection, scan root as single directory")
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
@@ -107,31 +111,66 @@ func runScan(cmd *cobra.Command, args []string) error {
 			"stringer: --min-confidence must be between 0.0 and 1.0 (got %.2f)", scanMinConfidence)
 	}
 
-	// 2. Load config, merge CLI flags, validate.
+	// 2. Detect workspaces.
+	workspaces := resolveWorkspaces(absPath, scanNoWorkspaces, scanWorkspace)
+
+	// 3. Load root config for output format and filters.
 	scanCfg, fileCfg, err := loadScanConfig(cmd, absPath, gitRoot)
 	if err != nil {
 		return err
 	}
 
-	// 3. Create pipeline.
-	p, err := pipeline.New(scanCfg)
-	if err != nil {
-		available := collector.List()
-		sort.Strings(available)
-		return exitError(ExitInvalidArgs, "stringer: %v (available: %s)", err, strings.Join(available, ", "))
-	}
+	// 4. Run pipeline per workspace and aggregate results.
+	var (
+		result         = &signal.ScanResult{Metrics: make(map[string]any)}
+		collectorNames []string
+	)
+	for _, ws := range workspaces {
+		wsPath := ws.Path
+		if ws.Name != "" {
+			slog.Info("scanning workspace", "name", ws.Name, "path", ws.Rel)
+		}
 
-	// 4. Run pipeline.
-	collectorNames := scanCfg.Collectors
-	if len(collectorNames) == 0 {
-		collectorNames = collector.List()
-		sort.Strings(collectorNames)
-	}
-	slog.Info("scanning", "collectors", len(collectorNames))
+		wsCfg, _, err := loadScanConfig(cmd, wsPath, gitRoot)
+		if err != nil {
+			return err
+		}
 
-	result, err := p.Run(cmd.Context())
-	if err != nil {
-		return exitError(ExitTotalFailure, "stringer: scan failed (%v)", err)
+		p, err := pipeline.New(wsCfg)
+		if err != nil {
+			available := collector.List()
+			sort.Strings(available)
+			return exitError(ExitInvalidArgs, "stringer: %v (available: %s)", err, strings.Join(available, ", "))
+		}
+
+		cn := wsCfg.Collectors
+		if len(cn) == 0 {
+			cn = collector.List()
+			sort.Strings(cn)
+		}
+		if collectorNames == nil {
+			collectorNames = cn
+		}
+		slog.Info("scanning", "collectors", len(cn))
+
+		wsResult, err := p.Run(cmd.Context())
+		if err != nil {
+			return exitError(ExitTotalFailure, "stringer: scan failed (%v)", err)
+		}
+
+		// Stamp workspace on signals and adjust file paths.
+		stampWorkspace(ws, wsResult.Signals)
+		for i := range wsResult.Results {
+			stampWorkspace(ws, wsResult.Results[i].Signals)
+		}
+
+		// Aggregate into combined result.
+		result.Signals = append(result.Signals, wsResult.Signals...)
+		result.Results = append(result.Results, wsResult.Results...)
+		result.Duration += wsResult.Duration
+		for k, v := range wsResult.Metrics {
+			result.Metrics[k] = v
+		}
 	}
 
 	for _, cr := range result.Results {
@@ -160,7 +199,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	// 5. Filter results (delta, beads dedup, confidence, kind).
 	allSignals := result.Signals // keep full list for state saving
-	if err := filterScanResults(cmd, result, absPath, fileCfg, scanCfg, collectorNames, allSignals); err != nil {
+	if err := filterScanResults(cmd, result, absPath, fileCfg, scanCfg, collectorNames, allSignals, workspaces); err != nil {
 		return err
 	}
 
@@ -215,11 +254,9 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	// 10. Save delta state from ALL signals (pre-filter), not just new ones.
 	if scanDelta {
-		newState := state.Build(absPath, collectorNames, allSignals)
-		if err := state.Save(absPath, newState); err != nil {
+		if err := saveDeltaState(absPath, collectorNames, allSignals, workspaces); err != nil {
 			return exitError(ExitTotalFailure, "stringer: failed to save delta state (%v)", err)
 		}
-		slog.Info("delta state saved", "hashes", newState.SignalCount)
 	}
 
 	if exitCode != ExitOK {
@@ -370,7 +407,8 @@ func loadScanConfig(cmd *cobra.Command, absPath, gitRoot string) (signal.ScanCon
 // filterScanResults applies post-pipeline filters to the scan result: delta
 // filtering, beads-aware dedup, confidence threshold, and kind filter. It
 // mutates result.Signals in place. allSignals is the unfiltered signal list
-// used for delta diff computation.
+// used for delta diff computation. workspaces is needed for workspace-scoped
+// beads dedup.
 func filterScanResults(
 	cmd *cobra.Command,
 	result *signal.ScanResult,
@@ -379,6 +417,7 @@ func filterScanResults(
 	scanCfg signal.ScanConfig,
 	collectorNames []string,
 	allSignals []signal.RawSignal,
+	workspaces []workspaceEntry,
 ) error {
 	// Delta filtering: load previous state, filter to new signals.
 	if scanDelta {
@@ -417,7 +456,22 @@ func filterScanResults(
 		existingBeads, beadsErr := beads.LoadBeads(absPath)
 		if beadsErr != nil {
 			slog.Warn("failed to load existing beads", "error", beadsErr)
-		} else if existingBeads != nil {
+		}
+
+		// Also check workspace-level beads directories.
+		for _, ws := range workspaces {
+			if ws.Name == "" {
+				continue
+			}
+			wsBeads, err := beads.LoadBeads(ws.Path)
+			if err != nil {
+				slog.Warn("failed to load workspace beads", "workspace", ws.Name, "error", err)
+				continue
+			}
+			existingBeads = append(existingBeads, wsBeads...)
+		}
+
+		if existingBeads != nil {
 			before := len(result.Signals)
 			result.Signals = beads.FilterAgainstExisting(result.Signals, existingBeads)
 			slog.Info("beads dedup", "before", before, "after", len(result.Signals),

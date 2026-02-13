@@ -32,6 +32,8 @@ var (
 	reportExcludeCollectors string
 	reportCollectorTimeout  string
 	reportPaths             []string
+	reportWorkspace         string
+	reportNoWorkspaces      bool
 )
 
 // reportCmd is the subcommand for generating a repository health report.
@@ -57,6 +59,8 @@ func init() {
 	reportCmd.Flags().StringVarP(&reportExcludeCollectors, "exclude-collectors", "x", "", "comma-separated list of collectors to skip")
 	reportCmd.Flags().StringVar(&reportCollectorTimeout, "collector-timeout", "", "per-collector timeout (e.g. 60s, 2m); 0 or empty = no timeout")
 	reportCmd.Flags().StringSliceVar(&reportPaths, "paths", nil, "restrict scanning to specific files or directories (comma-separated)")
+	reportCmd.Flags().StringVar(&reportWorkspace, "workspace", "", "report only named workspace(s) (comma-separated)")
+	reportCmd.Flags().BoolVar(&reportNoWorkspaces, "no-workspaces", false, "disable monorepo auto-detection, scan root as single directory")
 }
 
 func runReport(cmd *cobra.Command, args []string) error {
@@ -103,77 +107,97 @@ func runReport(cmd *cobra.Command, args []string) error {
 		gitRoot = parent
 	}
 
-	// 2. Parse collectors flag.
-	var collectors []string
-	if reportCollectors != "" {
-		collectors = strings.Split(reportCollectors, ",")
-		for i := range collectors {
-			collectors[i] = strings.TrimSpace(collectors[i])
+	// 2. Detect workspaces.
+	workspaces := resolveWorkspaces(absPath, reportNoWorkspaces, reportWorkspace)
+
+	// 3. Run pipeline per workspace and aggregate results.
+	var (
+		result         = &signal.ScanResult{Metrics: make(map[string]any)}
+		collectorNames []string
+	)
+	for _, ws := range workspaces {
+		wsPath := ws.Path
+		if ws.Name != "" {
+			slog.Info("scanning workspace for report", "name", ws.Name, "path", ws.Rel)
 		}
-	}
 
-	// 2b. Apply --exclude-collectors.
-	collectors = applyReportCollectorExclusions(collectors, reportExcludeCollectors)
-
-	// 3. Load config file.
-	fileCfg, err := config.Load(absPath)
-	if err != nil {
-		return fmt.Errorf("stringer: failed to load %s (%v)", config.FileName, err)
-	}
-	if err := config.Validate(fileCfg); err != nil {
-		return fmt.Errorf("stringer: %v", err)
-	}
-
-	// 4. Build scan config.
-	scanCfg := signal.ScanConfig{
-		RepoPath:   absPath,
-		Collectors: collectors,
-	}
-
-	// 5. Merge file config.
-	scanCfg = config.Merge(fileCfg, scanCfg)
-
-	// Set GitRoot on relevant collectors for subdirectory scans.
-	if gitRoot != absPath {
-		if scanCfg.CollectorOpts == nil {
-			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
+		// Parse collectors flag.
+		var collectors []string
+		if reportCollectors != "" {
+			collectors = strings.Split(reportCollectors, ",")
+			for i := range collectors {
+				collectors[i] = strings.TrimSpace(collectors[i])
+			}
 		}
-		for _, name := range []string{"todos", "gitlog", "lotteryrisk"} {
-			co := scanCfg.CollectorOpts[name]
-			co.GitRoot = gitRoot
-			scanCfg.CollectorOpts[name] = co
+		collectors = applyReportCollectorExclusions(collectors, reportExcludeCollectors)
+
+		fileCfg, err := config.Load(wsPath)
+		if err != nil {
+			return fmt.Errorf("stringer: failed to load %s (%v)", config.FileName, err)
 		}
-	}
+		if err := config.Validate(fileCfg); err != nil {
+			return fmt.Errorf("stringer: %v", err)
+		}
 
-	// Apply CLI flag overrides to per-collector options.
-	applyFlagOverrides(&scanCfg, flagOverrides{
-		GitDepth:         reportGitDepth,
-		GitSince:         reportGitSince,
-		Anonymize:        reportAnonymize,
-		AnonymizeChanged: cmd.Flags().Changed("anonymize"),
-		CollectorTimeout: reportCollectorTimeout,
-		Paths:            reportPaths,
-	})
+		scanCfg := signal.ScanConfig{
+			RepoPath:   wsPath,
+			Collectors: collectors,
+		}
+		scanCfg = config.Merge(fileCfg, scanCfg)
 
-	// 6. Create pipeline.
-	p, err := pipeline.New(scanCfg)
-	if err != nil {
-		available := collector.List()
-		sort.Strings(available)
-		return fmt.Errorf("stringer: %v (available: %s)", err, strings.Join(available, ", "))
-	}
+		if gitRoot != wsPath {
+			if scanCfg.CollectorOpts == nil {
+				scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
+			}
+			for _, name := range []string{"todos", "gitlog", "lotteryrisk"} {
+				co := scanCfg.CollectorOpts[name]
+				co.GitRoot = gitRoot
+				scanCfg.CollectorOpts[name] = co
+			}
+		}
 
-	collectorNames := scanCfg.Collectors
-	if len(collectorNames) == 0 {
-		collectorNames = collector.List()
-		sort.Strings(collectorNames)
-	}
-	slog.Info("generating report", "collectors", len(collectorNames))
+		applyFlagOverrides(&scanCfg, flagOverrides{
+			GitDepth:         reportGitDepth,
+			GitSince:         reportGitSince,
+			Anonymize:        reportAnonymize,
+			AnonymizeChanged: cmd.Flags().Changed("anonymize"),
+			CollectorTimeout: reportCollectorTimeout,
+			Paths:            reportPaths,
+		})
 
-	// 7. Run pipeline.
-	result, err := p.Run(cmd.Context())
-	if err != nil {
-		return fmt.Errorf("stringer: report failed (%v)", err)
+		p, err := pipeline.New(scanCfg)
+		if err != nil {
+			available := collector.List()
+			sort.Strings(available)
+			return fmt.Errorf("stringer: %v (available: %s)", err, strings.Join(available, ", "))
+		}
+
+		cn := scanCfg.Collectors
+		if len(cn) == 0 {
+			cn = collector.List()
+			sort.Strings(cn)
+		}
+		if collectorNames == nil {
+			collectorNames = cn
+		}
+		slog.Info("generating report", "collectors", len(cn))
+
+		wsResult, err := p.Run(cmd.Context())
+		if err != nil {
+			return fmt.Errorf("stringer: report failed (%v)", err)
+		}
+
+		stampWorkspace(ws, wsResult.Signals)
+		for i := range wsResult.Results {
+			stampWorkspace(ws, wsResult.Results[i].Signals)
+		}
+
+		result.Signals = append(result.Signals, wsResult.Signals...)
+		result.Results = append(result.Results, wsResult.Results...)
+		result.Duration += wsResult.Duration
+		for k, v := range wsResult.Metrics {
+			result.Metrics[k] = v
+		}
 	}
 
 	// 8. Render report.

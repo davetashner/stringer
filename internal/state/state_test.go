@@ -772,3 +772,92 @@ func TestSave_Load_RoundTrip_V2WithMetas(t *testing.T) {
 	require.Len(t, loaded.SignalMetas, 1)
 	assert.Equal(t, original.SignalMetas[0], loaded.SignalMetas[0])
 }
+
+// -----------------------------------------------------------------------
+// Workspace-scoped state tests
+// -----------------------------------------------------------------------
+
+func TestSaveWorkspace_CreatesSubdir(t *testing.T) {
+	dir := t.TempDir()
+	s := &ScanState{
+		Version:      schemaVersion,
+		Collectors:   []string{"todos"},
+		SignalHashes: []string{"abc123"},
+		SignalCount:  1,
+	}
+
+	require.NoError(t, SaveWorkspace(dir, "svc-a", s))
+
+	// Verify file exists at .stringer/svc-a/last-scan.json
+	path := filepath.Join(dir, ".stringer", "svc-a", "last-scan.json")
+	_, err := os.Stat(path)
+	require.NoError(t, err, "workspace state file should exist")
+}
+
+func TestLoadWorkspace_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	original := &ScanState{
+		Version:      schemaVersion,
+		Collectors:   []string{"todos"},
+		SignalHashes: []string{"hash1"},
+		SignalCount:  1,
+	}
+
+	require.NoError(t, SaveWorkspace(dir, "core", original))
+
+	loaded, err := LoadWorkspace(dir, "core")
+	require.NoError(t, err)
+	require.NotNil(t, loaded)
+	assert.Equal(t, original.SignalHashes, loaded.SignalHashes)
+}
+
+func TestLoadWorkspace_NonExistent(t *testing.T) {
+	dir := t.TempDir()
+	loaded, err := LoadWorkspace(dir, "nonexistent")
+	require.NoError(t, err)
+	assert.Nil(t, loaded)
+}
+
+func TestLoadWorkspace_EmptyName(t *testing.T) {
+	dir := t.TempDir()
+	s := &ScanState{
+		Version:      schemaVersion,
+		Collectors:   []string{"todos"},
+		SignalHashes: []string{"x"},
+		SignalCount:  1,
+	}
+
+	// Empty workspace name should use root .stringer/ path.
+	require.NoError(t, SaveWorkspace(dir, "", s))
+	loaded, err := LoadWorkspace(dir, "")
+	require.NoError(t, err)
+	require.NotNil(t, loaded)
+
+	// Also accessible via Load().
+	loaded2, err := Load(dir)
+	require.NoError(t, err)
+	require.NotNil(t, loaded2)
+	assert.Equal(t, loaded.SignalHashes, loaded2.SignalHashes)
+}
+
+func TestSaveWorkspace_MultipleWorkspaces(t *testing.T) {
+	dir := t.TempDir()
+
+	for _, ws := range []string{"core", "api", "web"} {
+		s := &ScanState{
+			Version:      schemaVersion,
+			Collectors:   []string{"todos"},
+			SignalHashes: []string{ws + "-hash"},
+			SignalCount:  1,
+		}
+		require.NoError(t, SaveWorkspace(dir, ws, s))
+	}
+
+	// Each workspace should have its own state.
+	for _, ws := range []string{"core", "api", "web"} {
+		loaded, err := LoadWorkspace(dir, ws)
+		require.NoError(t, err)
+		require.NotNil(t, loaded)
+		assert.Equal(t, []string{ws + "-hash"}, loaded.SignalHashes)
+	}
+}

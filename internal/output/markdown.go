@@ -30,11 +30,9 @@ func (m *MarkdownFormatter) Name() string {
 
 // Format writes all signals as a grouped Markdown document to w.
 //
-// The output includes:
-//   - A title heading
-//   - A summary line with total signals and collector names
-//   - A priority distribution table (P1/P2/P3/P4)
-//   - Sections grouped by collector, each with signal listings
+// When signals span multiple workspaces, output is grouped by workspace first,
+// then by collector within each workspace. For single-workspace or non-monorepo
+// signals, the output is unchanged (grouped by collector only).
 func (m *MarkdownFormatter) Format(signals []signal.RawSignal, w io.Writer) error {
 	if len(signals) == 0 {
 		return nil
@@ -57,7 +55,25 @@ func (m *MarkdownFormatter) Format(signals []signal.RawSignal, w io.Writer) erro
 		return err
 	}
 
-	// Write each collector section.
+	// Check if signals span multiple workspaces.
+	wsGroups := groupByWorkspace(signals)
+	if len(wsGroups) > 1 {
+		wsNames := sortedWorkspaceNames(wsGroups)
+		for _, wsName := range wsNames {
+			if _, err := fmt.Fprintf(w, "## %s\n\n", wsName); err != nil {
+				return fmt.Errorf("write workspace heading: %w", err)
+			}
+			wsCollGroups := groupByCollector(wsGroups[wsName])
+			for _, name := range sortedCollectorNames(wsCollGroups) {
+				if err := writeCollectorSection(w, name, wsCollGroups[name]); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+
+	// Single workspace or non-monorepo: group by collector only.
 	for _, name := range collectorNames {
 		if err := writeCollectorSection(w, name, groups[name]); err != nil {
 			return err
@@ -65,6 +81,30 @@ func (m *MarkdownFormatter) Format(signals []signal.RawSignal, w io.Writer) erro
 	}
 
 	return nil
+}
+
+// groupByWorkspace groups signals by their Workspace field.
+// Signals with empty Workspace are grouped under "(root)".
+func groupByWorkspace(signals []signal.RawSignal) map[string][]signal.RawSignal {
+	groups := make(map[string][]signal.RawSignal)
+	for _, sig := range signals {
+		ws := sig.Workspace
+		if ws == "" {
+			ws = "(root)"
+		}
+		groups[ws] = append(groups[ws], sig)
+	}
+	return groups
+}
+
+// sortedWorkspaceNames returns workspace names sorted alphabetically.
+func sortedWorkspaceNames(groups map[string][]signal.RawSignal) []string {
+	names := make([]string, 0, len(groups))
+	for name := range groups {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // groupByCollector groups signals by their Source field.

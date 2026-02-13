@@ -101,18 +101,22 @@ tr.detail-row td { padding: .75rem 1rem; font-size: .8125rem; color: var(--muted
   <th data-col="title">Title</th>
   <th data-col="kind">Kind</th>
   <th data-col="source">Source</th>
+  {{if .HasWorkspaces}}<th data-col="workspace">Workspace</th>{{end}}
   <th data-col="location">Location</th>
   <th data-col="confidence">Confidence</th>
   <th data-col="priority">Priority</th>
 </tr></thead>
 <tbody>
+{{$hasWs := .HasWorkspaces}}
 {{range .SignalRows}}
 <tr class="signal-row" data-source="{{.Source}}" data-priority="{{.Priority}}" data-confidence="{{.Confidence}}" onclick="toggleDetail(this)">
-  <td>{{.Title}}</td><td>{{.Kind}}</td><td>{{.Source}}</td><td>{{.Location}}</td>
+  <td>{{.Title}}</td><td>{{.Kind}}</td><td>{{.Source}}</td>
+  {{if $hasWs}}<td>{{.Workspace}}</td>{{end}}
+  <td>{{.Location}}</td>
   <td>{{printf "%.2f" .Confidence}}</td>
   <td><span class="priority priority-{{.Priority}}">P{{.Priority}}</span></td>
 </tr>
-<tr class="detail-row hidden"><td colspan="6">{{.Description}}</td></tr>
+<tr class="detail-row hidden"><td colspan="{{if $hasWs}}7{{else}}6{{end}}">{{.Description}}</td></tr>
 {{end}}
 </tbody>
 </table>
