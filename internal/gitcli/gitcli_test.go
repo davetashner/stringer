@@ -303,3 +303,175 @@ func TestBlameSingleLine_ContextTimeout(t *testing.T) {
 		t.Error("expected error from cancelled context")
 	}
 }
+
+// --- LogNumstat tests ---
+
+func TestLogNumstat(t *testing.T) {
+	dir := initTestRepo(t, map[string]string{
+		"main.go": "package main\n\nfunc main() {}\n",
+	})
+
+	commits, err := LogNumstat(context.Background(), dir, 100, "")
+	if err != nil {
+		t.Fatalf("LogNumstat error: %v", err)
+	}
+	if len(commits) == 0 {
+		t.Fatal("expected at least one commit")
+	}
+	if commits[0].Author != "Test Author" {
+		t.Errorf("Author = %q, want %q", commits[0].Author, "Test Author")
+	}
+	if commits[0].AuthorTime.IsZero() {
+		t.Error("AuthorTime should not be zero")
+	}
+	if len(commits[0].Files) == 0 {
+		t.Error("expected at least one file in numstat")
+	}
+}
+
+func TestLogNumstat_MultipleCommits(t *testing.T) {
+	dir := initTestRepo(t, map[string]string{
+		"a.go": "package main\n",
+	})
+
+	absPath := filepath.Join(dir, "b.go")
+	if err := os.WriteFile(absPath, []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "b.go")
+	runGit(t, dir, "commit", "-m", "add b.go")
+
+	commits, err := LogNumstat(context.Background(), dir, 100, "")
+	if err != nil {
+		t.Fatalf("LogNumstat error: %v", err)
+	}
+	if len(commits) != 2 {
+		t.Fatalf("got %d commits, want 2", len(commits))
+	}
+}
+
+func TestLogNumstat_MaxCount(t *testing.T) {
+	dir := initTestRepo(t, map[string]string{
+		"a.go": "package main\n",
+	})
+
+	absPath := filepath.Join(dir, "b.go")
+	if err := os.WriteFile(absPath, []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "b.go")
+	runGit(t, dir, "commit", "-m", "add b.go")
+
+	commits, err := LogNumstat(context.Background(), dir, 1, "")
+	if err != nil {
+		t.Fatalf("LogNumstat error: %v", err)
+	}
+	if len(commits) != 1 {
+		t.Fatalf("got %d commits, want 1 (max-count)", len(commits))
+	}
+}
+
+func TestLogNumstat_EmptyRepo(t *testing.T) {
+	dir := t.TempDir()
+	runGit(t, dir, "init")
+
+	commits, err := LogNumstat(context.Background(), dir, 100, "")
+	// Empty repo — git log returns error or empty output.
+	if err == nil && len(commits) > 0 {
+		t.Error("expected no commits for empty repo")
+	}
+}
+
+func TestParseNumstatLog(t *testing.T) {
+	output := "abc123def456abc123def456abc123def456abcd|Alice|2025-01-15T10:00:00+00:00\n" +
+		"3\t0\tmain.go\n" +
+		"5\t2\tlib/util.go\n" +
+		"\n" +
+		"def789012345def789012345def789012345def0|Bob|2025-01-14T09:00:00+00:00\n" +
+		"1\t1\tREADME.md\n" +
+		"\n"
+
+	commits, err := parseNumstatLog(output)
+	if err != nil {
+		t.Fatalf("parseNumstatLog error: %v", err)
+	}
+	if len(commits) != 2 {
+		t.Fatalf("got %d commits, want 2", len(commits))
+	}
+
+	if commits[0].Author != "Alice" {
+		t.Errorf("commit 0 author = %q, want %q", commits[0].Author, "Alice")
+	}
+	if len(commits[0].Files) != 2 {
+		t.Errorf("commit 0 files = %d, want 2", len(commits[0].Files))
+	}
+	if commits[0].Files[0] != "main.go" {
+		t.Errorf("commit 0 file 0 = %q, want %q", commits[0].Files[0], "main.go")
+	}
+
+	if commits[1].Author != "Bob" {
+		t.Errorf("commit 1 author = %q, want %q", commits[1].Author, "Bob")
+	}
+	if len(commits[1].Files) != 1 {
+		t.Errorf("commit 1 files = %d, want 1", len(commits[1].Files))
+	}
+}
+
+func TestParseNumstatLog_Rename(t *testing.T) {
+	output := "abc123def456abc123def456abc123def456abcd|Alice|2025-01-15T10:00:00+00:00\n" +
+		"0\t0\told.go => new.go\n" +
+		"\n"
+
+	commits, err := parseNumstatLog(output)
+	if err != nil {
+		t.Fatalf("parseNumstatLog error: %v", err)
+	}
+	if len(commits) != 1 {
+		t.Fatalf("got %d commits, want 1", len(commits))
+	}
+	if len(commits[0].Files) != 1 || commits[0].Files[0] != "new.go" {
+		t.Errorf("rename: got file %q, want %q", commits[0].Files[0], "new.go")
+	}
+}
+
+func TestParseNumstatLog_BraceRename(t *testing.T) {
+	output := "abc123def456abc123def456abc123def456abcd|Alice|2025-01-15T10:00:00+00:00\n" +
+		"0\t0\tsrc/{old.go => new.go}\n" +
+		"\n"
+
+	commits, err := parseNumstatLog(output)
+	if err != nil {
+		t.Fatalf("parseNumstatLog error: %v", err)
+	}
+	if len(commits[0].Files) != 1 || commits[0].Files[0] != "src/new.go" {
+		t.Errorf("brace rename: got file %q, want %q", commits[0].Files[0], "src/new.go")
+	}
+}
+
+func TestParseNumstatLog_Empty(t *testing.T) {
+	commits, err := parseNumstatLog("")
+	if err != nil {
+		t.Fatalf("parseNumstatLog error: %v", err)
+	}
+	if len(commits) != 0 {
+		t.Errorf("empty input should return 0 commits, got %d", len(commits))
+	}
+}
+
+func TestExtractRenameDest(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"old.go => new.go", "new.go"},
+		{"src/{old.go => new.go}", "src/new.go"},
+		{"src/{sub/old.go => sub/new.go}/file", "src/sub/new.go/file"},
+		{"no-rename.go", "no-rename.go"},
+	}
+	for _, tt := range tests {
+		got := extractRenameDest(tt.input)
+		if got != tt.want {
+			t.Errorf("extractRenameDest(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
