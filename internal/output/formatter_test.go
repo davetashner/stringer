@@ -35,6 +35,7 @@ func restoreFormatters() {
 	resetFmtForTesting()
 	RegisterFormatter(NewBeadsFormatter())
 	RegisterFormatter(NewHTMLFormatter())
+	RegisterFormatter(NewHTMLDirFormatter())
 	RegisterFormatter(NewJSONFormatter())
 	RegisterFormatter(NewMarkdownFormatter())
 	RegisterFormatter(NewTasksFormatter())

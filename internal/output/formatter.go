@@ -20,6 +20,13 @@ type Formatter interface {
 	Format(signals []signal.RawSignal, w io.Writer) error
 }
 
+// DirectoryFormatter extends Formatter for formats that produce a directory
+// of files (e.g., index.html + assets/) instead of a single stream.
+type DirectoryFormatter interface {
+	Formatter
+	FormatDir(signals []signal.RawSignal, dir string) error
+}
+
 var (
 	fmtMu       sync.RWMutex
 	fmtRegistry = make(map[string]Formatter)
