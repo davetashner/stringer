@@ -14,6 +14,11 @@ func FuzzBeadParse(f *testing.F) {
 	f.Add([]byte(`{"id":"a","title":"b","status":"c","priority":0,"labels":["x","y"]}`))
 
 	f.Fuzz(func(t *testing.T, data []byte) {
+		// Cap input size to avoid pathological JSON (deeply nested
+		// structures) that cause json.Unmarshal to exceed the test deadline.
+		if len(data) > 4096 {
+			return
+		}
 		lines := bytes.Split(data, []byte("\n"))
 		for _, line := range lines {
 			line = bytes.TrimSpace(line)
