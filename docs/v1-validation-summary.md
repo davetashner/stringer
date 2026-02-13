@@ -4,7 +4,7 @@ How we validated correctness, safety, and performance before shipping v1.0.
 
 ## At a Glance
 
-- **22 test packages**, 90.4% statement coverage, CI-enforced 90% gate
+- **22 test packages**, 91.2% statement coverage, CI-enforced 90% gate
 - **20 CI checks** on every pull request (tests, lint, vet, vulncheck, fuzz, coverage, license, binary size, and more)
 - **10 real-world repositories** scanned with zero panics or crashes
 - **SLSA Level 2** provenance on every release binary
@@ -12,7 +12,7 @@ How we validated correctness, safety, and performance before shipping v1.0.
 
 ## Test Suite
 
-Stringer's test suite covers 22 Go packages at 90.4% statement coverage,
+Stringer's test suite covers 22 Go packages at 91.2% statement coverage,
 enforced by a CI gate that fails the build below 90%.
 
 Tests run with `-race` (Go's race detector) on every commit. The CI matrix
@@ -22,7 +22,7 @@ across the supported range.
 | Metric | Value |
 |--------|-------|
 | Test packages | 22 |
-| Statement coverage | 90.4% |
+| Statement coverage | 91.2% |
 | CI coverage gate | 90% minimum |
 | Race detector | Enabled on all test runs |
 | Go versions tested | 1.24, 1.26 |

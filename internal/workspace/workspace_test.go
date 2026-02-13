@@ -288,6 +288,124 @@ func TestExpandGlobs_SkipsFiles(t *testing.T) {
 	assert.Equal(t, filepath.Join(dir, "packages", "real"), dirs[0])
 }
 
+// --- error path tests ---
+
+func TestDetectPnpm_InvalidYAML(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "pnpm-workspace.yaml"), "packages: [\ninvalid yaml: {{")
+
+	_, err := Detect(dir)
+	require.Error(t, err)
+}
+
+func TestDetectPnpm_BadGlobPattern(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "pnpm-workspace.yaml"), "packages:\n  - \"[\"\n")
+
+	_, err := Detect(dir)
+	require.Error(t, err)
+}
+
+func TestDetectNpm_InvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "package.json"), "not valid json")
+
+	_, err := Detect(dir)
+	require.Error(t, err)
+}
+
+func TestDetectNpm_InvalidWorkspacesType(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "package.json"), `{"workspaces": 123}`)
+
+	_, err := Detect(dir)
+	require.Error(t, err)
+}
+
+func TestDetectNpm_BadGlobPattern(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "package.json"), `{"workspaces": ["["]}`)
+
+	_, err := Detect(dir)
+	require.Error(t, err)
+}
+
+func TestDetectLerna_InvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "lerna.json"), "not valid json")
+
+	_, err := Detect(dir)
+	require.Error(t, err)
+}
+
+func TestDetectLerna_BadGlobPattern(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "lerna.json"), `{"packages": ["["]}`)
+
+	_, err := Detect(dir)
+	require.Error(t, err)
+}
+
+func TestDetectNx_InvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "nx.json"), "not valid json")
+
+	_, err := Detect(dir)
+	require.Error(t, err)
+}
+
+func TestDetectNx_BadGlobPattern(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "nx.json"), `{
+  "workspaceLayout": {
+    "appsDir": "[",
+    "libsDir": "libs"
+  }
+}`)
+
+	_, err := Detect(dir)
+	require.Error(t, err)
+}
+
+func TestDetectCargo_InvalidTOML(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "Cargo.toml"), "not valid toml [[[")
+
+	_, err := Detect(dir)
+	require.Error(t, err)
+}
+
+func TestDetectCargo_BadGlobPattern(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "Cargo.toml"), "[workspace]\nmembers = [\"[\"]\n")
+
+	_, err := Detect(dir)
+	require.Error(t, err)
+}
+
+func TestDetectCargo_BadExcludeGlobPattern(t *testing.T) {
+	dir := t.TempDir()
+	mkdirAll(t, filepath.Join(dir, "crates", "core"))
+	writeFile(t, filepath.Join(dir, "Cargo.toml"), "[workspace]\nmembers = [\"crates/*\"]\nexclude = [\"[\"]\n")
+
+	_, err := Detect(dir)
+	require.Error(t, err)
+}
+
+func TestDetectGoWork_InvalidSyntax(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "go.work"), "this is not valid go.work syntax @#$%")
+
+	_, err := Detect(dir)
+	require.Error(t, err)
+}
+
+func TestExpandGlobs_MalformedPattern(t *testing.T) {
+	dir := t.TempDir()
+	_, err := expandGlobs(dir, []string{"["})
+	require.Error(t, err)
+}
+
 // --- helpers ---
 
 func writeFile(t *testing.T, path, content string) {

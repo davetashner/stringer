@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -110,6 +111,22 @@ func TestGenerateMCPConfig_Idempotent(t *testing.T) {
 	assert.Equal(t, "skipped", action2.Operation)
 }
 
+func TestGenerateMCPConfig_StatError(t *testing.T) {
+	oldFS := FS
+	defer func() { FS = oldFS }()
+
+	FS = &testable.MockFileSystem{
+		StatFn: func(_ string) (os.FileInfo, error) {
+			return nil, fmt.Errorf("i/o timeout")
+		},
+	}
+
+	_, err := GenerateMCPConfig("/fake/repo")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "checking .claude directory")
+	assert.Contains(t, err.Error(), "i/o timeout")
+}
+
 func TestGenerateMCPConfig_WriteFailure(t *testing.T) {
 	oldFS := FS
 	defer func() { FS = oldFS }()
@@ -129,6 +146,25 @@ func TestGenerateMCPConfig_WriteFailure(t *testing.T) {
 	_, err := GenerateMCPConfig(dir)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "creating .mcp.json")
+}
+
+func TestGenerateMCPConfig_ReadFileError(t *testing.T) {
+	oldFS := FS
+	defer func() { FS = oldFS }()
+
+	dir := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(dir, ".claude"), 0o750))
+
+	FS = &testable.MockFileSystem{
+		ReadFileFn: func(_ string) ([]byte, error) {
+			return nil, fmt.Errorf("disk error")
+		},
+	}
+
+	_, err := GenerateMCPConfig(dir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reading .mcp.json")
+	assert.Contains(t, err.Error(), "disk error")
 }
 
 func TestGenerateMCPConfig_InvalidExistingJSON(t *testing.T) {
