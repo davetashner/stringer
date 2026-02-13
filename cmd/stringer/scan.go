@@ -67,7 +67,7 @@ For a human-readable health dashboard, use 'stringer report' instead.`,
 
 func init() {
 	scanCmd.Flags().StringVarP(&scanCollectors, "collectors", "c", "", "comma-separated list of collectors to run")
-	scanCmd.Flags().StringVarP(&scanFormat, "format", "f", "beads", "output format (beads, html, json, markdown, tasks)")
+	scanCmd.Flags().StringVarP(&scanFormat, "format", "f", "beads", "output format (beads, html, html-dir, json, markdown, tasks)")
 	scanCmd.Flags().StringVarP(&scanOutput, "output", "o", "", "output file path (default: stdout)")
 	scanCmd.Flags().BoolVar(&scanDryRun, "dry-run", false, "show signal count without producing output")
 	scanCmd.Flags().BoolVar(&scanDelta, "delta", false, "only output new signals since last scan")
@@ -525,6 +525,18 @@ func filterScanResults(
 // configured output destination (file or stdout).
 func writeScanOutput(cmd *cobra.Command, result *signal.ScanResult, scanCfg signal.ScanConfig) error {
 	formatter, _ := output.GetFormatter(scanCfg.OutputFormat) // already validated in loadScanConfig
+
+	// Directory formatters write to a directory instead of a stream.
+	if df, ok := formatter.(output.DirectoryFormatter); ok {
+		if scanOutput == "" {
+			return exitError(ExitInvalidArgs, "stringer: %s format requires --output (-o) flag to specify output directory", scanCfg.OutputFormat)
+		}
+		if err := df.FormatDir(result.Signals, scanOutput); err != nil {
+			return exitError(ExitTotalFailure, "stringer: formatting failed (%v)", err)
+		}
+		slog.Info("scan complete", "issues", len(result.Signals), "duration", result.Duration)
+		return nil
+	}
 
 	w := cmd.OutOrStdout()
 	if scanOutput != "" {

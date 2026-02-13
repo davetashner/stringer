@@ -15,6 +15,7 @@ import (
 	"github.com/davetashner/stringer/internal/collector"
 	_ "github.com/davetashner/stringer/internal/collectors"
 	"github.com/davetashner/stringer/internal/config"
+	"github.com/davetashner/stringer/internal/output"
 	"github.com/davetashner/stringer/internal/pipeline"
 	"github.com/davetashner/stringer/internal/report"
 	"github.com/davetashner/stringer/internal/signal"
@@ -52,7 +53,7 @@ func init() {
 	reportCmd.Flags().StringVarP(&reportCollectors, "collectors", "c", "", "comma-separated list of collectors to run")
 	reportCmd.Flags().StringVar(&reportSections, "sections", "", "comma-separated list of report sections to include")
 	reportCmd.Flags().StringVarP(&reportOutput, "output", "o", "", "output file path (default: stdout)")
-	reportCmd.Flags().StringVarP(&reportFormat, "format", "f", "", "output format (json for machine-readable)")
+	reportCmd.Flags().StringVarP(&reportFormat, "format", "f", "", "output format (json, html-dir)")
 	reportCmd.Flags().IntVar(&reportGitDepth, "git-depth", 0, "max commits to examine (default 1000)")
 	reportCmd.Flags().StringVar(&reportGitSince, "git-since", "", "only examine commits after this duration (e.g., 90d, 6m, 1y)")
 	reportCmd.Flags().StringVar(&reportAnonymize, "anonymize", "auto", "anonymize author names: auto, always, or never")
@@ -65,8 +66,8 @@ func init() {
 
 func runReport(cmd *cobra.Command, args []string) error {
 	// 0. Validate --format flag.
-	if reportFormat != "" && reportFormat != "json" {
-		return fmt.Errorf("stringer: unsupported report format %q (supported: json)", reportFormat)
+	if reportFormat != "" && reportFormat != "json" && reportFormat != "html-dir" {
+		return fmt.Errorf("stringer: unsupported report format %q (supported: json, html-dir)", reportFormat)
 	}
 
 	// 1. Parse path argument.
@@ -201,6 +202,24 @@ func runReport(cmd *cobra.Command, args []string) error {
 	}
 
 	// 8. Render report.
+
+	// Directory formatters write to a directory instead of a stream.
+	if reportFormat == "html-dir" {
+		if reportOutput == "" {
+			return fmt.Errorf("stringer: html-dir format requires --output (-o) flag to specify output directory")
+		}
+		formatter, fmtErr := output.GetFormatter("html-dir")
+		if fmtErr != nil {
+			return fmt.Errorf("stringer: %v", fmtErr)
+		}
+		df := formatter.(output.DirectoryFormatter) //nolint:errcheck // registered as DirectoryFormatter
+		if err := df.FormatDir(result.Signals, reportOutput); err != nil {
+			return fmt.Errorf("stringer: formatting failed (%v)", err)
+		}
+		slog.Info("report complete", "signals", len(result.Signals), "duration", result.Duration)
+		return nil
+	}
+
 	w := cmd.OutOrStdout()
 	if reportOutput != "" {
 		f, createErr := cmdFS.Create(reportOutput)
