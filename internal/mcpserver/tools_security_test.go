@@ -11,6 +11,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/davetashner/stringer/internal/redact"
 )
 
 // Security tests for MCP tool handlers (DX1.8).
@@ -265,6 +267,31 @@ func TestHandleScan_SecurityMinConfidenceBounds(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHandleScan_SecurityErrorRedaction(t *testing.T) {
+	dir := initTestRepo(t)
+
+	// Set a sensitive env var and reset the redact cache so it picks it up.
+	marker := "ghp_SuperSecretToken999XYZ"
+	t.Setenv("GITHUB_TOKEN", marker)
+	redact.ResetForTest()
+	t.Cleanup(func() { redact.ResetForTest() })
+
+	// Use the marker as a collector name — the pipeline will reject it as
+	// unknown, and the error message includes the collector name. Without
+	// redaction the marker would leak into the MCP error response.
+	input := ScanInput{
+		Path:       dir,
+		Collectors: marker,
+	}
+
+	_, _, err := handleScan(context.Background(), nil, input)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), marker,
+		"error must not expose sensitive env var value")
+	assert.Contains(t, err.Error(), "[REDACTED]",
+		"sensitive value should be replaced with [REDACTED]")
 }
 
 func TestHandleScan_SecurityKindFilterEdgeCases(t *testing.T) {
