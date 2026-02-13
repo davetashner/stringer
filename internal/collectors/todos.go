@@ -62,6 +62,12 @@ var defaultExcludePatterns = []string{
 	"CHANGES*",
 	"HISTORY*",
 	"NEWS*",
+	"third_party/**",
+	"3rdparty/**",
+	"extern/**",
+	"external/**",
+	"bower_components/**",
+	"wwwroot/lib/**",
 }
 
 // defaultDemoPatterns are directory globs for demo/example/tutorial paths.
@@ -386,7 +392,14 @@ func shouldExclude(relPath string, patterns []string) bool {
 		// Handle ** patterns: "vendor/**" should match vendor/ and anything below.
 		if strings.HasSuffix(pattern, "/**") {
 			dir := strings.TrimSuffix(pattern, "/**")
-			if relPath == dir || strings.HasPrefix(relPath, dir+string(filepath.Separator)) {
+			sep := string(filepath.Separator)
+			// Match at root: vendor/foo.go
+			if relPath == dir || strings.HasPrefix(relPath, dir+sep) {
+				return true
+			}
+			// Match interior segments: "wwwroot/lib/**" matches
+			// "samples/foo/wwwroot/lib/bootstrap.js"
+			if strings.Contains(relPath, sep+dir+sep) || strings.HasSuffix(relPath, sep+dir) {
 				return true
 			}
 		}
