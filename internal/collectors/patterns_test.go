@@ -441,9 +441,11 @@ func TestIsTestFile(t *testing.T) {
 		{name: "rb_test_prefix", path: "test_model.rb", want: true},
 		{name: "rb_source", path: "model.rb", want: false},
 		{name: "java_test", path: "FooTest.java", want: true},
+		{name: "java_tests", path: "FooTests.java", want: true},
 		{name: "java_spec", path: "FooSpec.java", want: true},
 		{name: "java_source", path: "Foo.java", want: false},
 		{name: "kt_test", path: "BarTest.kt", want: true},
+		{name: "kt_tests", path: "BarTests.kt", want: true},
 		{name: "kt_source", path: "Bar.kt", want: false},
 	}
 
@@ -644,6 +646,22 @@ func TestHasTestCounterpart_KotlinSpecExists(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "Bar.kt"), []byte("// kt\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "BarSpec.kt"), []byte("// spec\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "Bar.kt"), "Bar.kt", dir, nil))
+}
+
+func TestHasTestCounterpart_JavaTestsExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Foo.java"), []byte("// java\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "FooTests.java"), []byte("// test\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(filepath.Join(dir, "Foo.java"), "Foo.java", dir, nil))
+}
+
+func TestHasTestCounterpart_KotlinTestsExists(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Bar.kt"), []byte("// kt\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "BarTests.kt"), []byte("// test\n"), 0o600))
 
 	assert.True(t, hasTestCounterpart(filepath.Join(dir, "Bar.kt"), "Bar.kt", dir, nil))
 }
@@ -1460,6 +1478,119 @@ func TestEnrichTimestamps_AlreadyHasTimestamp(t *testing.T) {
 	enrichTimestamps(context.Background(), "/nonexistent", signals)
 	assert.Equal(t, now, signals[0].Timestamp,
 		"timestamp should not be overwritten when already set")
+}
+
+// --- Progressive path stripping tests ---
+
+func TestHasTestCounterpart_PythonMultiLevelStrip(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create src/flask/app.py (source file with two levels of non-mirrored path).
+	srcDir := filepath.Join(dir, "src", "flask")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "app.py"), []byte("# source\n"), 0o600))
+
+	// Create tests/test_app.py (test at root of tests/, two components stripped).
+	testDir := filepath.Join(dir, "tests")
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(testDir, "test_app.py"), []byte("# test\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(
+		filepath.Join(srcDir, "app.py"),
+		"src/flask/app.py",
+		dir,
+		[]string{"tests"},
+	), "should find test_app.py by stripping two path components")
+}
+
+// --- Maven/Gradle test root tests ---
+
+func TestIsUnderMavenTestRoot(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{"java_test", "src/test/java/com/example/FooTest.java", true},
+		{"kotlin_test", "src/test/kotlin/com/example/BarTest.kt", true},
+		{"scala_test", "src/test/scala/com/example/BazSpec.scala", true},
+		{"java_main", "src/main/java/com/example/Foo.java", false},
+		{"not_maven", "test/handler_test.go", false},
+		{"src_only", "src/foo.java", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isUnderMavenTestRoot(tt.path), "isUnderMavenTestRoot(%q)", tt.path)
+		})
+	}
+}
+
+func TestIsTestFile_MavenTestRoot(t *testing.T) {
+	// Files under src/test/java/ should be recognized as test files
+	// regardless of their naming convention.
+	assert.True(t, isTestFile("src/test/java/com/example/Helper.java"),
+		"files under src/test/java/ should always be test files")
+	assert.True(t, isTestFile("src/test/kotlin/com/example/Util.kt"),
+		"files under src/test/kotlin/ should always be test files")
+}
+
+func TestPatterns_MavenTestFilesNotFlaggedMissingTests(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create src/test/java/com/example/FooTest.java (Maven test tree).
+	testDir := filepath.Join(dir, "src", "test", "java", "com", "example")
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+	content := strings.Repeat("// test code\n", 25)
+	require.NoError(t, os.WriteFile(filepath.Join(testDir, "FooTest.java"), []byte(content), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	for _, s := range signals {
+		if s.Kind == "missing-tests" && strings.Contains(s.FilePath, "FooTest.java") {
+			t.Error("files in src/test/java/ should not produce missing-tests signal")
+		}
+	}
+}
+
+func TestPatterns_MavenTestFilesCountedAsTestFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a Maven project with main and test sources.
+	mainDir := filepath.Join(dir, "src", "main", "java", "com", "example")
+	testDir := filepath.Join(dir, "src", "test", "java", "com", "example")
+	require.NoError(t, os.MkdirAll(mainDir, 0o750))
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+
+	// 3 source files.
+	for i := 0; i < 3; i++ {
+		require.NoError(t, os.WriteFile(
+			filepath.Join(mainDir, fmt.Sprintf("File%d.java", i)),
+			[]byte("// source\n"), 0o600))
+	}
+
+	// 1 test file under src/test/java/ — should be counted as a test file.
+	require.NoError(t, os.WriteFile(
+		filepath.Join(testDir, "File0Test.java"),
+		[]byte("// test\n"), 0o600))
+
+	c := &PatternsCollector{}
+	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	m := c.Metrics()
+	require.NotNil(t, m)
+	metrics := m.(*PatternsMetrics)
+
+	// Find the test dir ratio — src/test/java/com/example should have 0 source
+	// and 1 test file (since it's recognized as a test file).
+	for _, r := range metrics.DirectoryTestRatios {
+		if r.Path == filepath.FromSlash("src/test/java/com/example") {
+			assert.Equal(t, 1, r.TestFiles, "test file in src/test/java/ should be counted as test")
+			assert.Equal(t, 0, r.SourceFiles, "no source files expected in test directory")
+		}
+	}
 }
 
 func TestPatternsCollector_GitRootForTimestamps(t *testing.T) {

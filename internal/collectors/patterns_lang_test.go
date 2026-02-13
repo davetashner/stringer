@@ -318,6 +318,80 @@ func TestDetectTestRoots_BenchesDirectory(t *testing.T) {
 }
 
 // =============================================================================
+// Java / Kotlin ecosystem tests
+// =============================================================================
+
+func TestIsTestFile_JavaTests(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "java_test_singular", path: "FooTest.java", want: true},
+		{name: "java_test_plural", path: "FooTests.java", want: true},
+		{name: "java_spec", path: "FooSpec.java", want: true},
+		{name: "java_source", path: "Foo.java", want: false},
+		{name: "kotlin_test_singular", path: "BarTest.kt", want: true},
+		{name: "kotlin_test_plural", path: "BarTests.kt", want: true},
+		{name: "kotlin_spec", path: "BarSpec.kt", want: true},
+		{name: "kotlin_source", path: "Bar.kt", want: false},
+		{name: "java_tests_in_maven_test_dir", path: "src/test/java/com/example/FooTests.java", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isTestFile(tt.path)
+			assert.Equal(t, tt.want, got, "isTestFile(%q)", tt.path)
+		})
+	}
+}
+
+func TestHasTestCounterpart_MavenJavaTestsPlural(t *testing.T) {
+	dir := t.TempDir()
+
+	// src/main/java/com/example/Foo.java
+	srcDir := filepath.Join(dir, "src", "main", "java", "com", "example")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "Foo.java"), []byte("// java\n"), 0o600))
+
+	// src/test/java/com/example/FooTests.java (plural Tests)
+	testDir := filepath.Join(dir, "src", "test", "java", "com", "example")
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(testDir, "FooTests.java"), []byte("// test\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(
+		filepath.Join(srcDir, "Foo.java"),
+		"src/main/java/com/example/Foo.java",
+		dir,
+		nil,
+	), "should find FooTests.java (plural) as counterpart via Maven convention")
+}
+
+func TestPatterns_JavaTestsPluralNotFlaggedMissingTests(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a Java source file with enough lines.
+	srcDir := filepath.Join(dir, "src", "main", "java", "com", "example")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+	content := strings.Repeat("// java source\n", 25)
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "Foo.java"), []byte(content), 0o600))
+
+	// Create FooTests.java (plural) in Maven test tree.
+	testDir := filepath.Join(dir, "src", "test", "java", "com", "example")
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(testDir, "FooTests.java"), []byte("// test\n"), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	for _, s := range signals {
+		if s.Kind == "missing-tests" && strings.HasSuffix(s.FilePath, "Foo.java") {
+			t.Error("Java file with FooTests.java counterpart should not produce missing-tests signal")
+		}
+	}
+}
+
+// =============================================================================
 // C# / .NET ecosystem tests
 // =============================================================================
 

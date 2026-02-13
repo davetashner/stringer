@@ -215,6 +215,7 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 			// dirs, and generated files by default.
 			if lineCount >= minSourceLinesForTestCheck &&
 				!isUnderTestRoot(relPath, testRoots) &&
+				!isUnderMavenTestRoot(relPath) &&
 				!isGeneratedFile(path) {
 				if !hasTestCounterpart(path, relPath, repoPath, testRoots) {
 					if opts.IncludeDemoPaths || !isDemoPath(relPath) {
@@ -344,9 +345,27 @@ func largeFileConfidence(lineCount, threshold int) float64 {
 	return math.Min(confidence, 0.8)
 }
 
+// isUnderMavenTestRoot returns true if relPath is under a Maven/Gradle test
+// source tree (src/test/{java,kotlin,scala}/). Files in these directories
+// are test files regardless of their naming convention.
+func isUnderMavenTestRoot(relPath string) bool {
+	norm := filepath.ToSlash(relPath)
+	for _, lang := range []string{"java", "kotlin", "scala"} {
+		if strings.HasPrefix(norm, "src/test/"+lang+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // isTestFile returns true if the filename matches common test-file naming
 // conventions across languages.
 func isTestFile(relPath string) bool {
+	// Files under Maven/Gradle test source roots are always test files.
+	if isUnderMavenTestRoot(relPath) {
+		return true
+	}
+
 	base := filepath.Base(relPath)
 
 	// Go: *_test.go
@@ -373,8 +392,8 @@ func isTestFile(relPath string) bool {
 	if strings.HasSuffix(base, ".rb") && strings.HasPrefix(base, "test_") {
 		return true
 	}
-	// Java/Kotlin: *Test.java, *Test.kt, *Spec.java, *Spec.kt
-	for _, suffix := range []string{"Test.java", "Spec.java", "Test.kt", "Spec.kt"} {
+	// Java/Kotlin: *Test.java, *Tests.java, *Spec.java, *Test.kt, *Tests.kt, *Spec.kt
+	for _, suffix := range []string{"Test.java", "Tests.java", "Spec.java", "Test.kt", "Tests.kt", "Spec.kt"} {
 		if strings.HasSuffix(base, suffix) && len(base) > len(suffix) {
 			return true
 		}
@@ -443,15 +462,17 @@ func hasTestCounterpart(absPath, relPath, repoPath string, testRoots []string) b
 			nameWithoutExt+"_test.rb",
 		)
 	case ".java":
-		// Foo.java → FooTest.java, FooSpec.java
+		// Foo.java → FooTest.java, FooTests.java, FooSpec.java
 		candidates = append(candidates,
 			nameWithoutExt+"Test.java",
+			nameWithoutExt+"Tests.java",
 			nameWithoutExt+"Spec.java",
 		)
 	case ".kt":
-		// Foo.kt → FooTest.kt, FooSpec.kt
+		// Foo.kt → FooTest.kt, FooTests.kt, FooSpec.kt
 		candidates = append(candidates,
 			nameWithoutExt+"Test.kt",
+			nameWithoutExt+"Tests.kt",
 			nameWithoutExt+"Spec.kt",
 		)
 	case ".rs":
@@ -538,20 +559,21 @@ func hasTestCounterpart(absPath, relPath, repoPath string, testRoots []string) b
 		}
 	}
 
-	// Try stripping the first path component for projects where the
-	// source root (e.g., "src/", "lib/", "homeassistant/") is not
-	// mirrored in the test tree.
+	// Try stripping progressively more path components for projects where
+	// the source root (e.g., "src/", "src/flask/") is not mirrored in the
+	// test tree. For example, "src/flask/app.py" tries:
+	//   strip 1: tests/flask/test_app.py
+	//   strip 2: tests/test_app.py  (all components stripped)
 	for _, testRoot := range testRoots {
 		relDir := filepath.Dir(relPath)
-		parts := strings.SplitN(relDir, string(filepath.Separator), 2)
-		if len(parts) < 2 {
-			continue // only one component, nothing to strip
-		}
-		stripped := parts[1]
-		testDir := filepath.Join(repoPath, testRoot, stripped)
-		for _, candidate := range candidates {
-			if _, err := FS.Stat(filepath.Join(testDir, candidate)); err == nil {
-				return true
+		parts := strings.Split(relDir, string(filepath.Separator))
+		for i := 1; i <= len(parts); i++ {
+			stripped := filepath.Join(parts[i:]...)
+			testDir := filepath.Join(repoPath, testRoot, stripped)
+			for _, candidate := range candidates {
+				if _, err := FS.Stat(filepath.Join(testDir, candidate)); err == nil {
+					return true
+				}
 			}
 		}
 	}
