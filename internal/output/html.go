@@ -60,7 +60,7 @@ func (h *HTMLFormatter) Format(signals []signal.RawSignal, w io.Writer) error {
 		now = h.nowFunc()
 	}
 
-	data := h.buildData(signals, now)
+	data := buildHTMLData(signals, now)
 
 	if err := htmlTmpl.Execute(w, data); err != nil {
 		return fmt.Errorf("execute html template: %w", err)
@@ -114,7 +114,7 @@ type signalRow struct {
 	Workspace   string
 }
 
-func (h *HTMLFormatter) buildData(signals []signal.RawSignal, now time.Time) htmlData {
+func buildHTMLData(signals []signal.RawSignal, now time.Time) htmlData {
 	groups := groupByCollector(signals)
 	collectors := sortedCollectorNames(groups)
 	prioDist := priorityDistribution(signals)
@@ -132,7 +132,7 @@ func (h *HTMLFormatter) buildData(signals []signal.RawSignal, now time.Time) htm
 		HasWorkspaces:  hasMultipleWorkspaces(signals),
 	}
 
-	data.ChartData = h.buildChartData(data)
+	data.ChartData = buildHTMLChartData(data)
 	return data
 }
 
@@ -265,7 +265,7 @@ func hasMultipleWorkspaces(signals []signal.RawSignal) bool {
 	return false
 }
 
-func (h *HTMLFormatter) buildChartData(data htmlData) map[string]any {
+func buildHTMLChartData(data htmlData) map[string]any {
 	cd := map[string]any{
 		"priority": data.PriorityDist,
 	}
