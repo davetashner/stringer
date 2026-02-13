@@ -15,7 +15,7 @@
 
 > **v1.0.0.** Seven collectors with multi-ecosystem vulnerability and dependency health scanning, four output formats, report command, parallel pipeline with signal deduplication, delta scanning, monorepo support (6 workspace types), LLM-powered clustering and priority inference, MCP server for agent integration, interactive `stringer init` wizard, and CLI config management.
 
-**Codebase archaeology for [Beads](https://github.com/steveyegge/beads).** Mine your repo for actionable work items, output them as Beads-formatted issues, and give your AI agents instant situational awareness.
+**Codebase archaeology for developers and AI agents.** Scan any repo for hidden tech debt — TODOs, vulnerabilities, bus-factor risk, stale branches, unhealthy dependencies — and get structured results you can act on immediately.
 
 ```bash
 # Install via Homebrew
@@ -24,29 +24,31 @@ brew install davetashner/tap/stringer
 # Or install via Go
 go install github.com/davetashner/stringer/cmd/stringer@latest
 
-# Scan a repo and seed beads
-cd your-project
-stringer scan . | bd import -i -
+# Get a health report
+stringer report .
 
-# That's it. Your agents now have context.
-bd ready --json
+# Scan for actionable issues
+stringer scan . -f markdown
+
+# Or output as JSON for your own tooling
+stringer scan . -f json -o signals.json
 ```
 
 ## The Problem
 
-You adopt [Beads](https://github.com/steveyegge/beads) to give your coding agents persistent memory. On a new project, agents file issues as they go and the dependency graph grows organically.
+Every codebase accumulates hidden debt. TODOs pile up. Dependencies go stale. One engineer becomes the sole owner of a critical module. A vulnerability lands in a transitive dependency and nobody notices.
 
-But most real work happens on **existing codebases**. When an agent boots up on a 50k-line repo with an empty `.beads/` directory, it has zero context. It doesn't know about the 47 TODOs scattered across the codebase or the half-finished refactor that's been sitting there for six months.
+This debt is already visible in the code — in comments, git history, dependency manifests, and GitHub issues — but no single tool surfaces all of it. Developers context-switch between `grep TODO`, dependency audit tools, and GitHub issue searches. AI agents burn inference tokens rediscovering what's already in the repo.
 
-Stringer solves the cold-start problem. It mines signals already present in your repo and produces structured Beads issues that agents can immediately orient around.
+Stringer extracts these signals automatically, scores them by confidence, and outputs structured results in your format of choice — whether that's a markdown summary for a human, JSON for a CI pipeline, tasks for an AI agent, or [Beads](https://github.com/steveyegge/beads) JSONL for backlog seeding.
 
 ## Why Stringer?
 
-**Static analysis on your laptop, not your token budget.** Stringer runs locally — no API keys, no per-request costs. Most collectors use deterministic static analysis with zero network calls. The vuln and GitHub collectors make targeted API calls (to osv.dev and GitHub) but require no paid subscriptions.
+**Real scanning, not just TODO grep.** Seven collectors cover vulnerability detection across 7 ecosystems, dependency health across 6 ecosystems, bus-factor analysis, code churn, stale branches, coverage gaps, and GitHub issues — all in a single command. Most of this runs locally with zero network calls.
 
-**Pre-process the easy stuff so agents start informed.** Without Stringer, an AI agent boots up on a new codebase and has to discover TODOs, stale branches, lottery-risk modules, and open GitHub issues on its own — burning inference tokens on mechanical work. Stringer does that extraction up front on local CPU, so agents begin with structured context instead of a blank slate.
+**Works without AI, works better with it.** Core scanning is deterministic static analysis — no API keys, no per-request costs. The optional LLM pass adds signal clustering, priority inference, and dependency detection on top. Use `--no-llm` to skip it entirely.
 
-**LLM-optional by design.** Core scanning needs zero API keys. The LLM pass (signal clustering, priority inference, dependency detection) adds intelligence on top but is never required. You control where the money goes.
+**Output goes where you need it.** Markdown for humans, JSON for CI pipelines, tasks for Claude Code agents, or Beads JSONL for backlog seeding. Same scan, different consumers.
 
 ## What It Does Today
 
@@ -56,7 +58,7 @@ Stringer solves the cold-start problem. It mines signals already present in your
 - **Git log collector** (`gitlog`) — Detects reverts, high-churn files, and stale branches from git history.
 - **Patterns collector** (`patterns`) — Flags large files and modules with low test coverage ratios.
 - **Lottery risk analyzer** (`lotteryrisk`) — Flags directories with low lottery risk (single-author ownership risk) using git blame and commit history with recency weighting.
-- **GitHub collector** (`github`) — Imports open issues, pull requests, and actionable review comments from GitHub. With `--include-closed`, also generates pre-closed beads from merged PRs and closed issues with architectural module context. Requires `GITHUB_TOKEN` env var.
+- **GitHub collector** (`github`) — Imports open issues, pull requests, and actionable review comments from GitHub. With `--include-closed`, also generates pre-closed signals from merged PRs and closed issues with architectural module context. Requires `GITHUB_TOKEN` env var.
 - **Dependency health collector** (`dephealth`) — Detects archived, deprecated, and stale dependencies across six ecosystems: Go (`go.mod`), npm (`package.json`), Rust (`Cargo.toml`), Java/Maven (`pom.xml`), C#/.NET (`*.csproj`), and Python (`requirements.txt`/`pyproject.toml`).
 - **Vulnerability scanner** (`vuln`) — Detects known CVEs across seven ecosystems via [OSV.dev](https://osv.dev/): Go (`go.mod`), Java/Maven (`pom.xml`), Java/Gradle (`build.gradle`/`.kts`), Rust (`Cargo.toml`), C#/.NET (`*.csproj`), Python (`requirements.txt`/`pyproject.toml`), and Node.js (`package.json`). No language toolchains required — only network access to osv.dev. Severity-based confidence scoring from CVSS vectors.
 
@@ -72,9 +74,9 @@ Stringer solves the cold-start problem. It mines signals already present in your
 - **Parallel execution** — Collectors run concurrently via errgroup
 - **Per-collector error modes** — skip, warn (default), or fail
 - **Signal deduplication** — Content-based SHA-256 hashing merges duplicate signals
-- **Beads-aware dedup** — Filters signals already tracked as beads in the repo
+- **Beads-aware dedup** — When using Beads output, filters signals already tracked in the repo
 - **Delta scanning** — `--delta` mode tracks state between scans, showing only new/removed/moved signals
-- **Pre-closed beads** — Generates closed beads from merged PRs, closed issues, and resolved TODOs
+- **Pre-closed signals** — Generates closed entries from merged PRs, closed issues, and resolved TODOs
 - **Dry-run mode** — Preview signal counts without producing output
 - **Monorepo support** — Auto-detects workspaces (go.work, pnpm, npm, lerna, nx, cargo) and scans each independently with `--workspace` filtering
 
@@ -121,33 +123,41 @@ Output volume depends on codebase size and coding style:
 stringer scan . --dry-run
 
 # Start with a manageable batch
-stringer scan . --max-issues 50 | bd import -i -
+stringer scan . --max-issues 50 -f markdown
 ```
 
 ## Getting Started
 
-Start small. You can always scan again.
+### Quick health check
+
+```bash
+# Get a repo health report — lottery risk, churn, coverage gaps, recommendations
+stringer report .
+```
+
+### Scan for issues
 
 ```bash
 # 1. Preview signal count
 stringer scan . --dry-run
 
-# 2. Import a capped first batch (highest-confidence signals first)
-stringer scan . --max-issues 20 | bd import -i -
+# 2. Scan and review as markdown
+stringer scan . -f markdown
 
-# 3. See what your agents can now work on
-bd ready --json
+# 3. Or save as JSON for programmatic use
+stringer scan . -f json -o signals.json
 
-# 4. When ready, import everything
-stringer scan . | bd import -i -
+# 4. Focus on security
+stringer scan . -c vuln,dephealth -f markdown
 ```
 
-### Save to file for review
+### Seed a Beads backlog
+
+If you use [Beads](https://github.com/steveyegge/beads) for agent task tracking, stringer's default output format pipes directly into `bd import`:
 
 ```bash
-stringer scan . -o signals.jsonl
-cat signals.jsonl          # review
-bd import -i signals.jsonl
+stringer scan . --max-issues 20 | bd import -i -
+bd ready --json
 ```
 
 ### Machine-readable dry run
@@ -177,7 +187,7 @@ You don't need to memorize flags or read docs. Stringer is designed for agents. 
 
 ### Bootstrap a new project
 
-> Install stringer (`brew install davetashner/tap/stringer`), then set it up in this repo — run `stringer init .`, scan the codebase, and import the results into beads. Give me a summary of what it found.
+> Install stringer (`brew install davetashner/tap/stringer`), then set it up in this repo — run `stringer init .`, scan the codebase, and give me a summary of what it found. Output as markdown.
 
 ### Understand a codebase you just inherited
 
@@ -193,7 +203,7 @@ You don't need to memorize flags or read docs. Stringer is designed for agents. 
 
 ### Ongoing maintenance
 
-> Run a stringer delta scan (`stringer scan . --delta`) to find new issues since the last scan. Import anything new into beads and tell me what changed.
+> Run a stringer delta scan (`stringer scan . --delta`) to find new issues since the last scan. Tell me what changed.
 
 ### Set up agent integration
 
@@ -451,7 +461,7 @@ Score is capped at 1.0. See [DR-004](docs/decisions/004-confidence-scoring-seman
 
 ### Priority Mapping
 
-Confidence maps to bead priority:
+Confidence maps to priority:
 
 | Confidence | Priority |
 | ---------- | -------- |
@@ -462,7 +472,7 @@ Confidence maps to bead priority:
 
 ### Content-Based Hashing
 
-Each signal gets a deterministic ID: `SHA-256(source + kind + filepath + line + title)`, truncated to 8 hex characters with a `str-` prefix (e.g., `str-0e4098f9`). Re-scanning the same repo produces the same IDs, preventing duplicate beads on reimport.
+Each signal gets a deterministic ID: `SHA-256(source + kind + filepath + line + title)`, truncated to 8 hex characters with a `str-` prefix (e.g., `str-0e4098f9`). Re-scanning the same repo produces the same IDs, making output idempotent and preventing duplicates on reimport.
 
 ### Labels
 
@@ -502,7 +512,7 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 
 ## Current Limitations
 
-- **Line-sensitive hashing.** Moving a TODO to a different line changes its ID, which means `bd import` sees it as a new issue. Delta scanning (`--delta`) detects moved signals but doesn't update beads IDs.
+- **Line-sensitive hashing.** Moving a TODO to a different line changes its signal ID. Delta scanning (`--delta`) detects moved signals but downstream consumers may see them as new.
 
 ## Roadmap
 
@@ -513,7 +523,7 @@ Planned for future releases:
 
 ## Design Principles
 
-**Read-only.** Stringer never modifies the target repository. It reads files and git history, writes output to stdout or a file. You decide when to `bd import`.
+**Read-only.** Stringer never modifies the target repository. It reads files and git history, writes output to stdout or a file.
 
 **Composable collectors.** Each collector is independent, testable, and implements one Go interface. Adding a new signal source means implementing `Collector` with `Name()` and `Collect()` methods.
 
@@ -521,13 +531,14 @@ Planned for future releases:
 
 **Idempotent.** Running stringer twice on the same repo produces the same output. Content-based hashing ensures deterministic IDs.
 
-**Beads-native output.** JSONL output is validated against `bd import` expectations. If `bd import` can't consume it, that's a stringer bug.
+**Format-agnostic.** The same scan pipeline feeds every output format. Beads JSONL, JSON, Markdown, and Tasks all render the same signal data — pick the format that fits your workflow.
 
 ## Requirements
 
-- Go 1.24+
-- Git (for blame enrichment)
-- `bd` CLI (for importing output into beads)
+- Go 1.24+ (for building from source)
+- Git (for blame enrichment and git log analysis)
+- `GITHUB_TOKEN` env var (optional — only needed for the GitHub collector)
+- [`bd` CLI](https://github.com/steveyegge/beads) (optional — only needed for Beads JSONL import)
 
 ## Contributing
 
