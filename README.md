@@ -78,29 +78,29 @@ Stringer solves the cold-start problem. It mines signals already present in your
 - **Dry-run mode** — Preview signal counts without producing output
 
 ```
-     ┌────────────────────────────────────────────────────────────────────┐
-     │                          Target Repository                         │
-     └──────────────────────────────────┬─────────────────────────────────┘
-                                        │
-     ┌───────────┬──────────┬───────────┬───────────┬──────────┬──────────┐
-     ▼           ▼          ▼           ▼           ▼          ▼          ▼
- ┌────────┐ ┌────────┐ ┌────────┐  ┌────────┐  ┌────────┐ ┌────────┐ ┌────────┐
- │ TODOs  │ │ GitLog │ │Patterns│  │Lottery │  │ GitHub │ │  Dep   │ │  Vuln  │ (parallel)
- │        │ │        │ │        │  │  Risk  │  │        │ │ Health │ │        │
- └───┬────┘ └───┬────┘ └───┬────┘  └───┬────┘  └───┬────┘ └───┬────┘ └───┬────┘
-     └──────────┴──────────┴───────────┴───────────┴──────────┴──────────┘
-                                       ▼
-                                ┌────────────┐
-                                │  Dedup +   │
-                                │ Validation │
-                                └──────┬─────┘
-                                       │
-                    ┌──────────────────┼──────┬────────────┐
-                    ▼            ▼            ▼            ▼
-                ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
-                │  Beads  │ │  JSON   │ │Markdown │ │  Tasks  │
-                │  JSONL  │ │         │ │         │ │         │
-                └─────────┘ └─────────┘ └─────────┘ └─────────┘
+                     ┌─────────────────────────────────┐
+                     │        Target Repository        │
+                     └────────────────┬────────────────┘
+                                      │
+     ┌─────────┬─────────┬────────────┼────────────┬─────────┬─────────┐
+     ▼         ▼         ▼            ▼            ▼         ▼         ▼
+ ┌───────┐ ┌───────┐ ┌────────┐ ┌─────────┐ ┌──────────┐ ┌──────┐ ┌──────┐
+ │ TODOs │ │  Git  │ │Patterns│ │ Lottery │ │  GitHub  │ │ Dep  │ │ Vuln │  (parallel)
+ │       │ │  log  │ │        │ │  Risk   │ │Issues/PRs│ │Health│ │      │
+ └───┬───┘ └───┬───┘ └───┬────┘ └────┬────┘ └────┬─────┘ └──┬───┘ └──┬───┘
+     └─────────┴─────────┴───────────┴───────────┴──────────┴────────┘
+                                      ▼
+                               ┌────────────┐
+                               │  Dedup +   │
+                               │ Validation │
+                               └──────┬─────┘
+                                      │
+                  ┌───────────────────┼───────────┬────────────┐
+                  ▼                   ▼           ▼            ▼
+             ┌─────────┐       ┌──────────┐ ┌─────────┐ ┌─────────┐
+             │  Beads  │       │   JSON   │ │Markdown │ │  Tasks  │
+             │  JSONL  │       │          │ │         │ │         │
+             └─────────┘       └──────────┘ └─────────┘ └─────────┘
 ```
 
 ## What to Expect
@@ -169,6 +169,42 @@ stringer scan . --dry-run --json
   "exit_code": 0
 }
 ```
+
+## Example Prompts
+
+You don't need to memorize flags or read docs. Stringer is designed for agents. Copy-paste any of these into Claude Code, Cursor, Windsurf, or your agent of choice.
+
+### Bootstrap a new project
+
+> Install stringer (`brew install davetashner/tap/stringer`), then set it up in this repo — run `stringer init .`, scan the codebase, and import the results into beads. Give me a summary of what it found.
+
+### Understand a codebase you just inherited
+
+> Use stringer to scan this project and tell me what needs attention. I want to know about TODOs, stale branches, security vulnerabilities, and any files where only one person understands the code.
+
+### Get a health report
+
+> Run `stringer report .` on this project and walk me through the results. What are the riskiest areas?
+
+### Check for security issues
+
+> Use stringer to scan this repo for known vulnerabilities and unhealthy dependencies. Prioritize anything with a CVE.
+
+### Ongoing maintenance
+
+> Run a stringer delta scan (`stringer scan . --delta`) to find new issues since the last scan. Import anything new into beads and tell me what changed.
+
+### Set up agent integration
+
+> Set up stringer's MCP server so you can use it as a tool. Run `stringer init .` if there's no config yet, then register the MCP server with `claude mcp add stringer -- stringer mcp serve`.
+
+### Scope a scan to what matters
+
+> Use stringer to scan only the `src/api/` directory for TODOs and code patterns. Skip the git log and GitHub collectors — I just want local code issues. Use `stringer scan . --paths src/api/ -c todos,patterns`.
+
+### Generate agent docs
+
+> Use stringer to generate an AGENTS.md for this project (`stringer docs . -o AGENTS.md`). This will give future agents a map of the codebase.
 
 ## Usage Reference
 
