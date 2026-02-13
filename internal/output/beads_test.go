@@ -1010,3 +1010,89 @@ func TestDeriveCloseReason(t *testing.T) {
 		})
 	}
 }
+
+func TestBeadsFormatter_WorkspaceScopedID(t *testing.T) {
+	f := NewBeadsFormatter()
+	sig := testSignal()
+	sig.Workspace = "core"
+
+	var buf bytes.Buffer
+	if err := f.Format([]signal.RawSignal{sig}, &buf); err != nil {
+		t.Fatalf("Format() error: %v", err)
+	}
+
+	var rec map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	id, ok := rec["id"].(string)
+	if !ok {
+		t.Fatal("id field missing")
+	}
+	if !strings.HasPrefix(id, "str-core-") {
+		t.Errorf("workspace-scoped ID should start with 'str-core-', got %q", id)
+	}
+}
+
+func TestBeadsFormatter_WorkspaceLabel(t *testing.T) {
+	f := NewBeadsFormatter()
+	sig := testSignal()
+	sig.Workspace = "api"
+
+	var buf bytes.Buffer
+	if err := f.Format([]signal.RawSignal{sig}, &buf); err != nil {
+		t.Fatalf("Format() error: %v", err)
+	}
+
+	var rec map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	labels, ok := rec["labels"].([]any)
+	if !ok {
+		t.Fatal("labels field missing or wrong type")
+	}
+
+	found := false
+	for _, l := range labels {
+		if l == "workspace:api" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'workspace:api' in labels, got %v", labels)
+	}
+}
+
+func TestBeadsFormatter_NoWorkspaceNoScopeInID(t *testing.T) {
+	f := NewBeadsFormatter()
+	sig := testSignal()
+	sig.Workspace = "" // non-monorepo
+
+	var buf bytes.Buffer
+	if err := f.Format([]signal.RawSignal{sig}, &buf); err != nil {
+		t.Fatalf("Format() error: %v", err)
+	}
+
+	var rec map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &rec); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	id := rec["id"].(string)
+	if !strings.HasPrefix(id, "str-") {
+		t.Errorf("non-workspace ID should start with 'str-', got %q", id)
+	}
+	// Should NOT have a workspace scope.
+	parts := strings.SplitN(id, "-", 3)
+	if len(parts) >= 3 {
+		// For non-workspace, the hash directly follows "str-".
+		// The hash is 8 hex chars. Check it doesn't have a workspace name embedded.
+		if len(parts[1]) > 8 {
+			t.Errorf("non-workspace ID should not have workspace in prefix, got %q", id)
+		}
+	}
+}

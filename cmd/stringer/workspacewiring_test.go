@@ -153,3 +153,43 @@ func TestReportCmd_WorkspaceFlagsRegistered(t *testing.T) {
 	require.NotNil(t, f, "flag --no-workspaces not registered on report")
 	assert.Equal(t, "false", f.DefValue)
 }
+
+func TestSaveDeltaState_SingleWorkspace(t *testing.T) {
+	dir := t.TempDir()
+	signals := []signal.RawSignal{
+		{Source: "todos", Kind: "todo", FilePath: "main.go", Title: "fix"},
+	}
+	workspaces := []workspaceEntry{{Path: dir, Rel: "."}}
+
+	err := saveDeltaState(dir, []string{"todos"}, signals, workspaces)
+	require.NoError(t, err)
+
+	// Verify state saved at root .stringer/
+	_, statErr := os.Stat(filepath.Join(dir, ".stringer", "last-scan.json"))
+	require.NoError(t, statErr)
+}
+
+func TestSaveDeltaState_MultipleWorkspaces(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "svc-a"), 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "svc-b"), 0o750))
+
+	signals := []signal.RawSignal{
+		{Source: "todos", Kind: "todo", FilePath: "svc-a/main.go", Title: "fix a", Workspace: "svc-a"},
+		{Source: "todos", Kind: "todo", FilePath: "svc-b/main.go", Title: "fix b", Workspace: "svc-b"},
+	}
+	workspaces := []workspaceEntry{
+		{Name: "svc-a", Path: filepath.Join(dir, "svc-a"), Rel: "svc-a"},
+		{Name: "svc-b", Path: filepath.Join(dir, "svc-b"), Rel: "svc-b"},
+	}
+
+	err := saveDeltaState(dir, []string{"todos"}, signals, workspaces)
+	require.NoError(t, err)
+
+	// Verify per-workspace state files.
+	_, statErr := os.Stat(filepath.Join(dir, ".stringer", "svc-a", "last-scan.json"))
+	require.NoError(t, statErr, "svc-a state file should exist")
+
+	_, statErr = os.Stat(filepath.Join(dir, ".stringer", "svc-b", "last-scan.json"))
+	require.NoError(t, statErr, "svc-b state file should exist")
+}

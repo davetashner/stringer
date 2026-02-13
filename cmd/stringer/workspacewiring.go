@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/davetashner/stringer/internal/signal"
+	"github.com/davetashner/stringer/internal/state"
 	"github.com/davetashner/stringer/internal/workspace"
 )
 
@@ -92,4 +93,50 @@ func stampWorkspace(ws workspaceEntry, signals []signal.RawSignal) {
 			signals[i].FilePath = filepath.Join(ws.Rel, signals[i].FilePath)
 		}
 	}
+}
+
+// saveDeltaState saves delta state, scoping per-workspace when signals span
+// multiple workspaces. For single-workspace or non-monorepo scans, it saves
+// to the default location.
+func saveDeltaState(absPath string, collectorNames []string, allSignals []signal.RawSignal, workspaces []workspaceEntry) error {
+	hasWorkspaces := false
+	for _, ws := range workspaces {
+		if ws.Name != "" {
+			hasWorkspaces = true
+			break
+		}
+	}
+
+	if !hasWorkspaces {
+		newState := state.Build(absPath, collectorNames, allSignals)
+		if err := state.Save(absPath, newState); err != nil {
+			return err
+		}
+		slog.Info("delta state saved", "hashes", newState.SignalCount)
+		return nil
+	}
+
+	// Group signals by workspace and save per-workspace state files.
+	byWS := make(map[string][]signal.RawSignal)
+	for _, sig := range allSignals {
+		ws := sig.Workspace
+		if ws == "" {
+			ws = "_root"
+		}
+		byWS[ws] = append(byWS[ws], sig)
+	}
+
+	for _, ws := range workspaces {
+		wsName := ws.Name
+		if wsName == "" {
+			wsName = "_root"
+		}
+		wsSigs := byWS[wsName]
+		newState := state.Build(absPath, collectorNames, wsSigs)
+		if err := state.SaveWorkspace(absPath, wsName, newState); err != nil {
+			return err
+		}
+		slog.Info("delta state saved", "workspace", wsName, "hashes", newState.SignalCount)
+	}
+	return nil
 }

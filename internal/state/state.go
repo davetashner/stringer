@@ -77,7 +77,14 @@ type AnnotatedSignal struct {
 // Load reads the scan state file from <repoPath>/.stringer/last-scan.json.
 // If the file does not exist, it returns (nil, nil).
 func Load(repoPath string) (*ScanState, error) {
-	path := filepath.Join(repoPath, stateDir, stateFile)
+	return LoadWorkspace(repoPath, "")
+}
+
+// LoadWorkspace reads the scan state file for a specific workspace.
+// When workspace is empty, it reads from <repoPath>/.stringer/last-scan.json.
+// When set, it reads from <repoPath>/.stringer/<workspace>/last-scan.json.
+func LoadWorkspace(repoPath, workspace string) (*ScanState, error) {
+	path := statePath(repoPath, workspace)
 	data, err := FS.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -96,7 +103,14 @@ func Load(repoPath string) (*ScanState, error) {
 // Save writes the scan state to <repoPath>/.stringer/last-scan.json.
 // It creates the .stringer directory if it does not exist.
 func Save(repoPath string, s *ScanState) error {
-	dir := filepath.Join(repoPath, stateDir)
+	return SaveWorkspace(repoPath, "", s)
+}
+
+// SaveWorkspace writes the scan state for a specific workspace.
+// When workspace is empty, it writes to <repoPath>/.stringer/last-scan.json.
+// When set, it writes to <repoPath>/.stringer/<workspace>/last-scan.json.
+func SaveWorkspace(repoPath, workspace string, s *ScanState) error {
+	dir := stateDirectory(repoPath, workspace)
 	if err := FS.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("create state directory: %w", err)
 	}
@@ -110,6 +124,19 @@ func Save(repoPath string, s *ScanState) error {
 		return fmt.Errorf("write state file: %w", err)
 	}
 	return nil
+}
+
+// statePath returns the full path to the state file for a workspace.
+func statePath(repoPath, workspace string) string {
+	return filepath.Join(stateDirectory(repoPath, workspace), stateFile)
+}
+
+// stateDirectory returns the directory for state files, scoped by workspace.
+func stateDirectory(repoPath, workspace string) string {
+	if workspace == "" {
+		return filepath.Join(repoPath, stateDir)
+	}
+	return filepath.Join(repoPath, stateDir, workspace)
 }
 
 // FilterNew returns only the signals whose hashes are not present in prev.

@@ -132,10 +132,15 @@ func deriveCloseReason(kind string) string {
 
 // generateID produces a deterministic ID from signal content.
 // It delegates to the shared SignalID helper and applies convention overrides.
+// When the signal has a Workspace, the workspace name is included in the prefix
+// (e.g., "str-core-abc123") for scoped identification.
 func (b *BeadsFormatter) generateID(sig signal.RawSignal) string {
 	prefix := "str-"
 	if b.conventions != nil && b.conventions.IDPrefix != "" {
 		prefix = b.conventions.IDPrefix
+	}
+	if sig.Workspace != "" {
+		prefix += sig.Workspace + "-"
 	}
 	return SignalID(sig, prefix)
 }

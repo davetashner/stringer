@@ -199,7 +199,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	// 5. Filter results (delta, beads dedup, confidence, kind).
 	allSignals := result.Signals // keep full list for state saving
-	if err := filterScanResults(cmd, result, absPath, fileCfg, scanCfg, collectorNames, allSignals); err != nil {
+	if err := filterScanResults(cmd, result, absPath, fileCfg, scanCfg, collectorNames, allSignals, workspaces); err != nil {
 		return err
 	}
 
@@ -254,11 +254,9 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	// 10. Save delta state from ALL signals (pre-filter), not just new ones.
 	if scanDelta {
-		newState := state.Build(absPath, collectorNames, allSignals)
-		if err := state.Save(absPath, newState); err != nil {
+		if err := saveDeltaState(absPath, collectorNames, allSignals, workspaces); err != nil {
 			return exitError(ExitTotalFailure, "stringer: failed to save delta state (%v)", err)
 		}
-		slog.Info("delta state saved", "hashes", newState.SignalCount)
 	}
 
 	if exitCode != ExitOK {
@@ -409,7 +407,8 @@ func loadScanConfig(cmd *cobra.Command, absPath, gitRoot string) (signal.ScanCon
 // filterScanResults applies post-pipeline filters to the scan result: delta
 // filtering, beads-aware dedup, confidence threshold, and kind filter. It
 // mutates result.Signals in place. allSignals is the unfiltered signal list
-// used for delta diff computation.
+// used for delta diff computation. workspaces is needed for workspace-scoped
+// beads dedup.
 func filterScanResults(
 	cmd *cobra.Command,
 	result *signal.ScanResult,
@@ -418,6 +417,7 @@ func filterScanResults(
 	scanCfg signal.ScanConfig,
 	collectorNames []string,
 	allSignals []signal.RawSignal,
+	workspaces []workspaceEntry,
 ) error {
 	// Delta filtering: load previous state, filter to new signals.
 	if scanDelta {
@@ -456,7 +456,22 @@ func filterScanResults(
 		existingBeads, beadsErr := beads.LoadBeads(absPath)
 		if beadsErr != nil {
 			slog.Warn("failed to load existing beads", "error", beadsErr)
-		} else if existingBeads != nil {
+		}
+
+		// Also check workspace-level beads directories.
+		for _, ws := range workspaces {
+			if ws.Name == "" {
+				continue
+			}
+			wsBeads, err := beads.LoadBeads(ws.Path)
+			if err != nil {
+				slog.Warn("failed to load workspace beads", "workspace", ws.Name, "error", err)
+				continue
+			}
+			existingBeads = append(existingBeads, wsBeads...)
+		}
+
+		if existingBeads != nil {
 			before := len(result.Signals)
 			result.Signals = beads.FilterAgainstExisting(result.Signals, existingBeads)
 			slog.Info("beads dedup", "before", before, "after", len(result.Signals),
