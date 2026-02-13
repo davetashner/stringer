@@ -18,10 +18,20 @@ import (
 	"github.com/davetashner/stringer/internal/docs"
 	"github.com/davetashner/stringer/internal/output"
 	"github.com/davetashner/stringer/internal/pipeline"
+	"github.com/davetashner/stringer/internal/redact"
 	"github.com/davetashner/stringer/internal/report"
 	"github.com/davetashner/stringer/internal/signal"
 	"github.com/davetashner/stringer/internal/state"
 )
+
+// redactErr strips sensitive values (e.g. tokens, API keys) from error
+// messages before they are returned to MCP clients.
+func redactErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s", redact.String(err.Error()))
+}
 
 // ScanInput is the input schema for the stringer scan MCP tool.
 type ScanInput struct {
@@ -96,7 +106,7 @@ func registerTools(server *mcp.Server) {
 		Name:        "docs",
 		Description: "Generate or update an AGENTS.md scaffold documenting the project's architecture, tech stack, and build commands.",
 		Annotations: &mcp.ToolAnnotations{
-			ReadOnlyHint:    false,
+			ReadOnlyHint:    true,
 			DestructiveHint: boolPtr(false),
 			OpenWorldHint:   boolPtr(false),
 		},
@@ -106,7 +116,7 @@ func registerTools(server *mcp.Server) {
 func handleScan(ctx context.Context, _ *mcp.CallToolRequest, input ScanInput) (*mcp.CallToolResult, any, error) {
 	pathInfo, err := ResolvePath(input.Path)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, redactErr(err)
 	}
 
 	// Parse collectors.
@@ -134,7 +144,7 @@ func handleScan(ctx context.Context, _ *mcp.CallToolRequest, input ScanInput) (*
 	// Load and merge config.
 	fileCfg, err := config.Load(pathInfo.AbsPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load config: %w", err)
+		return nil, nil, redactErr(fmt.Errorf("failed to load config: %w", err))
 	}
 
 	scanCfg := signal.ScanConfig{
@@ -179,12 +189,12 @@ func handleScan(ctx context.Context, _ *mcp.CallToolRequest, input ScanInput) (*
 	if err != nil {
 		available := collector.List()
 		sort.Strings(available)
-		return nil, nil, fmt.Errorf("%v (available: %s)", err, strings.Join(available, ", "))
+		return nil, nil, redactErr(fmt.Errorf("%v (available: %s)", err, strings.Join(available, ", ")))
 	}
 
 	result, err := p.Run(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("scan failed: %w", err)
+		return nil, nil, redactErr(fmt.Errorf("scan failed: %w", err))
 	}
 
 	// Apply confidence filter.
@@ -228,7 +238,7 @@ func handleScan(ctx context.Context, _ *mcp.CallToolRequest, input ScanInput) (*
 	formatter, _ := output.GetFormatter(format)
 	var buf bytes.Buffer
 	if err := formatter.Format(result.Signals, &buf); err != nil {
-		return nil, nil, fmt.Errorf("formatting failed: %w", err)
+		return nil, nil, redactErr(fmt.Errorf("formatting failed: %w", err))
 	}
 
 	return &mcp.CallToolResult{
@@ -241,7 +251,7 @@ func handleScan(ctx context.Context, _ *mcp.CallToolRequest, input ScanInput) (*
 func handleReport(ctx context.Context, _ *mcp.CallToolRequest, input ReportInput) (*mcp.CallToolResult, any, error) {
 	pathInfo, err := ResolvePath(input.Path)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, redactErr(err)
 	}
 
 	// Parse collectors.
@@ -253,7 +263,7 @@ func handleReport(ctx context.Context, _ *mcp.CallToolRequest, input ReportInput
 	// Load and merge config.
 	fileCfg, err := config.Load(pathInfo.AbsPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load config: %w", err)
+		return nil, nil, redactErr(fmt.Errorf("failed to load config: %w", err))
 	}
 
 	scanCfg := signal.ScanConfig{
@@ -294,7 +304,7 @@ func handleReport(ctx context.Context, _ *mcp.CallToolRequest, input ReportInput
 	// Create and run pipeline.
 	p, err := pipeline.New(scanCfg)
 	if err != nil {
-		return nil, nil, fmt.Errorf("pipeline: %w", err)
+		return nil, nil, redactErr(fmt.Errorf("pipeline: %w", err))
 	}
 
 	collectorNames := scanCfg.Collectors
@@ -305,7 +315,7 @@ func handleReport(ctx context.Context, _ *mcp.CallToolRequest, input ReportInput
 
 	result, err := p.Run(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("report failed: %w", err)
+		return nil, nil, redactErr(fmt.Errorf("report failed: %w", err))
 	}
 
 	// Parse sections.
@@ -317,7 +327,7 @@ func handleReport(ctx context.Context, _ *mcp.CallToolRequest, input ReportInput
 	// Render JSON report.
 	var buf bytes.Buffer
 	if err := report.RenderJSON(result, pathInfo.AbsPath, collectorNames, sections, &buf); err != nil {
-		return nil, nil, fmt.Errorf("rendering failed: %w", err)
+		return nil, nil, redactErr(fmt.Errorf("rendering failed: %w", err))
 	}
 
 	return &mcp.CallToolResult{
@@ -330,13 +340,13 @@ func handleReport(ctx context.Context, _ *mcp.CallToolRequest, input ReportInput
 func handleContext(_ context.Context, _ *mcp.CallToolRequest, input ContextInput) (*mcp.CallToolResult, any, error) {
 	pathInfo, err := ResolvePath(input.Path)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, redactErr(err)
 	}
 
 	// Analyze architecture.
 	analysis, err := docs.Analyze(pathInfo.AbsPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("analysis failed: %w", err)
+		return nil, nil, redactErr(fmt.Errorf("analysis failed: %w", err))
 	}
 
 	// Analyze git history.
@@ -366,11 +376,11 @@ func handleContext(_ context.Context, _ *mcp.CallToolRequest, input ContextInput
 	switch format {
 	case "json":
 		if err := strcontext.RenderJSON(analysis, history, scanState, &buf); err != nil {
-			return nil, nil, fmt.Errorf("generation failed: %w", err)
+			return nil, nil, redactErr(fmt.Errorf("generation failed: %w", err))
 		}
 	case "markdown":
 		if err := strcontext.Generate(analysis, history, scanState, &buf); err != nil {
-			return nil, nil, fmt.Errorf("generation failed: %w", err)
+			return nil, nil, redactErr(fmt.Errorf("generation failed: %w", err))
 		}
 	default:
 		return nil, nil, fmt.Errorf("unsupported format %q (supported: json, markdown)", format)
@@ -386,22 +396,22 @@ func handleContext(_ context.Context, _ *mcp.CallToolRequest, input ContextInput
 func handleDocs(_ context.Context, _ *mcp.CallToolRequest, input DocsInput) (*mcp.CallToolResult, any, error) {
 	pathInfo, err := ResolvePath(input.Path)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, redactErr(err)
 	}
 
 	analysis, err := docs.Analyze(pathInfo.AbsPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("analysis failed: %w", err)
+		return nil, nil, redactErr(fmt.Errorf("analysis failed: %w", err))
 	}
 
 	var buf bytes.Buffer
 	if input.Update {
 		if err := docs.Update(pathInfo.AbsPath+"/AGENTS.md", analysis, &buf); err != nil {
-			return nil, nil, fmt.Errorf("update failed: %w", err)
+			return nil, nil, redactErr(fmt.Errorf("update failed: %w", err))
 		}
 	} else {
 		if err := docs.Generate(analysis, &buf); err != nil {
-			return nil, nil, fmt.Errorf("generation failed: %w", err)
+			return nil, nil, redactErr(fmt.Errorf("generation failed: %w", err))
 		}
 	}
 
