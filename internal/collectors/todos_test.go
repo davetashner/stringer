@@ -1294,6 +1294,88 @@ func TestTodoCollector_ProgressCallback(t *testing.T) {
 	// Small directory won't trigger progress, but should not crash.
 }
 
+// --- isInsideStringLiteral tests ---
+
+func TestIsInsideStringLiteral(t *testing.T) {
+	tests := []struct {
+		name       string
+		line       string
+		matchStart int
+		want       bool
+	}{
+		{name: "single_quoted_url", line: `.get('//todo@txt')`, matchStart: 6, want: true},
+		{name: "double_quoted_comment", line: `var s = "// TODO: fake"`, matchStart: 9, want: true},
+		{name: "backtick_template", line: "\x60// TODO: template\x60", matchStart: 1, want: true},
+		{name: "real_comment_after_code", line: `code(); // TODO: real`, matchStart: 8, want: false},
+		{name: "after_closed_string", line: `"hello"; // TODO: real`, matchStart: 9, want: false},
+		{name: "escaped_quote_closed", line: `'it\'s'; // TODO: ok`, matchStart: 9, want: false},
+		{name: "single_inside_double", line: `"it's"; // TODO: real`, matchStart: 7, want: false},
+		{name: "empty_line", line: "", matchStart: 0, want: false},
+		{name: "match_at_zero", line: `// TODO: start`, matchStart: 0, want: false},
+		{name: "double_quoted_single_inside", line: `x("it's //TODO")`, matchStart: 10, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isInsideStringLiteral(tt.line, tt.matchStart)
+			if got != tt.want {
+				t.Errorf("isInsideStringLiteral(%q, %d) = %v, want %v",
+					tt.line, tt.matchStart, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestScanFile_StringLiteralFalsePositives(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "express.js")
+
+	content := `var express = require('express');
+
+app.get('//todo@txt', function(req, res) {
+  res.send('ok');
+});
+
+var url = "http://todo@example.com/path";
+
+// TODO: this is a real todo
+`
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	signals, err := scanFile(path, "express.js")
+	require.NoError(t, err)
+
+	// Only the real TODO comment on the last line should match.
+	require.Len(t, signals, 1, "expected exactly 1 signal (only the real TODO)")
+	assert.Equal(t, "TODO: this is a real todo", signals[0].Title)
+	assert.Equal(t, 9, signals[0].Line)
+
+	// Verify no signal has the false-positive @txt content.
+	for _, sig := range signals {
+		assert.NotContains(t, sig.Title, "@txt",
+			"string literal false positive should be filtered")
+	}
+}
+
+func TestScanFile_RealCommentsStillMatch(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "real.go")
+
+	content := `// TODO: real comment
+/* TODO: block comment */
+# TODO: python style
+// TODO(auth): with author
+-- FIXME: sql style
+* HACK: jsdoc style
+`
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	signals, err := scanFile(path, "real.go")
+	require.NoError(t, err)
+
+	assert.Len(t, signals, 6, "all real comment patterns should still match")
+}
+
 func TestIsBinaryFile_MockOpenError(t *testing.T) {
 	oldFS := FS
 	defer func() { FS = oldFS }()

@@ -219,6 +219,34 @@ func (c *TodoCollector) Collect(ctx context.Context, repoPath string, opts signa
 	return signals, nil
 }
 
+// isInsideStringLiteral walks line up to matchStart, tracking whether we are
+// inside a single-quoted, double-quoted, or backtick string literal (respecting
+// backslash escapes).  Returns true if matchStart falls inside a string.
+func isInsideStringLiteral(line string, matchStart int) bool {
+	inSingle, inDouble, inBacktick := false, false, false
+	for i := 0; i < matchStart && i < len(line); i++ {
+		if line[i] == '\\' && i+1 < matchStart {
+			i++ // skip escaped character
+			continue
+		}
+		switch line[i] {
+		case '\'':
+			if !inDouble && !inBacktick {
+				inSingle = !inSingle
+			}
+		case '"':
+			if !inSingle && !inBacktick {
+				inDouble = !inDouble
+			}
+		case '`':
+			if !inSingle && !inDouble {
+				inBacktick = !inBacktick
+			}
+		}
+	}
+	return inSingle || inDouble || inBacktick
+}
+
 // scanFile reads a file line by line and extracts TODO-style signals.
 func scanFile(absPath, relPath string) ([]signal.RawSignal, error) {
 	f, err := FS.Open(absPath)
@@ -235,13 +263,18 @@ func scanFile(absPath, relPath string) ([]signal.RawSignal, error) {
 		lineNo++
 		line := scanner.Text()
 
-		matches := todoPattern.FindStringSubmatch(line)
-		if matches == nil {
+		loc := todoPattern.FindStringSubmatchIndex(line)
+		if loc == nil {
 			continue
 		}
 
-		keyword := strings.ToUpper(matches[1])
-		message := strings.TrimSpace(matches[2])
+		// Skip matches that fall inside string literals (e.g. '.get("//todo@txt")').
+		if isInsideStringLiteral(line, loc[0]) {
+			continue
+		}
+
+		keyword := strings.ToUpper(line[loc[2]:loc[3]])
+		message := strings.TrimSpace(line[loc[4]:loc[5]])
 		// Strip trailing block-comment close if present.
 		message = strings.TrimSuffix(message, "*/")
 		message = strings.TrimSpace(message)
