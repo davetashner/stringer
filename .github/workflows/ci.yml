@@ -517,6 +517,41 @@ jobs:
               print('✓ No stale blockers')
           "
 
+  dco:
+    name: DCO
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+      - name: Check DCO sign-off
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          failed=0
+          while IFS= read -r sha; do
+            # Skip merge commits
+            parents=$(git rev-list --parents -n1 "$sha" | wc -w)
+            if [ "$parents" -gt 2 ]; then
+              continue
+            fi
+            body=$(git log -1 --format=%B "$sha")
+            if ! echo "$body" | grep -qiE '^Signed-off-by: .+ <.+>'; then
+              subject=$(git log -1 --format=%s "$sha")
+              echo "::error::Missing DCO sign-off in commit ${sha:0:8}: $subject"
+              echo "  Add: git commit --amend -s --no-edit"
+              failed=1
+            fi
+          done < <(git rev-list "$base".."$head")
+          if [ "$failed" -eq 1 ]; then
+            echo ""
+            echo "All commits must include a Signed-off-by line."
+            echo "See https://developercertificate.org/ and CONTRIBUTING.md for details."
+            exit 1
+          fi
+          echo "All commits have DCO sign-off."
+
   fuzz:
     name: Fuzz
     runs-on: ubuntu-latest

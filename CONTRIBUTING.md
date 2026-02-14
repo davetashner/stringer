@@ -123,6 +123,37 @@ git push origin v0.x.0
 # GoReleaser builds binaries, publishes GitHub Release, updates Homebrew tap
 ```
 
+## Developer Certificate of Origin (DCO)
+
+All contributions to Stringer must be signed off to certify that you have the right to submit the work under the project's MIT license. This is enforced via the [Developer Certificate of Origin](https://developercertificate.org/).
+
+Add a `Signed-off-by` line to every commit:
+
+```bash
+git commit -s -m "feat: add new collector"
+```
+
+This adds a line like:
+
+```
+Signed-off-by: Your Name <your.email@example.com>
+```
+
+Git uses your `user.name` and `user.email` settings. If you haven't configured them:
+
+```bash
+git config --global user.name "Your Name"
+git config --global user.email "your.email@example.com"
+```
+
+If you forget to sign off, amend the commit:
+
+```bash
+git commit --amend -s --no-edit
+```
+
+The DCO check in CI will fail if any commit in a PR is missing a sign-off.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the [MIT License](./LICENSE).
