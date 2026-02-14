@@ -103,6 +103,26 @@ go test -coverprofile=coverage.out ./...
 go tool cover -func=coverage.out | tail -1
 ```
 
+## Code Review
+
+All pull requests are reviewed by the maintainer before merge. Direct pushes to `main` are blocked by branch protection.
+
+### What reviewers check
+
+- **Correctness**: Does the code do what it claims? Are edge cases handled?
+- **Tests**: Are new features and bug fixes covered by tests? Does coverage remain above 90%?
+- **Security**: No secrets, no command injection, no path traversal, no unsafe input handling
+- **Style**: Follows `gofmt`/`golangci-lint` conventions (CI enforces this automatically)
+- **Scope**: Changes are focused on the stated goal — no unrelated refactors bundled in
+- **Size**: PRs stay under 500 non-test lines when possible (CI warns at 500, fails at 1000)
+- **Documentation**: Exported types and functions have doc comments; AGENTS.md updated if interfaces change
+
+### Requirements to merge
+
+- All CI checks pass (tests, lint, vet, coverage, security scans, DCO sign-off)
+- Maintainer approval
+- Branch is up to date with `main`
+
 ## PR Size Guidelines
 
 - **Under 500 non-test lines:** Normal PR, no special attention needed
