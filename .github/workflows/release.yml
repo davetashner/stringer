@@ -6,14 +6,16 @@ on:
       - "v*"
 
 permissions:
-  contents: write
-  id-token: write  # Required for cosign keyless signing via Sigstore/Fulcio OIDC
-  actions: read     # Required for SLSA provenance workflow path verification
+  contents: read
 
 jobs:
   release:
     name: GoReleaser
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write  # Required for cosign keyless signing via Sigstore/Fulcio OIDC
+      actions: read     # Required for SLSA provenance workflow path verification
     outputs:
       hashes: ${{ steps.hash.outputs.hashes }}
     steps:
@@ -62,6 +64,8 @@ jobs:
   publish:
     needs: [provenance]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Publish release
         env:
