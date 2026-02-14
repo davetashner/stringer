@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package collector defines the Collector interface and a registry for
 // managing available collectors.
 package collector

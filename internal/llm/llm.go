@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package llm provides a provider-agnostic LLM client interface and
 // implementations for use by stringer's analysis features.
 package llm

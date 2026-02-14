@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package signal defines the core domain types for stringer.
 package signal
 

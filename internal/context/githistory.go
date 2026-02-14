@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package context provides CONTEXT.md generation for agent onboarding.
 package context
 

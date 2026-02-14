@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package gitcli provides native git CLI execution for blame operations.
 // It shells out to the system git binary for blame (which uses packfile indexes
 // and runs in milliseconds) while the rest of stringer uses go-git for commit

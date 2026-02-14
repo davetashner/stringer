@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package collectors provides signal extraction modules for stringer.
 package collectors
 

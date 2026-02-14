@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package redact provides utilities to strip sensitive values from strings
 // before they appear in output, logs, or error messages.
 package redact

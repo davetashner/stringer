@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package validate provides JSONL validation against the bd import schema.
 // It checks each line of a JSONL file for required fields, valid types,
 // and correct formats, producing detailed error messages with fix suggestions.

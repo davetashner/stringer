@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package mcpserver implements an MCP (Model Context Protocol) server
 // that exposes stringer's core operations as tools over stdio transport.
 package mcpserver

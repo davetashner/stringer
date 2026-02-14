@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package integration contains end-to-end tests for stringer.
 //
 // These tests build the stringer binary and exercise it against fixture

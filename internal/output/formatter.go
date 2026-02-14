@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package output defines the OutputFormatter interface for writing scan results
 // in various formats.
 package output
