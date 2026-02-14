@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package analysis provides LLM-powered signal clustering and bead generation.
 // It groups related signals by theme, module, or intent, using an LLM provider
 // for semantic understanding, and produces structured beads for backlog import.

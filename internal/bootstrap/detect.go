@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package bootstrap implements the `stringer init` command, which detects
 // repository characteristics and generates a starter configuration.
 package bootstrap

@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package report provides a pluggable section registry for stringer report.
 // Each section consumes metrics from collectors and renders a focused analysis.
 package report

@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package pipeline provides the scan orchestration engine for stringer.
 // It resolves collectors, runs them sequentially, validates their output,
 // and aggregates results into a ScanResult.

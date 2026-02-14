@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package testable provides interfaces for mocking external dependencies
 // such as exec.Command and exec.LookPath in tests.
 package testable

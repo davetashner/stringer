@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package testable provides interfaces for mocking external dependencies
 // such as go-git operations. Production code uses the Real* implementations;
 // tests can inject mock implementations to avoid hitting real git repos.

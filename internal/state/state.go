@@ -1,3 +1,6 @@
+// Copyright 2026 The Stringer Authors
+// SPDX-License-Identifier: MIT
+
 // Package state manages persisted scan state for delta scanning.
 //
 // When --delta is active, stringer saves a record of all signal hashes
