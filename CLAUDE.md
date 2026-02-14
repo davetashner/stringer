@@ -5,6 +5,7 @@
 - **Always use PRs.** Never push directly to `main`. Create a feature branch, commit, push, and open a PR with `gh pr create`.
 - Branch naming: `<type>/<short-description>` (e.g., `feat/todo-collector`, `fix/config-loading`)
 - Commit messages: conventional commits format (`feat:`, `fix:`, `chore:`, `docs:`, `test:`)
+- **DCO sign-off required.** Always use `git commit -s` (or `--signoff`) so every commit includes a `Signed-off-by` line. CI will reject commits without it.
 - Check for existing open PRs with `gh pr list` before creating new ones to avoid duplicates
 - Prefer adding commits to an existing open PR for related work
 
