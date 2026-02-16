@@ -423,6 +423,21 @@ func isTestFile(relPath string) bool {
 			return true
 		}
 	}
+	// PHP: *Test.php (PHPUnit convention), *_test.php, files in tests/ directories
+	if strings.HasSuffix(base, ".php") {
+		name := strings.TrimSuffix(base, ".php")
+		if strings.HasSuffix(name, "Test") || strings.HasSuffix(name, "_test") {
+			return true
+		}
+		// Check if file is under tests/ directory
+		dir := filepath.Dir(relPath)
+		parts := strings.Split(filepath.ToSlash(dir), "/")
+		for _, p := range parts {
+			if p == "tests" {
+				return true
+			}
+		}
+	}
 	return false
 }
 

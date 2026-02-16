@@ -623,3 +623,56 @@ func TestPatterns_CSharpTestSuffixRecognizedAsTests(t *testing.T) {
 		}
 	}
 }
+
+// =============================================================================
+// PHP ecosystem tests
+// =============================================================================
+
+// --- isTestFile: PHP patterns ---
+
+func TestIsTestFile_PHP(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "php_source", path: "src/MyClass.php", want: false},
+		{name: "php_test_suffix", path: "tests/MyClassTest.php", want: true},
+		{name: "php_underscore_test", path: "src/my_class_test.php", want: true},
+		{name: "php_test_dir", path: "tests/Unit/UserTest.php", want: true},
+		{name: "php_test_dir_nested", path: "tests/Feature/Auth/LoginTest.php", want: true},
+		{name: "php_plain_in_tests_dir", path: "tests/bootstrap.php", want: true},
+		{name: "php_controller", path: "app/Http/Controllers/UserController.php", want: false},
+		{name: "php_model", path: "app/Models/User.php", want: false},
+		{name: "php_just_test_name", path: "Test.php", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isTestFile(tt.path)
+			assert.Equal(t, tt.want, got, "isTestFile(%q)", tt.path)
+		})
+	}
+}
+
+// --- Integration test for PHP test file recognition ---
+
+func TestPatterns_PHPTestSuffixRecognizedAsTests(t *testing.T) {
+	dir := t.TempDir()
+
+	testDir := filepath.Join(dir, "tests")
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+
+	content := strings.Repeat("<?php\n// test code\n", 25)
+	require.NoError(t, os.WriteFile(filepath.Join(testDir, "UserTest.php"), []byte(content), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	for _, s := range signals {
+		if s.Kind == "missing-tests" && strings.Contains(s.FilePath, "UserTest.php") {
+			t.Error("*Test.php files should be recognized as test files")
+		}
+	}
+}
