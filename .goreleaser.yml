@@ -67,13 +67,14 @@ sboms:
 
 signs:
   - cmd: cosign
-    artifacts: all
+    signature: "${artifact}.sigstore.json"
+    artifacts: checksum
     output: true
     args:
       - sign-blob
-      - --yes
-      - --output-signature=${signature}
-      - ${artifact}
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
 
 release:
   github:

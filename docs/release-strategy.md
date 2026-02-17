@@ -64,7 +64,7 @@ Pushing a `v*` tag triggers `.github/workflows/release.yml`, a 3-stage pipeline:
 - Verify all expected assets are attached:
   - Platform archives (`.tar.gz`, `.zip`)
   - Checksums (`checksums.txt`)
-  - Cosign signatures (`.sig` files)
+  - Cosign signature bundles (`.sigstore.json` files)
   - SBOMs (`.sbom.json` files)
   - SLSA provenance (`multiple.intoto.jsonl`)
 - Test installation: `brew install davetashner/tap/stringer` (if Homebrew tap is set up)
