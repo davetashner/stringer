@@ -79,6 +79,11 @@ var knownCollectors = map[string]collectorMeta{
 		SignalKinds:  []string{"large-binary", "merge-conflict-marker", "committed-secret", "mixed-line-endings"},
 		ConfigFields: []string{},
 	},
+	"docstale": {
+		Description:  "Detects stale documentation, co-change drift between docs and source, and broken internal links",
+		SignalKinds:  []string{"stale-doc", "doc-code-drift", "broken-doc-link"},
+		ConfigFields: []string{},
+	},
 }
 
 // Common config fields that apply to every collector.
