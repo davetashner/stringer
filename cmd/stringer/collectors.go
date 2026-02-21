@@ -74,6 +74,11 @@ var knownCollectors = map[string]collectorMeta{
 		SignalKinds:  []string{"unused-function", "unused-type"},
 		ConfigFields: []string{},
 	},
+	"githygiene": {
+		Description:  "Detects large binaries, merge conflict markers, committed secrets, and mixed line endings",
+		SignalKinds:  []string{"large-binary", "merge-conflict-marker", "committed-secret", "mixed-line-endings"},
+		ConfigFields: []string{},
+	},
 }
 
 // Common config fields that apply to every collector.
