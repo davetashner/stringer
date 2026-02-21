@@ -1086,6 +1086,19 @@ func TestIsDemoPath(t *testing.T) {
 		{name: "filename_example_no_match", relPath: "example.go", want: false},
 		{name: "filename_examples_no_match", relPath: "examples.go", want: false},
 		{name: "sub_example_no_match", relPath: "pkg/example.go", want: false},
+		// Non-source directories (docs, tooling, etc.)
+		{name: "docs_nested", relPath: "docs/design.md", want: true},
+		{name: "doc_nested", relPath: "doc/api/overview.go", want: true},
+		{name: "scripts_nested", relPath: "scripts/deploy.py", want: true},
+		{name: "tools_nested", relPath: "tools/gen/main.go", want: true},
+		{name: "build_nested", relPath: "build/output/main.go", want: true},
+		{name: "deploy_nested", relPath: "deploy/k8s/app.yaml", want: true},
+		{name: "extras_nested", relPath: "extras/playground.go", want: true},
+		{name: "packaging_nested", relPath: "packaging/deb/control", want: true},
+		{name: "contrib_nested", relPath: "contrib/plugin/main.go", want: true},
+		{name: "misc_nested", relPath: "misc/notes.txt", want: true},
+		{name: "dotgithub_nested", relPath: ".github/workflows/ci.yml", want: true},
+		{name: "dotci_nested", relPath: ".ci/pipeline.yml", want: true},
 	}
 
 	for _, tt := range tests {

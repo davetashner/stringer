@@ -264,8 +264,9 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 			return nil, err
 		}
 
-		// Build metrics for every directory with source files.
-		if stats.sourceFiles > 0 {
+		// Build metrics for every directory with source files,
+		// excluding non-source/demo directories.
+		if stats.sourceFiles > 0 && (opts.IncludeDemoPaths || !isDemoPath(dir)) {
 			ratio := float64(stats.testFiles) / float64(stats.sourceFiles)
 			dirRatios = append(dirRatios, DirectoryTestRatio{
 				Path:        dir,

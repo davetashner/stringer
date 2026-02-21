@@ -50,7 +50,7 @@ var knownCollectors = map[string]collectorMeta{
 		ConfigFields: []string{"include_prs", "comment_depth", "max_issues_per_collector", "include_closed", "history_depth"},
 	},
 	"lotteryrisk": {
-		Description:  "Analyzes git blame and commit history to find single-author risk areas",
+		Description:  "Analyzes git blame and commit history to find single-author risk areas (accuracy improves with full git history; shallow clones may underreport)",
 		SignalKinds:  []string{"low-lottery-risk", "review-concentration"},
 		ConfigFields: []string{"lottery_risk_threshold", "directory_depth", "max_blame_files"},
 	},

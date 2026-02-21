@@ -416,6 +416,7 @@ func walkCommitsForOwnership(ctx context.Context, gitDir string, ownership map[s
 			strings.Contains(errMsg, "bad default revision") ||
 			strings.Contains(errMsg, "object not found") ||
 			strings.Contains(errMsg, "exit status 128") {
+			slog.Warn("lottery risk: limited git history detected, ownership data may be incomplete (shallow clone?)", "error", err)
 			return nil
 		}
 		return fmt.Errorf("git log --numstat: %w", err)
