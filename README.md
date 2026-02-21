@@ -14,7 +14,7 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11942/badge?v=2)](https://www.bestpractices.dev/projects/11942)
 
-> **v1.0.1.** Seven collectors with multi-ecosystem vulnerability and dependency health scanning, four output formats, report command, parallel pipeline with signal deduplication, delta scanning, monorepo support (6 workspace types), LLM-powered clustering and priority inference, MCP server for agent integration, interactive `stringer init` wizard, and CLI config management.
+> **v1.2.0.** Seven collectors with multi-ecosystem vulnerability and dependency health scanning, four output formats, report command, parallel pipeline with signal deduplication, delta scanning, monorepo support (6 workspace types), LLM-powered clustering and priority inference, MCP server for agent integration, interactive `stringer init` wizard, and CLI config management.
 
 **Codebase archaeology for developers and AI agents.** Scan any repo for hidden tech debt — TODOs, vulnerabilities, bus-factor risk, stale branches, unhealthy dependencies — and get structured results you can act on immediately.
 
@@ -57,7 +57,7 @@ Stringer extracts these signals automatically, scores them by confidence, and ou
 
 - **TODO collector** (`todos`) — Scans source files for `TODO`, `FIXME`, `HACK`, `XXX`, `BUG`, and `OPTIMIZE` comments. Enriched with git blame author and timestamp. Confidence scoring with age-based boosts.
 - **Git log collector** (`gitlog`) — Detects reverts, high-churn files, and stale branches from git history.
-- **Patterns collector** (`patterns`) — Flags large files and modules with low test coverage ratios.
+- **Patterns collector** (`patterns`) — Flags large files and modules with low test coverage ratios. Test detection supports Go, JavaScript/TypeScript, Python, Ruby, Java, Kotlin, Rust, C#, PHP, and Swift.
 - **Lottery risk analyzer** (`lotteryrisk`) — Flags directories with low lottery risk (single-author ownership risk) using git blame and commit history with recency weighting.
 - **GitHub collector** (`github`) — Imports open issues, pull requests, and actionable review comments from GitHub. With `--include-closed`, also generates pre-closed signals from merged PRs and closed issues with architectural module context. Requires `GITHUB_TOKEN` env var.
 - **Dependency health collector** (`dephealth`) — Detects archived, deprecated, and stale dependencies across six ecosystems: Go (`go.mod`), npm (`package.json`), Rust (`Cargo.toml`), Java/Maven (`pom.xml`), C#/.NET (`*.csproj`), and Python (`requirements.txt`/`pyproject.toml`).
@@ -519,7 +519,7 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 
 Planned for future releases:
 
-- **Additional language support** — Expand test detection heuristics to more ecosystems (PHP, Swift, Scala, Elixir)
+- **Additional language support** — Expand test detection heuristics to more ecosystems (Scala, Elixir)
 - **Stable signal IDs** — Content-based hashing that survives line moves within a file
 
 ## Design Principles
