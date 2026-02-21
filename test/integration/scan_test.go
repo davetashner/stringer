@@ -342,7 +342,7 @@ func TestScan_BdImportRoundTrip(t *testing.T) {
 
 	// Step 3: Init a temp bd repo and import.
 	bdDir := t.TempDir()
-	initCmd := exec.Command(bdPath, "init", "--no-db", "--prefix", "str") //nolint:gosec // test helper
+	initCmd := exec.Command(bdPath, "init", "--prefix", "str", "--skip-hooks", "-q") //nolint:gosec // test helper
 	initCmd.Dir = bdDir
 	initOut, err := initCmd.CombinedOutput()
 	require.NoError(t, err, "bd init failed:\n%s", initOut)
