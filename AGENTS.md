@@ -102,7 +102,8 @@ stringer/
 │   │   ├── churn.go            # Code churn hotspots section
 │   │   ├── todoage.go          # TODO age distribution section
 │   │   ├── coverage.go         # Test coverage gaps section
-│   │   └── recommendations.go  # Actionable recommendations section
+│   │   ├── recommendations.go  # Actionable recommendations section
+│   │   └── modulesummary.go    # Module health summary section
 │   ├── signal/             # Domain types
 │   │   └── signal.go           # RawSignal, ScanConfig, ScanResult, CollectorOpts
 │   ├── state/              # Delta scan state persistence

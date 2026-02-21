@@ -36,6 +36,7 @@ func restoreSections() {
 	Register(&recommendationsSection{})
 	Register(&gitHygieneSection{})
 	Register(&trendsSection{})
+	Register(&moduleSummarySection{})
 }
 
 func TestRegister_And_Get(t *testing.T) {
