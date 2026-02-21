@@ -77,6 +77,12 @@ func Merge(fileCfg *Config, cliCfg signal.ScanConfig) signal.ScanConfig {
 					co.Timeout = d
 				}
 			}
+			if co.MinFunctionLines == 0 && fc.MinFunctionLines > 0 {
+				co.MinFunctionLines = fc.MinFunctionLines
+			}
+			if co.MinComplexityScore == 0 && fc.MinComplexityScore > 0 {
+				co.MinComplexityScore = fc.MinComplexityScore
+			}
 			result.CollectorOpts[name] = co
 		}
 	}

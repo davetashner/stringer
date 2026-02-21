@@ -64,6 +64,11 @@ var knownCollectors = map[string]collectorMeta{
 		SignalKinds:  []string{"deprecated-dependency", "yanked-dependency", "archived-dependency", "stale-dependency"},
 		ConfigFields: []string{},
 	},
+	"complexity": {
+		Description:  "Detects complex functions using composite scoring (lines/50 + branches)",
+		SignalKinds:  []string{"complex-function"},
+		ConfigFields: []string{"min_function_lines", "min_complexity_score"},
+	},
 }
 
 // Common config fields that apply to every collector.
