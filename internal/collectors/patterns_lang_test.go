@@ -762,3 +762,146 @@ func TestPatterns_PHPCounterpartSuppressesMissingTests(t *testing.T) {
 		}
 	}
 }
+
+// =============================================================================
+// Swift ecosystem tests
+// =============================================================================
+
+// --- isTestFile: Swift patterns ---
+
+func TestIsTestFile_Swift(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "swift_source", path: "Sources/MyApp/ViewController.swift", want: false},
+		{name: "swift_tests_suffix", path: "Tests/MyAppTests/ViewControllerTests.swift", want: true},
+		{name: "swift_test_suffix", path: "Tests/MyAppTests/ViewControllerTest.swift", want: true},
+		{name: "swift_in_tests_dir", path: "Tests/Helpers/TestHelper.swift", want: true},
+		{name: "swift_in_tests_subdir", path: "Tests/MyAppTests/Models/UserTests.swift", want: true},
+		{name: "swift_plain_source", path: "Sources/MyApp/Models/User.swift", want: false},
+		{name: "swift_main", path: "Sources/MyApp/main.swift", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isTestFile(tt.path)
+			assert.Equal(t, tt.want, got, "isTestFile(%q)", tt.path)
+		})
+	}
+}
+
+// --- hasTestCounterpart: Swift patterns ---
+
+func TestHasTestCounterpart_SwiftSameDir(t *testing.T) {
+	dir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Parser.swift"), []byte("// source\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "ParserTests.swift"), []byte("// test\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(
+		filepath.Join(dir, "Parser.swift"),
+		"Parser.swift",
+		dir,
+		nil,
+	), "Swift file with ParserTests.swift in same dir should have test counterpart")
+}
+
+func TestHasTestCounterpart_SwiftTestSuffix(t *testing.T) {
+	dir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Parser.swift"), []byte("// source\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "ParserTest.swift"), []byte("// test\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(
+		filepath.Join(dir, "Parser.swift"),
+		"Parser.swift",
+		dir,
+		nil,
+	), "Swift file with ParserTest.swift in same dir should have test counterpart")
+}
+
+func TestHasTestCounterpart_SwiftNoTests(t *testing.T) {
+	dir := t.TempDir()
+
+	srcDir := filepath.Join(dir, "Sources", "MyApp")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "Parser.swift"), []byte("// source\n"), 0o600))
+
+	assert.False(t, hasTestCounterpart(
+		filepath.Join(srcDir, "Parser.swift"),
+		"Sources/MyApp/Parser.swift",
+		dir,
+		nil,
+	), "Swift file without test counterpart should return false")
+}
+
+// --- Collect integration: Swift ---
+
+func TestPatterns_SwiftTestFilesRecognizedAsTests(t *testing.T) {
+	dir := t.TempDir()
+
+	testDir := filepath.Join(dir, "Tests", "MyAppTests")
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+
+	content := strings.Repeat("// test code\n", 25)
+	require.NoError(t, os.WriteFile(filepath.Join(testDir, "ParserTests.swift"), []byte(content), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	for _, s := range signals {
+		if s.Kind == "missing-tests" && strings.Contains(s.FilePath, "ParserTests.swift") {
+			t.Error("*Tests.swift files should be recognized as test files")
+		}
+	}
+}
+
+func TestPatterns_SwiftMissingTestsDetected(t *testing.T) {
+	dir := t.TempDir()
+
+	srcDir := filepath.Join(dir, "Sources", "MyApp")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+
+	content := strings.Repeat("import Foundation\n", 25)
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "ViewController.swift"), []byte(content), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	found := false
+	for _, s := range signals {
+		if s.Kind == "missing-tests" && strings.Contains(s.FilePath, "ViewController.swift") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Swift source file without test counterpart should produce missing-tests signal")
+}
+
+func TestPatterns_SwiftCounterpartSuppressesMissingTests(t *testing.T) {
+	dir := t.TempDir()
+
+	srcDir := filepath.Join(dir, "Sources", "MyApp")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+	content := strings.Repeat("import Foundation\n", 25)
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "Parser.swift"), []byte(content), 0o600))
+
+	// Test counterpart in SPM Tests/ tree (Tests/MyAppTests/ParserTests.swift).
+	testDir := filepath.Join(dir, "Tests", "MyAppTests")
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(testDir, "ParserTests.swift"), []byte("// test\n"), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	for _, s := range signals {
+		if s.Kind == "missing-tests" && strings.Contains(s.FilePath, "Parser.swift") && !strings.Contains(s.FilePath, "Tests") {
+			t.Error("Swift file with ParserTests.swift counterpart should not produce missing-tests signal")
+		}
+	}
+}
