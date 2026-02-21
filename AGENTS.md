@@ -45,6 +45,7 @@ stringer/
 │   │   ├── github.go           # GitHub issues, PRs, and review comments
 │   │   ├── dephealth.go        # Dependency health (archived, stale, deprecated)
 │   │   ├── vuln*.go            # Vuln scanner: core (OSV.dev), ecosystem parsers
+│   │   ├── docstale.go         # Doc staleness: stale docs, co-change drift, broken links
 │   │   └── duration.go         # Duration parsing helpers
 │   ├── analysis/           # LLM-powered analysis
 │   │   ├── cluster.go          # Signal clustering via LLM
