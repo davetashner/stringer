@@ -86,6 +86,19 @@ var defaultDemoPatterns = []string{
 	"samples/**",
 	"sample/**",
 	"_examples/**",
+	// Non-source directories where tests are not expected.
+	"docs/**",
+	"doc/**",
+	"extras/**",
+	"packaging/**",
+	"scripts/**",
+	"tools/**",
+	"contrib/**",
+	"misc/**",
+	"build/**",
+	"deploy/**",
+	".github/**",
+	".ci/**",
 }
 
 // isDemoPath returns true if relPath falls under a demo/example/tutorial directory.
