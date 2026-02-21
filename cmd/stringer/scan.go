@@ -178,6 +178,11 @@ func runScan(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// 10. Save scan history (best-effort).
+	if err := saveHistory(absPath, sc.result, sc.workspaces); err != nil {
+		slog.Warn("failed to save scan history", "error", err)
+	}
+
 	if exitCode != ExitOK {
 		return exitError(exitCode, "")
 	}

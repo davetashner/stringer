@@ -66,6 +66,18 @@ func SectionTitle(title string) string {
 	return colorBold.Sprint(title)
 }
 
+// ColorDirection colors trend direction labels.
+func ColorDirection(val string) string {
+	switch val {
+	case "improving":
+		return colorGreen.Sprint(val)
+	case "degrading":
+		return colorRed.Sprint(val)
+	default:
+		return val
+	}
+}
+
 // colorCount colors a count: 0 is green, >0 is yellow.
 func colorCount(n int) string {
 	s := fmt.Sprintf("%d", n)
