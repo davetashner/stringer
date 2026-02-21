@@ -177,7 +177,7 @@ func TestHistoryFile_JSONFormat(t *testing.T) {
 
 	require.NoError(t, SaveHistory(dir, h))
 
-	data, err := os.ReadFile(filepath.Join(dir, ".stringer", "scan-history.json"))
+	data, err := os.ReadFile(filepath.Join(dir, ".stringer", "scan-history.json")) //nolint:gosec // test file with known safe path
 	require.NoError(t, err)
 
 	// Verify it's valid pretty-printed JSON.
