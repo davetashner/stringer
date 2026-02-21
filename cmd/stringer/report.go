@@ -204,7 +204,10 @@ func runReport(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 8. Render report.
+	// 4. Load scan history for trend section.
+	loadAndInjectHistory(absPath, result)
+
+	// 5. Render report.
 
 	// Directory formatters write to a directory instead of a stream.
 	if reportFormat == "html-dir" {
@@ -250,6 +253,11 @@ func runReport(cmd *cobra.Command, args []string) error {
 		if err := renderReport(result, absPath, collectorNames, sections, w); err != nil {
 			return fmt.Errorf("stringer: rendering failed (%v)", err)
 		}
+	}
+
+	// 6. Save scan history (best-effort).
+	if err := saveHistory(absPath, result, workspaces); err != nil {
+		slog.Warn("failed to save scan history", "error", err)
 	}
 
 	slog.Info("report complete", "signals", len(result.Signals), "duration", result.Duration)

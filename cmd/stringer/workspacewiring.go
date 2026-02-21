@@ -143,3 +143,65 @@ func saveDeltaState(absPath string, collectorNames []string, allSignals []signal
 	}
 	return nil
 }
+
+// saveHistory loads existing scan history, appends a new entry from the result,
+// and saves it back. For monorepo scans, history is saved per-workspace.
+func saveHistory(absPath string, result *signal.ScanResult, workspaces []workspaceEntry) error {
+	hasWorkspaces := false
+	for _, ws := range workspaces {
+		if ws.Name != "" {
+			hasWorkspaces = true
+			break
+		}
+	}
+
+	if !hasWorkspaces {
+		return saveHistoryForWorkspace(absPath, "", result)
+	}
+
+	for _, ws := range workspaces {
+		wsName := ws.Name
+		if wsName == "" {
+			wsName = "_root"
+		}
+		if err := saveHistoryForWorkspace(absPath, wsName, result); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// saveHistoryForWorkspace saves a single history entry for a workspace.
+func saveHistoryForWorkspace(absPath, workspace string, result *signal.ScanResult) error {
+	h, err := state.LoadHistoryWorkspace(absPath, workspace)
+	if err != nil {
+		slog.Warn("failed to load scan history, starting fresh", "error", err)
+		h = nil
+	}
+
+	entry := state.BuildHistoryEntry(absPath, result)
+	h = state.AppendEntry(h, entry)
+
+	if err := state.SaveHistoryWorkspace(absPath, workspace, h); err != nil {
+		return err
+	}
+	slog.Info("scan history saved", "entries", len(h.Entries))
+	return nil
+}
+
+// loadAndInjectHistory loads scan history and injects it into result.Metrics
+// so that report sections can access it via the standard metrics pattern.
+func loadAndInjectHistory(absPath string, result *signal.ScanResult) {
+	h, err := state.LoadHistory(absPath)
+	if err != nil {
+		slog.Warn("failed to load scan history", "error", err)
+		return
+	}
+	if h == nil {
+		return
+	}
+	if result.Metrics == nil {
+		result.Metrics = make(map[string]any)
+	}
+	result.Metrics["_history"] = h
+}

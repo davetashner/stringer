@@ -31,6 +31,11 @@ func restoreSections() {
 	Register(&churnSection{})
 	Register(&todoAgeSection{})
 	Register(&coverageSection{})
+	Register(&complexitySection{})
+	Register(&hotspotsSection{})
+	Register(&recommendationsSection{})
+	Register(&gitHygieneSection{})
+	Register(&trendsSection{})
 }
 
 func TestRegister_And_Get(t *testing.T) {
