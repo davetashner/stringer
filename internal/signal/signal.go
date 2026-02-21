@@ -95,6 +95,14 @@ type CollectorOpts struct {
 	// dependency health checks (e.g., "2y", "18m"). If empty, the default
 	// (2 years) is used.
 	StalenessThreshold string
+
+	// MinFunctionLines is the minimum function body lines to analyze for
+	// complexity. Functions shorter than this are skipped. 0 uses default (5).
+	MinFunctionLines int
+
+	// MinComplexityScore is the minimum composite complexity score to emit a
+	// signal. 0 uses default (6.0).
+	MinComplexityScore float64
 }
 
 // ScanConfig holds the overall configuration for a scan operation.

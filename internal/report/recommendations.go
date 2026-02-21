@@ -48,6 +48,8 @@ func (s *recommendationsSection) Analyze(result *signal.ScanResult) error {
 	s.analyzeChurn(result)
 	s.analyzeTodos(result)
 	s.analyzeCoverage(result)
+	s.analyzeComplexity(result)
+	s.analyzeHotspots(result)
 
 	// Sort: high > medium > low.
 	sort.SliceStable(s.recs, func(i, j int) bool {
@@ -189,6 +191,68 @@ func (s *recommendationsSection) Render(w io.Writer) error {
 
 	_, _ = fmt.Fprintf(w, "\n")
 	return nil
+}
+
+func (s *recommendationsSection) analyzeComplexity(result *signal.ScanResult) {
+	raw, ok := result.Metrics["complexity"]
+	if !ok {
+		return
+	}
+	m, ok := raw.(*collectors.ComplexityMetrics)
+	if !ok || m == nil {
+		return
+	}
+
+	highCount := 0
+	for _, fc := range m.Functions {
+		if fc.Score >= 15 {
+			highCount++
+		}
+	}
+
+	if highCount > 0 {
+		s.recs = append(s.recs, Recommendation{
+			Severity: SeverityMedium,
+			Message:  fmt.Sprintf("%d function(s) have very high complexity (score >= 15). Consider breaking them into smaller functions.", highCount),
+		})
+	}
+}
+
+func (s *recommendationsSection) analyzeHotspots(result *signal.ScanResult) {
+	// Check if both complexity and gitlog metrics are available.
+	rawC, okC := result.Metrics["complexity"]
+	rawG, okG := result.Metrics["gitlog"]
+	if !okC || !okG {
+		return
+	}
+
+	cm, okCM := rawC.(*collectors.ComplexityMetrics)
+	gm, okGM := rawG.(*collectors.GitlogMetrics)
+	if !okCM || cm == nil || !okGM || gm == nil {
+		return
+	}
+
+	// Build churn lookup.
+	churnMap := make(map[string]int, len(gm.FileChurns))
+	for _, fc := range gm.FileChurns {
+		churnMap[fc.Path] = fc.ChangeCount
+	}
+
+	hotspotCount := 0
+	for _, fc := range cm.Functions {
+		if fc.Score >= 6 {
+			if changes, ok := churnMap[fc.FilePath]; ok && changes >= 5 {
+				hotspotCount++
+			}
+		}
+	}
+
+	if hotspotCount > 0 {
+		s.recs = append(s.recs, Recommendation{
+			Severity: SeverityHigh,
+			Message:  fmt.Sprintf("%d toxic hotspot(s) found (complex functions in high-churn files). These are the highest-value refactoring targets.", hotspotCount),
+		})
+	}
 }
 
 func colorSeverity(severity string) string {

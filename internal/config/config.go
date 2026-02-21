@@ -55,6 +55,10 @@ type CollectorConfig struct {
 
 	// Timeout is the per-collector timeout (e.g. "60s", "2m").
 	Timeout string `yaml:"timeout,omitempty"`
+
+	// Complexity collector settings.
+	MinFunctionLines   int     `yaml:"min_function_lines,omitempty"`
+	MinComplexityScore float64 `yaml:"min_complexity_score,omitempty"`
 }
 
 // FileName is the expected config file name in a repository root.
