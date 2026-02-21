@@ -40,7 +40,7 @@ stringer/
 │   ├── collectors/         # Signal extraction modules (one file per collector)
 │   │   ├── todos.go            # TODO/FIXME/HACK/XXX/BUG/OPTIMIZE scanner
 │   │   ├── gitlog.go           # Reverts, high-churn files, stale branches
-│   │   ├── patterns.go         # Large files, missing tests, low test coverage ratios
+│   │   ├── patterns.go         # Large files, missing tests, low test coverage ratios (Go, JS/TS, Python, Ruby, Java, Kotlin, Rust, C#, PHP, Swift)
 │   │   ├── lotteryrisk*.go     # Lottery risk: core, ownership math, review analysis
 │   │   ├── github.go           # GitHub issues, PRs, and review comments
 │   │   ├── dephealth.go        # Dependency health (archived, stale, deprecated)
