@@ -437,6 +437,20 @@ func isTestFile(relPath string) bool {
 			}
 		}
 	}
+	// Swift: *Tests.swift, *Test.swift (XCTest convention), files in Tests/ directories (SPM convention)
+	if strings.HasSuffix(base, ".swift") {
+		name := strings.TrimSuffix(base, ".swift")
+		if strings.HasSuffix(name, "Tests") || strings.HasSuffix(name, "Test") {
+			return true
+		}
+		dir := filepath.Dir(relPath)
+		parts := strings.Split(filepath.ToSlash(dir), "/")
+		for _, p := range parts {
+			if p == "Tests" {
+				return true
+			}
+		}
+	}
 	return false
 }
 
@@ -549,6 +563,34 @@ func hasTestCounterpart(absPath, relPath, repoPath string, testRoots []string) b
 			nameWithoutExt+"Test.php",
 			nameWithoutExt+"_test.php",
 		)
+	case ".swift":
+		// Swift: Foo.swift → FooTests.swift, FooTest.swift
+		candidates = append(candidates,
+			nameWithoutExt+"Tests.swift",
+			nameWithoutExt+"Test.swift",
+		)
+
+		// SPM convention: Tests/ directory at repo root (capital T).
+		spmTestsDir := filepath.Join(repoPath, "Tests")
+		for _, testName := range candidates {
+			// Direct: Tests/FooTests.swift
+			if _, err := FS.Stat(filepath.Join(spmTestsDir, testName)); err == nil {
+				return true
+			}
+		}
+		// Also search subdirectories of Tests/ (e.g., Tests/MyAppTests/FooTests.swift).
+		entries, readErr := os.ReadDir(spmTestsDir)
+		if readErr == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					for _, testName := range candidates {
+						if _, err := FS.Stat(filepath.Join(spmTestsDir, entry.Name(), testName)); err == nil {
+							return true
+						}
+					}
+				}
+			}
+		}
 	default:
 		return false
 	}
