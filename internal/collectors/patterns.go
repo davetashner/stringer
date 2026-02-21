@@ -63,6 +63,8 @@ var sourceExtensions = map[string]bool{
 	".kt":    true,
 	".scala": true,
 	".php":   true,
+	".ex":    true,
+	".exs":   true,
 }
 
 func init() {
@@ -438,6 +440,16 @@ func isTestFile(relPath string) bool {
 			}
 		}
 	}
+	// Scala: *Test.scala, *Tests.scala, *Spec.scala, files under src/test/scala/
+	for _, suffix := range []string{"Test.scala", "Tests.scala", "Spec.scala", "Suite.scala"} {
+		if strings.HasSuffix(base, suffix) && len(base) > len(suffix) {
+			return true
+		}
+	}
+	// Elixir: *_test.exs
+	if strings.HasSuffix(base, "_test.exs") {
+		return true
+	}
 	// Swift: *Tests.swift, *Test.swift (XCTest convention), files in Tests/ directories (SPM convention)
 	if strings.HasSuffix(base, ".swift") {
 		name := strings.TrimSuffix(base, ".swift")
@@ -556,6 +568,33 @@ func hasTestCounterpart(absPath, relPath, repoPath string, testRoots []string) b
 						return true
 					}
 				}
+			}
+		}
+	case ".scala":
+		// Scala: Foo.scala → FooTest.scala, FooSpec.scala, FooSuite.scala
+		candidates = append(candidates,
+			nameWithoutExt+"Test.scala",
+			nameWithoutExt+"Tests.scala",
+			nameWithoutExt+"Spec.scala",
+			nameWithoutExt+"Suite.scala",
+		)
+	case ".ex":
+		// Elixir: foo.ex → foo_test.exs (test/ mirrors lib/)
+		candidates = append(candidates, nameWithoutExt+"_test.exs")
+
+		// Elixir convention: lib/foo.ex → test/foo_test.exs
+		testDir := filepath.Join(repoPath, "test")
+		relDir := filepath.Dir(relPath)
+		// Strip leading "lib/" if present
+		trimmed := strings.TrimPrefix(filepath.ToSlash(relDir), "lib/")
+		trimmed = strings.TrimPrefix(trimmed, "lib")
+		if trimmed == "" {
+			if _, err := FS.Stat(filepath.Join(testDir, nameWithoutExt+"_test.exs")); err == nil {
+				return true
+			}
+		} else {
+			if _, err := FS.Stat(filepath.Join(testDir, filepath.FromSlash(trimmed), nameWithoutExt+"_test.exs")); err == nil {
+				return true
 			}
 		}
 	case ".php":

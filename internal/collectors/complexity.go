@@ -117,6 +117,28 @@ var langSpecs = []langSpec{
 		funcStart:  regexp.MustCompile(`^\s*def\s+(\w+[?!]?)`),
 		endMode:    endKeyword,
 	},
+	{
+		extensions: []string{".php"},
+		funcStart: regexp.MustCompile(
+			`^\s*(?:(?:public|private|protected|static|final|abstract)\s+)*function\s+(\w+)\s*\(`),
+		endMode: endBraceDepth,
+	},
+	{
+		extensions: []string{".swift"},
+		funcStart: regexp.MustCompile(
+			`^\s*(?:(?:public|private|fileprivate|internal|open|static|class|override|@objc|mutating)\s+)*func\s+(\w+)`),
+		endMode: endBraceDepth,
+	},
+	{
+		extensions: []string{".scala"},
+		funcStart:  regexp.MustCompile(`^\s*(?:(?:private|protected|override|final|abstract)\s+)*def\s+(\w+)`),
+		endMode:    endBraceDepth,
+	},
+	{
+		extensions: []string{".ex", ".exs"},
+		funcStart:  regexp.MustCompile(`^\s*(?:defp?|defmacrop?)\s+(\w+[?!]?)`),
+		endMode:    endKeyword,
+	},
 }
 
 // extToSpec maps file extensions to their language spec for fast lookup.

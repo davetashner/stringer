@@ -120,6 +120,74 @@ func TestMatchFuncStart_Ruby(t *testing.T) {
 	}
 }
 
+func TestMatchFuncStart_PHP(t *testing.T) {
+	spec := extToSpec[".php"]
+	tests := []struct {
+		line string
+		want string
+	}{
+		{"  public function handle($request) {", "handle"},
+		{"  private static function getInstance() {", "getInstance"},
+		{"  function helper() {", "helper"},
+		{"  abstract protected function doWork();", "doWork"},
+	}
+	for _, tt := range tests {
+		name, _ := matchFuncStart(tt.line, spec, 1)
+		assert.Equal(t, tt.want, name, "line: %s", tt.line)
+	}
+}
+
+func TestMatchFuncStart_Swift(t *testing.T) {
+	spec := extToSpec[".swift"]
+	tests := []struct {
+		line string
+		want string
+	}{
+		{"  func viewDidLoad() {", "viewDidLoad"},
+		{"  public static func shared() -> Self {", "shared"},
+		{"  private func handleTap(_ sender: UIButton) {", "handleTap"},
+		{"  override func prepare(for segue: UIStoryboardSegue) {", "prepare"},
+		{"  mutating func toggle() {", "toggle"},
+	}
+	for _, tt := range tests {
+		name, _ := matchFuncStart(tt.line, spec, 1)
+		assert.Equal(t, tt.want, name, "line: %s", tt.line)
+	}
+}
+
+func TestMatchFuncStart_Scala(t *testing.T) {
+	spec := extToSpec[".scala"]
+	tests := []struct {
+		line string
+		want string
+	}{
+		{"  def process(data: List[Int]): List[Int] = {", "process"},
+		{"  private def helper(): Unit = {", "helper"},
+		{"  override def toString: String = {", "toString"},
+	}
+	for _, tt := range tests {
+		name, _ := matchFuncStart(tt.line, spec, 1)
+		assert.Equal(t, tt.want, name, "line: %s", tt.line)
+	}
+}
+
+func TestMatchFuncStart_Elixir(t *testing.T) {
+	spec := extToSpec[".ex"]
+	tests := []struct {
+		line string
+		want string
+	}{
+		{"  def start_link(opts) do", "start_link"},
+		{"  defp do_work(state) do", "do_work"},
+		{"  def valid?(term) do", "valid?"},
+		{"  defmacro is_admin(user) do", "is_admin"},
+	}
+	for _, tt := range tests {
+		name, _ := matchFuncStart(tt.line, spec, 1)
+		assert.Equal(t, tt.want, name, "line: %s", tt.line)
+	}
+}
+
 func TestExtractBraceBody(t *testing.T) {
 	lines := strings.Split(`func foo() {
 	if x > 0 {
@@ -664,4 +732,175 @@ func TestExtractFunctions_JavaMethod(t *testing.T) {
 	require.NotEmpty(t, funcs)
 	assert.Equal(t, "process", funcs[0].FuncName)
 	assert.True(t, funcs[0].Branches > 0)
+}
+
+func TestComplexityCollector_PHP(t *testing.T) {
+	dir := t.TempDir()
+
+	phpCode := `<?php
+public function processItems($items) {
+    $result = [];
+    foreach ($items as $item) {
+        if ($item > 0) {
+            $result[] = $item;
+        } elseif ($item < -10) {
+            $result[] = -$item;
+        }
+        switch ($item) {
+            case 0:
+                break;
+            case 1:
+                $result[] = $item * 2;
+                break;
+        }
+        while (count($result) > 100) {
+            array_pop($result);
+        }
+    }
+    return $result;
+}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.php"), []byte(phpCode), 0o600))
+
+	c := &ComplexityCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		MinComplexityScore: 3.0,
+	})
+	require.NoError(t, err)
+
+	complexSigs := filterByKind(signals, "complex-function")
+	found := false
+	for _, sig := range complexSigs {
+		if strings.Contains(sig.Title, "processItems") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected processItems function signal from PHP file")
+}
+
+func TestComplexityCollector_Swift(t *testing.T) {
+	dir := t.TempDir()
+
+	swiftCode := `func processItems(_ items: [Int]) -> [Int] {
+    var result: [Int] = []
+    for item in items {
+        if item > 0 {
+            result.append(item)
+        } else if item < -10 {
+            result.append(-item)
+        }
+        switch item {
+        case 0:
+            break
+        case 1...10:
+            result.append(item * 2)
+        default:
+            break
+        }
+        while result.count > 100 {
+            result.removeLast()
+        }
+    }
+    return result
+}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.swift"), []byte(swiftCode), 0o600))
+
+	c := &ComplexityCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		MinComplexityScore: 3.0,
+	})
+	require.NoError(t, err)
+
+	complexSigs := filterByKind(signals, "complex-function")
+	found := false
+	for _, sig := range complexSigs {
+		if strings.Contains(sig.Title, "processItems") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected processItems function signal from Swift file")
+}
+
+func TestComplexityCollector_Scala(t *testing.T) {
+	dir := t.TempDir()
+
+	scalaCode := `def processItems(items: List[Int]): List[Int] = {
+    var result = List.empty[Int]
+    for (item <- items) {
+      if (item > 0) {
+        result = result :+ item
+      } else if (item < -10) {
+        result = result :+ (-item)
+      }
+      item match {
+        case 0 =>
+        case x if x > 0 && x < 10 =>
+          result = result :+ (item * 2)
+      }
+      while (result.length > 100) {
+        result = result.init
+      }
+    }
+    result
+  }
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "App.scala"), []byte(scalaCode), 0o600))
+
+	c := &ComplexityCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		MinComplexityScore: 3.0,
+	})
+	require.NoError(t, err)
+
+	complexSigs := filterByKind(signals, "complex-function")
+	found := false
+	for _, sig := range complexSigs {
+		if strings.Contains(sig.Title, "processItems") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected processItems function signal from Scala file")
+}
+
+func TestComplexityCollector_Elixir(t *testing.T) {
+	dir := t.TempDir()
+
+	exCode := `def process(items) do
+    result = []
+    for item <- items do
+      if item > 0 do
+        result = [item | result]
+      end
+      unless item == 0 do
+        result = [-item | result]
+      end
+      case item do
+        0 -> :skip
+        x when x > 0 -> result = [x * 2 | result]
+      end
+    end
+    result
+  end
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.ex"), []byte(exCode), 0o600))
+
+	c := &ComplexityCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		MinComplexityScore: 3.0,
+	})
+	require.NoError(t, err)
+
+	complexSigs := filterByKind(signals, "complex-function")
+	found := false
+	for _, sig := range complexSigs {
+		if strings.Contains(sig.Title, "process") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected process function signal from Elixir file")
 }

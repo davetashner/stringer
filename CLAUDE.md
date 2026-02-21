@@ -38,9 +38,8 @@ golangci-lint run ./...
 ```
 
 ## Current Focus
-1. **Next feature epic**: C7 Vulnerability Scanner (`stringer-uf1`)
+1. **Active epic**: L1 Language Support Expansion (`stringer-043`) — PHP, Swift, Scala, Elixir
 2. **Quick wins**: P3/P4 unblocked tasks — run `bd ready`
-3. **Blocked chain**: LLM1→LLM2→LLM3→LLM4 (start with `stringer-azr` when ready)
 
 ## Post-Release Checklist
 After tagging a release:
@@ -55,6 +54,13 @@ When requesting work, include the full outcome:
 - Release intent: "implement X, then cut vN.M.0"
 - Parallel opportunities: "also fix Y while CI runs on X"
 - Beads IDs for traceability
+
+## Doc Staleness Guard
+
+CI warns when internal Go files change without an `AGENTS.md` update. To avoid noisy warnings:
+- **Always update `AGENTS.md`** when changing architecture, interfaces, public contracts, or adding new collectors/formatters/report sections
+- For routine changes (adding language patterns, fixing bugs, refactoring internals), include `AGENTS.md` in the PR with a no-op touch or a genuine doc update to suppress the warning
+- The guard **hard-fails** if `Collector`, `Formatter`, or `Section` interface signatures drift between source and `AGENTS.md`
 
 ## Project Structure
 

@@ -879,3 +879,124 @@ obj = UsedClass.new
 	}
 	assert.True(t, foundUnused, "expected UnusedClass to be detected")
 }
+
+func TestDeadCode_PHPClass(t *testing.T) {
+	dir := t.TempDir()
+
+	phpCode := `<?php
+class UsedService {
+    public function run() { return 42; }
+}
+
+class UnusedService {
+    public function run() { return 0; }
+}
+
+$svc = new UsedService();
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.php"), []byte(phpCode), 0o600))
+
+	c := &DeadCodeCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	foundUnused := false
+	for _, sig := range signals {
+		if strings.Contains(sig.Title, "UnusedService") {
+			foundUnused = true
+			assert.Equal(t, "unused-type", sig.Kind)
+		}
+		assert.NotContains(t, sig.Title, "UsedService")
+	}
+	assert.True(t, foundUnused, "expected UnusedService to be detected")
+}
+
+func TestDeadCode_SwiftType(t *testing.T) {
+	dir := t.TempDir()
+
+	swiftCode := `struct UsedModel {
+    var name: String
+}
+
+struct UnusedModel {
+    var id: Int
+}
+
+let m = UsedModel(name: "test")
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "models.swift"), []byte(swiftCode), 0o600))
+
+	c := &DeadCodeCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	foundUnused := false
+	for _, sig := range signals {
+		if strings.Contains(sig.Title, "UnusedModel") {
+			foundUnused = true
+			assert.Equal(t, "unused-type", sig.Kind)
+		}
+		assert.NotContains(t, sig.Title, "UsedModel")
+	}
+	assert.True(t, foundUnused, "expected UnusedModel to be detected")
+}
+
+func TestDeadCode_ScalaType(t *testing.T) {
+	dir := t.TempDir()
+
+	scalaCode := `class UsedService {
+  def run(): Int = 42
+}
+
+class UnusedService {
+  def run(): Int = 0
+}
+
+val svc = new UsedService()
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "App.scala"), []byte(scalaCode), 0o600))
+
+	c := &DeadCodeCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	foundUnused := false
+	for _, sig := range signals {
+		if strings.Contains(sig.Title, "UnusedService") {
+			foundUnused = true
+			assert.Equal(t, "unused-type", sig.Kind)
+		}
+		assert.NotContains(t, sig.Title, "UsedService")
+	}
+	assert.True(t, foundUnused, "expected UnusedService to be detected")
+}
+
+func TestDeadCode_ElixirModule(t *testing.T) {
+	dir := t.TempDir()
+
+	exCode := `defmodule UsedServer do
+  def start, do: :ok
+end
+
+defmodule UnusedServer do
+  def start, do: :ok
+end
+
+UsedServer.start()
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.ex"), []byte(exCode), 0o600))
+
+	c := &DeadCodeCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	foundUnused := false
+	for _, sig := range signals {
+		if strings.Contains(sig.Title, "UnusedServer") {
+			foundUnused = true
+			assert.Equal(t, "unused-type", sig.Kind)
+		}
+		assert.NotContains(t, sig.Title, "UsedServer")
+	}
+	assert.True(t, foundUnused, "expected UnusedServer to be detected")
+}
