@@ -69,6 +69,11 @@ var knownCollectors = map[string]collectorMeta{
 		SignalKinds:  []string{"complex-function"},
 		ConfigFields: []string{"min_function_lines", "min_complexity_score"},
 	},
+	"deadcode": {
+		Description:  "Detects unused functions and types via regex heuristic and reference search",
+		SignalKinds:  []string{"unused-function", "unused-type"},
+		ConfigFields: []string{},
+	},
 }
 
 // Common config fields that apply to every collector.
