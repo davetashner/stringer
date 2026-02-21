@@ -84,6 +84,11 @@ var knownCollectors = map[string]collectorMeta{
 		SignalKinds:  []string{"stale-doc", "doc-code-drift", "broken-doc-link"},
 		ConfigFields: []string{},
 	},
+	"configdrift": {
+		Description:  "Detects env var drift, dead config keys, and inconsistent defaults across environment files",
+		SignalKinds:  []string{"env-var-drift", "dead-config-key", "inconsistent-defaults"},
+		ConfigFields: []string{},
+	},
 }
 
 // Common config fields that apply to every collector.
