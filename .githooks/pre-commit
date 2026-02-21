@@ -44,6 +44,13 @@ else
     exit 1
 fi
 
+# --- Backlog dashboard regeneration ---
+if command -v bd >/dev/null 2>&1 && [ -f scripts/gen-backlog.sh ]; then
+    if scripts/gen-backlog.sh 2>/dev/null; then
+        git add backlog.html 2>/dev/null || true
+    fi
+fi
+
 # --- Beads JSONL sync ---
 if ! command -v bd >/dev/null 2>&1; then
     exit 0
