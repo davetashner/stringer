@@ -89,6 +89,11 @@ var knownCollectors = map[string]collectorMeta{
 		SignalKinds:  []string{"env-var-drift", "dead-config-key", "inconsistent-defaults"},
 		ConfigFields: []string{},
 	},
+	"apidrift": {
+		Description:  "Detects drift between OpenAPI/Swagger specs and route handler registrations in code",
+		SignalKinds:  []string{"undocumented-route", "unimplemented-route", "stale-api-version"},
+		ConfigFields: []string{},
+	},
 }
 
 // Common config fields that apply to every collector.
