@@ -317,9 +317,9 @@ jobs:
           deletions=0
           while IFS= read -r line; do
             file=$(echo "$line" | jq -r '.filename')
-            # Skip test files — they don't count against PR size
+            # Skip test files and beads data — they don't count against PR size
             case "$file" in
-              *_test.go|*_test.ts|*_test.js|*.test.*|*.spec.*)
+              *_test.go|*_test.ts|*_test.js|*.test.*|*.spec.*|.beads/*)
                 continue
                 ;;
             esac
