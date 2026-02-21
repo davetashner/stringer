@@ -905,3 +905,253 @@ func TestPatterns_SwiftCounterpartSuppressesMissingTests(t *testing.T) {
 		}
 	}
 }
+
+// =============================================================================
+// Scala ecosystem tests
+// =============================================================================
+
+// --- isTestFile: Scala patterns ---
+
+func TestIsTestFile_Scala(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "scala_source", path: "src/main/scala/com/app/Service.scala", want: false},
+		{name: "scala_test_suffix", path: "src/test/scala/com/app/ServiceTest.scala", want: true},
+		{name: "scala_tests_suffix", path: "src/test/scala/com/app/ServiceTests.scala", want: true},
+		{name: "scala_spec_suffix", path: "src/test/scala/com/app/ServiceSpec.scala", want: true},
+		{name: "scala_suite_suffix", path: "src/test/scala/com/app/ServiceSuite.scala", want: true},
+		{name: "scala_maven_test_root", path: "src/test/scala/com/app/Plain.scala", want: true},
+		{name: "scala_plain", path: "src/main/scala/com/app/App.scala", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isTestFile(tt.path)
+			assert.Equal(t, tt.want, got, "isTestFile(%q)", tt.path)
+		})
+	}
+}
+
+// --- hasTestCounterpart: Scala patterns ---
+
+func TestHasTestCounterpart_ScalaSameDir(t *testing.T) {
+	dir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Service.scala"), []byte("class Service\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "ServiceSpec.scala"), []byte("class ServiceSpec\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(
+		filepath.Join(dir, "Service.scala"),
+		"Service.scala",
+		dir,
+		nil,
+	), "Scala file with ServiceSpec.scala in same dir should have test counterpart")
+}
+
+func TestHasTestCounterpart_ScalaMavenConvention(t *testing.T) {
+	dir := t.TempDir()
+
+	srcDir := filepath.Join(dir, "src", "main", "scala", "com", "app")
+	testDir := filepath.Join(dir, "src", "test", "scala", "com", "app")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "Service.scala"), []byte("class Service\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(testDir, "ServiceTest.scala"), []byte("class ServiceTest\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(
+		filepath.Join(srcDir, "Service.scala"),
+		"src/main/scala/com/app/Service.scala",
+		dir,
+		nil,
+	), "Scala file with Maven-convention test counterpart should be found")
+}
+
+func TestHasTestCounterpart_ScalaNoTests(t *testing.T) {
+	dir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Service.scala"), []byte("class Service\n"), 0o600))
+
+	assert.False(t, hasTestCounterpart(
+		filepath.Join(dir, "Service.scala"),
+		"Service.scala",
+		dir,
+		nil,
+	), "Scala file without test counterpart should return false")
+}
+
+// --- Integration: Scala missing-tests signal ---
+
+func TestPatterns_ScalaMissingTestsDetected(t *testing.T) {
+	dir := t.TempDir()
+
+	srcDir := filepath.Join(dir, "src", "main", "scala")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+
+	content := strings.Repeat("class Service {\n  def work(): Unit = {}\n}\n", 10)
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "Service.scala"), []byte(content), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	found := false
+	for _, s := range signals {
+		if s.Kind == "missing-tests" && strings.Contains(s.FilePath, "Service.scala") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Scala source without test counterpart should produce missing-tests signal")
+}
+
+func TestPatterns_ScalaCounterpartSuppressesMissingTests(t *testing.T) {
+	dir := t.TempDir()
+
+	srcDir := filepath.Join(dir, "src", "main", "scala")
+	testDir := filepath.Join(dir, "src", "test", "scala")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+
+	content := strings.Repeat("class Service {\n  def work(): Unit = {}\n}\n", 10)
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "Service.scala"), []byte(content), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(testDir, "ServiceSpec.scala"), []byte("class ServiceSpec\n"), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	for _, s := range signals {
+		if s.Kind == "missing-tests" && strings.Contains(s.FilePath, "Service.scala") && !strings.Contains(s.FilePath, "Spec") {
+			t.Error("Scala file with ServiceSpec.scala counterpart should not produce missing-tests signal")
+		}
+	}
+}
+
+// =============================================================================
+// Elixir ecosystem tests
+// =============================================================================
+
+// --- isTestFile: Elixir patterns ---
+
+func TestIsTestFile_Elixir(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "elixir_source", path: "lib/my_app/server.ex", want: false},
+		{name: "elixir_test", path: "test/my_app/server_test.exs", want: true},
+		{name: "elixir_test_helper", path: "test/test_helper.exs", want: false},
+		{name: "elixir_mix_config", path: "config/config.exs", want: false},
+		{name: "elixir_mix_file", path: "mix.exs", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isTestFile(tt.path)
+			assert.Equal(t, tt.want, got, "isTestFile(%q)", tt.path)
+		})
+	}
+}
+
+// --- hasTestCounterpart: Elixir patterns ---
+
+func TestHasTestCounterpart_ElixirLibToTest(t *testing.T) {
+	dir := t.TempDir()
+
+	libDir := filepath.Join(dir, "lib", "my_app")
+	testDir := filepath.Join(dir, "test", "my_app")
+	require.NoError(t, os.MkdirAll(libDir, 0o750))
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+
+	require.NoError(t, os.WriteFile(filepath.Join(libDir, "server.ex"), []byte("defmodule MyApp.Server do\nend\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(testDir, "server_test.exs"), []byte("defmodule MyApp.ServerTest do\nend\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(
+		filepath.Join(libDir, "server.ex"),
+		"lib/my_app/server.ex",
+		dir,
+		nil,
+	), "Elixir lib/my_app/server.ex should find test/my_app/server_test.exs")
+}
+
+func TestHasTestCounterpart_ElixirSameDir(t *testing.T) {
+	dir := t.TempDir()
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "server.ex"), []byte("defmodule Server do\nend\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "server_test.exs"), []byte("defmodule ServerTest do\nend\n"), 0o600))
+
+	assert.True(t, hasTestCounterpart(
+		filepath.Join(dir, "server.ex"),
+		"server.ex",
+		dir,
+		nil,
+	), "Elixir file with server_test.exs in same dir should have test counterpart")
+}
+
+func TestHasTestCounterpart_ElixirNoTests(t *testing.T) {
+	dir := t.TempDir()
+
+	libDir := filepath.Join(dir, "lib")
+	require.NoError(t, os.MkdirAll(libDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(libDir, "server.ex"), []byte("defmodule Server do\nend\n"), 0o600))
+
+	assert.False(t, hasTestCounterpart(
+		filepath.Join(libDir, "server.ex"),
+		"lib/server.ex",
+		dir,
+		nil,
+	), "Elixir file without test counterpart should return false")
+}
+
+// --- Integration: Elixir missing-tests signal ---
+
+func TestPatterns_ElixirMissingTestsDetected(t *testing.T) {
+	dir := t.TempDir()
+
+	libDir := filepath.Join(dir, "lib", "my_app")
+	require.NoError(t, os.MkdirAll(libDir, 0o750))
+
+	content := strings.Repeat("defmodule MyApp.Server do\n  def start, do: :ok\nend\n", 10)
+	require.NoError(t, os.WriteFile(filepath.Join(libDir, "server.ex"), []byte(content), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	found := false
+	for _, s := range signals {
+		if s.Kind == "missing-tests" && strings.Contains(s.FilePath, "server.ex") {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "Elixir source without test counterpart should produce missing-tests signal")
+}
+
+func TestPatterns_ElixirCounterpartSuppressesMissingTests(t *testing.T) {
+	dir := t.TempDir()
+
+	libDir := filepath.Join(dir, "lib", "my_app")
+	testDir := filepath.Join(dir, "test", "my_app")
+	require.NoError(t, os.MkdirAll(libDir, 0o750))
+	require.NoError(t, os.MkdirAll(testDir, 0o750))
+
+	content := strings.Repeat("defmodule MyApp.Server do\n  def start, do: :ok\nend\n", 10)
+	require.NoError(t, os.WriteFile(filepath.Join(libDir, "server.ex"), []byte(content), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(testDir, "server_test.exs"), []byte("defmodule MyApp.ServerTest do\nend\n"), 0o600))
+
+	c := &PatternsCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	for _, s := range signals {
+		if s.Kind == "missing-tests" && strings.Contains(s.FilePath, "server.ex") {
+			t.Error("Elixir file with test counterpart should not produce missing-tests signal")
+		}
+	}
+}

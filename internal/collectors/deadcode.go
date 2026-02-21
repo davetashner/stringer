@@ -56,15 +56,19 @@ func (c *DeadCodeCollector) Name() string { return "deadcode" }
 // typePatterns maps file extensions to regex patterns for type/class/struct
 // definitions. Each regex has one capture group for the type name.
 var typePatterns = map[string]*regexp.Regexp{
-	".go":   regexp.MustCompile(`^\s*type\s+(\w+)\s+(?:struct|interface)\s*\{`),
-	".py":   regexp.MustCompile(`^\s*class\s+(\w+)`),
-	".js":   regexp.MustCompile(`^\s*(?:export\s+)?class\s+(\w+)`),
-	".ts":   regexp.MustCompile(`^\s*(?:export\s+)?(?:class|interface|type)\s+(\w+)`),
-	".tsx":  regexp.MustCompile(`^\s*(?:export\s+)?(?:class|interface|type)\s+(\w+)`),
-	".jsx":  regexp.MustCompile(`^\s*(?:export\s+)?class\s+(\w+)`),
-	".java": regexp.MustCompile(`^\s*(?:(?:public|private|protected|abstract|final|static)\s+)*(?:class|interface|enum)\s+(\w+)`),
-	".rs":   regexp.MustCompile(`^\s*(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait)\s+(\w+)`),
-	".rb":   regexp.MustCompile(`^\s*class\s+(\w+)`),
+	".go":    regexp.MustCompile(`^\s*type\s+(\w+)\s+(?:struct|interface)\s*\{`),
+	".py":    regexp.MustCompile(`^\s*class\s+(\w+)`),
+	".js":    regexp.MustCompile(`^\s*(?:export\s+)?class\s+(\w+)`),
+	".ts":    regexp.MustCompile(`^\s*(?:export\s+)?(?:class|interface|type)\s+(\w+)`),
+	".tsx":   regexp.MustCompile(`^\s*(?:export\s+)?(?:class|interface|type)\s+(\w+)`),
+	".jsx":   regexp.MustCompile(`^\s*(?:export\s+)?class\s+(\w+)`),
+	".java":  regexp.MustCompile(`^\s*(?:(?:public|private|protected|abstract|final|static)\s+)*(?:class|interface|enum)\s+(\w+)`),
+	".rs":    regexp.MustCompile(`^\s*(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait)\s+(\w+)`),
+	".rb":    regexp.MustCompile(`^\s*class\s+(\w+)`),
+	".php":   regexp.MustCompile(`^\s*(?:(?:abstract|final)\s+)?class\s+(\w+)`),
+	".swift": regexp.MustCompile(`^\s*(?:(?:public|private|fileprivate|internal|open|final)\s+)*(?:class|struct|enum|protocol)\s+(\w+)`),
+	".scala": regexp.MustCompile(`^\s*(?:(?:private|protected|abstract|sealed|final|case)\s+)*(?:class|object|trait)\s+(\w+)`),
+	".ex":    regexp.MustCompile(`^\s*defmodule\s+([\w.]+)`),
 }
 
 // skipNames are symbol names that should never be flagged as dead code.
