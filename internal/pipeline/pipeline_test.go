@@ -186,6 +186,36 @@ func TestPipeline_MaxIssues(t *testing.T) {
 	}
 }
 
+func TestPipeline_MaxIssuesSortsByPriority(t *testing.T) {
+	p2 := intPtr(2)
+	stub := &stubCollector{
+		name: "test",
+		signals: []signal.RawSignal{
+			{Source: "test", Title: "Low confidence", FilePath: "a.go", Confidence: 0.3},            // P4
+			{Source: "test", Title: "Medium confidence", FilePath: "b.go", Confidence: 0.5},         // P3
+			{Source: "test", Title: "High confidence", FilePath: "c.go", Confidence: 0.9},           // P1
+			{Source: "test", Title: "LLM says P2", FilePath: "d.go", Confidence: 0.3, Priority: p2}, // P2 (overrides P4)
+			{Source: "test", Title: "Also high confidence", FilePath: "e.go", Confidence: 0.85},     // P1
+		},
+	}
+
+	p := NewWithCollectors(signal.ScanConfig{
+		RepoPath:  "/tmp/repo",
+		MaxIssues: 3,
+	}, []collector.Collector{stub})
+	result, err := p.Run(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, result.Signals, 3)
+
+	// Should keep the top 3: two P1s and the P2
+	assert.Equal(t, "High confidence", result.Signals[0].Title)
+	assert.Equal(t, "Also high confidence", result.Signals[1].Title)
+	assert.Equal(t, "LLM says P2", result.Signals[2].Title)
+}
+
+func intPtr(i int) *int { return &i }
+
 func TestPipeline_MaxIssuesZeroMeansUnlimited(t *testing.T) {
 	stub := &stubCollector{
 		name: "test",
