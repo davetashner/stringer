@@ -276,7 +276,7 @@ stringer scan [path] [flags]
 
 **Available collectors:** `todos`, `gitlog`, `patterns`, `lotteryrisk`, `github`, `dephealth`, `vuln`, `complexity`, `deadcode`, `githygiene`, `docstale`, `configdrift`, `apidrift`
 
-**Available formats:** `beads`, `json`, `markdown`, `tasks`
+**Available formats:** `beads`, `json`, `markdown`, `sarif`, `tasks`
 
 ## Configuration File
 
