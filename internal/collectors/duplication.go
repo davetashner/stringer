@@ -199,6 +199,15 @@ func (c *DuplicationCollector) Collect(ctx context.Context, repoPath string, opt
 		return signals[i].Confidence > signals[j].Confidence
 	})
 
+	// Cap output to prevent overwhelming results on large repos.
+	maxDupSignals := 200
+	if opts.MaxIssues > 0 {
+		maxDupSignals = opts.MaxIssues
+	}
+	if len(signals) > maxDupSignals {
+		signals = signals[:maxDupSignals]
+	}
+
 	c.metrics = &DuplicationMetrics{
 		FilesScanned:    fileCount,
 		ExactClones:     exactCount,

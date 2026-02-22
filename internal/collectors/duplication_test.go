@@ -792,6 +792,42 @@ func TestDuplicationConfidenceNearClonePenalty(t *testing.T) {
 	}
 }
 
+// TestCollectSignalCap verifies that output is capped at MaxIssues (or 200 default).
+func TestCollectSignalCap(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create many files with identical blocks to generate lots of signals.
+	block := strings.Join([]string{
+		"func process(items []string) {",
+		"    for _, item := range items {",
+		"        result := transform(item)",
+		"        if result != nil {",
+		"            store(result)",
+		"        }",
+		"        log(item)",
+		"    }",
+		"}",
+	}, "\n")
+
+	// Create enough copies to produce signals.
+	for i := 0; i < 20; i++ {
+		writeTestFile(t, dir, filepath.Join("pkg"+strings.Repeat("x", i), "handler.go"),
+			"package pkg\n\n"+block)
+	}
+
+	c := &DuplicationCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		MaxIssues: 3,
+	})
+	if err != nil {
+		t.Fatalf("Collect() error: %v", err)
+	}
+
+	if len(signals) > 3 {
+		t.Errorf("expected at most 3 signals with MaxIssues=3, got %d", len(signals))
+	}
+}
+
 // writeTestFile creates a file in the test directory with proper directory structure.
 func writeTestFile(t *testing.T, dir, relPath, content string) {
 	t.Helper()
