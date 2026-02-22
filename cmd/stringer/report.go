@@ -36,6 +36,7 @@ var (
 	reportExcludeCollectors string
 	reportCollectorTimeout  string
 	reportPaths             []string
+	reportNoLLM             bool
 	reportWorkspace         string
 	reportNoWorkspaces      bool
 )
@@ -63,6 +64,7 @@ func init() {
 	reportCmd.Flags().StringVarP(&reportExcludeCollectors, "exclude-collectors", "x", "", "comma-separated list of collectors to skip")
 	reportCmd.Flags().StringVar(&reportCollectorTimeout, "collector-timeout", "", "per-collector timeout (e.g. 60s, 2m); 0 or empty = no timeout")
 	reportCmd.Flags().StringSliceVar(&reportPaths, "paths", nil, "restrict scanning to specific files or directories (comma-separated)")
+	reportCmd.Flags().BoolVar(&reportNoLLM, "no-llm", false, "skip LLM clustering pass (noop for MVP)")
 	reportCmd.Flags().StringVar(&reportWorkspace, "workspace", "", "report only named workspace(s) (comma-separated)")
 	reportCmd.Flags().BoolVar(&reportNoWorkspaces, "no-workspaces", false, "disable monorepo auto-detection, scan root as single directory")
 }
@@ -146,6 +148,7 @@ func runReport(cmd *cobra.Command, args []string) error {
 		scanCfg := signal.ScanConfig{
 			RepoPath:   wsPath,
 			Collectors: collectors,
+			NoLLM:      reportNoLLM,
 		}
 		scanCfg = config.Merge(fileCfg, scanCfg)
 
