@@ -20,6 +20,9 @@ cd stringer
 # Set up pre-commit hooks (gitleaks secret scanning)
 git config core.hooksPath .githooks
 
+# Register merge driver for generated files (avoids backlog.html conflicts)
+git config merge.ours.driver true
+
 # Build
 go build -o stringer ./cmd/stringer
 
