@@ -41,6 +41,7 @@ func restoreFormatters() {
 	RegisterFormatter(NewHTMLDirFormatter())
 	RegisterFormatter(NewJSONFormatter())
 	RegisterFormatter(NewMarkdownFormatter())
+	RegisterFormatter(NewSARIFFormatter())
 	RegisterFormatter(NewTasksFormatter())
 }
 

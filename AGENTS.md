@@ -86,6 +86,7 @@ stringer/
 │   │   ├── beads.go            # Beads JSONL writer (primary)
 │   │   ├── json.go             # JSON with metadata envelope
 │   │   ├── markdown.go         # Human-readable markdown summary
+│   │   ├── sarif.go            # SARIF v2.1.0 static analysis output
 │   │   ├── tasks.go            # Claude Code task format
 │   │   └── signalid.go         # Shared deterministic signal ID generation
 │   ├── pipeline/           # Scan orchestration
