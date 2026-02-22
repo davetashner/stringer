@@ -50,6 +50,66 @@ func parseNpmDeps(data []byte) ([]PackageQuery, error) {
 	return queries, nil
 }
 
+// packageLock represents the subset of package-lock.json (v2/v3) we need for dependency extraction.
+type packageLock struct {
+	Packages map[string]packageLockEntry `json:"packages"`
+}
+
+// packageLockEntry represents a single resolved package in the lockfile.
+type packageLockEntry struct {
+	Version string `json:"version"`
+	Dev     bool   `json:"dev"`
+}
+
+// parseNpmLockDeps parses a package-lock.json (v2/v3) file and returns PackageQuery entries
+// with resolved versions. Entries under "node_modules/" keys are included; the root "" entry
+// is skipped. Nested node_modules paths are handled by extracting the final package name.
+func parseNpmLockDeps(data []byte) ([]PackageQuery, error) {
+	var lock packageLock
+	if err := json.Unmarshal(data, &lock); err != nil {
+		return nil, err
+	}
+
+	seen := make(map[string]bool)
+	var queries []PackageQuery
+
+	for path, entry := range lock.Packages {
+		// Skip root entry.
+		if path == "" {
+			continue
+		}
+
+		// Only process node_modules entries.
+		if !strings.HasPrefix(path, "node_modules/") {
+			continue
+		}
+
+		if entry.Version == "" {
+			continue
+		}
+
+		// Extract package name: take the portion after the last "node_modules/".
+		// This handles nested deps like "node_modules/a/node_modules/@scope/pkg".
+		name := path
+		if idx := strings.LastIndex(path, "node_modules/"); idx >= 0 {
+			name = path[idx+len("node_modules/"):]
+		}
+
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+
+		queries = append(queries, PackageQuery{
+			Ecosystem: "npm",
+			Name:      name,
+			Version:   entry.Version,
+		})
+	}
+
+	return queries, nil
+}
+
 // extractNpmVersion strips semver range prefixes and returns the base version string.
 // Returns "" for versions that can't be meaningfully queried (wildcards, URLs, tags).
 func extractNpmVersion(version string) string {
