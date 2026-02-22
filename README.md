@@ -14,7 +14,7 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11942/badge?v=2)](https://www.bestpractices.dev/projects/11942)
 
-> **v1.3.0.** Thirteen collectors including complexity hotspots, dead code detection, git hygiene, documentation staleness, configuration drift, and API contract drift. Ten report sections with health trend analysis and module summaries. Language support expanded to 14 ecosystems (added PHP, Swift, Scala, Elixir). HTML dashboard export, parallel pipeline with signal deduplication, delta scanning, monorepo support (6 workspace types), LLM-powered clustering and priority inference, MCP server for agent integration, interactive `stringer init` wizard, and CLI config management.
+> **v1.4.0.** Fifteen collectors — new: code duplication detector and coupling/circular dependency detector. SARIF v2.1.0 output with auto-detection. Cross-collector confidence boosting. Noise reduction: `eval/` default exclude, duplication signal cap. Ten report sections with health trend analysis and module summaries. Language support across 14 ecosystems. HTML dashboard export, parallel pipeline with signal deduplication, delta scanning, monorepo support (6 workspace types), LLM-powered clustering and priority inference, MCP server for agent integration, interactive `stringer init` wizard, and CLI config management.
 
 **Codebase archaeology for developers and AI agents.** Scan any repo for hidden tech debt — TODOs, vulnerabilities, lottery risk, stale branches, unhealthy dependencies — and get structured results you can act on immediately.
 
@@ -45,7 +45,7 @@ Stringer extracts these signals automatically, scores them by confidence, and ou
 
 ## Why Stringer?
 
-**Real scanning, not just TODO grep.** Thirteen collectors cover vulnerability detection across 7 ecosystems, dependency health across 6 ecosystems, lottery risk analysis, code churn, stale branches, coverage gaps, complexity hotspots, dead code, git hygiene, documentation staleness, configuration drift, API contract drift, and GitHub issues — all in a single command. Most of this runs locally with zero network calls.
+**Real scanning, not just TODO grep.** Fifteen collectors cover vulnerability detection across 7 ecosystems, dependency health across 6 ecosystems, lottery risk analysis, code churn, stale branches, coverage gaps, complexity hotspots, dead code, code duplication, coupling & circular dependencies, git hygiene, documentation staleness, configuration drift, API contract drift, and GitHub issues — all in a single command. Most of this runs locally with zero network calls.
 
 **Works without AI, works better with it.** Core scanning is deterministic static analysis — no API keys, no per-request costs. The optional LLM pass adds signal clustering, priority inference, and dependency detection on top. Use `--no-llm` to skip it entirely.
 
@@ -68,6 +68,8 @@ Stringer extracts these signals automatically, scores them by confidence, and ou
 - **Documentation staleness detector** (`docstale`) — Detects stale documentation, co-change drift between docs and source files, and broken internal links.
 - **Configuration drift detector** (`configdrift`) — Detects env var drift, dead config keys, and inconsistent defaults across environment files.
 - **API contract drift detector** (`apidrift`) — Detects drift between OpenAPI/Swagger specs and route handler registrations in code.
+- **Code duplication detector** (`duplication`) — Detects copy-paste code duplication using token-based sliding window with FNV-64a hashing. Finds both exact duplicates (Type 1) and near-clones with renamed identifiers (Type 2). Output capped at 200 signals by default.
+- **Coupling & circular dependency detector** (`coupling`) — Detects tightly coupled modules and circular dependency chains via import/require analysis.
 
 ### Output Formats
 
@@ -100,10 +102,14 @@ Stringer extracts these signals automatically, scores them by confidence, and ou
  │       │ │  log  │ │        │ │ Risk   │ │      │ │ Hlth │ │      │ │          │
  └───┬───┘ └───┬───┘ └───┬────┘ └───┬────┘ └──┬───┘ └──┬───┘ └──┬───┘ └────┬─────┘
      │         │         │         │          │        │        │           │
-     │    ┌────┴────┐ ┌──┴───┐ ┌──┴────┐ ┌───┴───┐ ┌─┴──────┐ │           │
-     │    │  Dead   │ │ Git  │ │  Doc  │ │Config │ │  API   │ │           │
-     │    │  code   │ │Hygne │ │ Stale │ │ Drift │ │ Drift  │ │           │
-     │    └────┬────┘ └──┬───┘ └──┬────┘ └───┬───┘ └───┬────┘ │           │
+     │    ┌────┴────┐ ┌──┴───┐ ┌──┴────┐ ┌───┴───┐ ┌─┴──────┐ │     ┌─────┴─────┐
+     │    │  Dead   │ │ Git  │ │  Doc  │ │Config │ │  API   │ │     │Duplication│
+     │    │  code   │ │Hygne │ │ Stale │ │ Drift │ │ Drift  │ │     │           │
+     │    └────┬────┘ └──┬───┘ └──┬────┘ └───┬───┘ └───┬────┘ │     └─────┬─────┘
+     │         │         │        │          │         │      │           │
+     │         │         │   ┌────┴─────┐    │         │      │           │
+     │         │         │   │ Coupling │    │         │      │           │
+     │         │         │   └────┬─────┘    │         │      │           │
      └─────────┴─────────┴────────┴──────────┴─────────┴──────┴───────────┘
                                                ▼
                                         ┌────────────┐
@@ -111,12 +117,12 @@ Stringer extracts these signals automatically, scores them by confidence, and ou
                                         │ Validation │
                                         └──────┬─────┘
                                                │
-                           ┌───────────────────┼────────────┬────────────┐
-                           ▼                   ▼            ▼            ▼
-                      ┌─────────┐       ┌──────────┐ ┌──────────┐ ┌─────────┐
-                      │  Beads  │       │   JSON   │ │ Markdown │ │  Tasks  │
-                      │  JSONL  │       │          │ │          │ │         │
-                      └─────────┘       └──────────┘ └──────────┘ └─────────┘
+                      ┌────────────┬───────────┼────────────┬────────────┐
+                      ▼            ▼           ▼            ▼            ▼
+                 ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌─────────┐ ┌───────┐
+                 │  Beads  │ │   JSON   │ │ Markdown │ │  Tasks  │ │ SARIF │
+                 │  JSONL  │ │          │ │          │ │         │ │       │
+                 └─────────┘ └──────────┘ └──────────┘ └─────────┘ └───────┘
 ```
 
 ## Real-World Results
@@ -275,7 +281,7 @@ stringer scan [path] [flags]
 
 **Global flags:** `--quiet` (`-q`), `--verbose` (`-v`), `--no-color`, `--help` (`-h`)
 
-**Available collectors:** `todos`, `gitlog`, `patterns`, `lotteryrisk`, `github`, `dephealth`, `vuln`, `complexity`, `deadcode`, `githygiene`, `docstale`, `configdrift`, `apidrift`
+**Available collectors:** `todos`, `gitlog`, `patterns`, `lotteryrisk`, `github`, `dephealth`, `vuln`, `complexity`, `deadcode`, `githygiene`, `docstale`, `configdrift`, `apidrift`, `duplication`, `coupling`
 
 **Available formats:** `beads`, `json`, `markdown`, `sarif`, `tasks`
 
