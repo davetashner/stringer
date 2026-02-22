@@ -99,6 +99,11 @@ var knownCollectors = map[string]collectorMeta{
 		SignalKinds:  []string{"undocumented-route", "unimplemented-route", "stale-api-version"},
 		ConfigFields: []string{},
 	},
+	"coupling": {
+		Description:  "Detects circular dependencies and high-coupling modules via import graph analysis",
+		SignalKinds:  []string{"circular-dependency", "high-coupling"},
+		ConfigFields: []string{},
+	},
 }
 
 // Common config fields that apply to every collector.

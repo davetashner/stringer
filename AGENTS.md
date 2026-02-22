@@ -49,6 +49,7 @@ stringer/
 │   │   ├── apidrift.go         # API drift: undocumented routes, unimplemented spec paths, stale versions
 │   │   ├── docstale.go         # Doc staleness: stale docs, co-change drift, broken links
 │   │   ├── duplication*.go     # Code duplication: exact clones (Type 1) and near-clones (Type 2) via FNV-64a sliding window
+│   │   ├── coupling*.go        # Coupling: circular dependencies (Tarjan's SCC) and high fan-out modules via import graph
 │   │   └── duration.go         # Duration parsing helpers
 │   ├── analysis/           # LLM-powered analysis
 │   │   ├── cluster.go          # Signal clustering via LLM
