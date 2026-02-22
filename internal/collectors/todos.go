@@ -72,6 +72,8 @@ var defaultExcludePatterns = []string{
 	"bower_components/**",
 	"wwwroot/lib/**",
 	"eval/**",
+	".beads/**",
+	".stringer/**",
 }
 
 // defaultDemoPatterns are directory globs for demo/example/tutorial paths.
