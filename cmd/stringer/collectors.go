@@ -74,6 +74,11 @@ var knownCollectors = map[string]collectorMeta{
 		SignalKinds:  []string{"unused-function", "unused-type"},
 		ConfigFields: []string{},
 	},
+	"duplication": {
+		Description:  "Detects copy-paste code duplication using token-based clone detection",
+		SignalKinds:  []string{"code-clone", "near-clone"},
+		ConfigFields: []string{},
+	},
 	"githygiene": {
 		Description:  "Detects large binaries, merge conflict markers, committed secrets, and mixed line endings",
 		SignalKinds:  []string{"large-binary", "merge-conflict-marker", "committed-secret", "mixed-line-endings"},
