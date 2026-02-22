@@ -136,7 +136,16 @@ func (p *Pipeline) Run(ctx context.Context) (*signal.ScanResult, error) {
 	allSignals = DeduplicateSignals(allSignals)
 
 	// Apply MaxIssues cap if configured.
+	// Sort by priority first so the most actionable signals survive truncation.
 	if p.config.MaxIssues > 0 && len(allSignals) > p.config.MaxIssues {
+		sort.SliceStable(allSignals, func(i, j int) bool {
+			pi := effectivePriority(allSignals[i])
+			pj := effectivePriority(allSignals[j])
+			if pi != pj {
+				return pi < pj // P1 < P2 < P3 < P4
+			}
+			return allSignals[i].Confidence > allSignals[j].Confidence
+		})
 		allSignals = allSignals[:p.config.MaxIssues]
 	}
 
@@ -154,6 +163,24 @@ func (p *Pipeline) Run(ctx context.Context) (*signal.ScanResult, error) {
 		Duration: time.Since(start),
 		Metrics:  metrics,
 	}, nil
+}
+
+// effectivePriority returns the signal's priority for sorting.
+// Uses the LLM-inferred priority if set, otherwise maps confidence to P1-P4.
+func effectivePriority(s signal.RawSignal) int {
+	if s.Priority != nil {
+		return *s.Priority
+	}
+	switch {
+	case s.Confidence >= 0.8:
+		return 1
+	case s.Confidence >= 0.6:
+		return 2
+	case s.Confidence >= 0.4:
+		return 3
+	default:
+		return 4
+	}
 }
 
 // errorMode returns the ErrorMode for a given collector, defaulting to Warn.
