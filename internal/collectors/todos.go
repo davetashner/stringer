@@ -27,12 +27,12 @@ var FS testable.FileSystem = testable.DefaultFS
 
 // todoKeyword maps a recognized keyword to its base confidence score per DR-004.
 var todoKeyword = map[string]float64{
-	"BUG":      0.7,
-	"FIXME":    0.6,
+	"BUG":      0.8,
+	"FIXME":    0.65,
 	"HACK":     0.55,
 	"TODO":     0.5,
-	"XXX":      0.5,
-	"OPTIMIZE": 0.4,
+	"XXX":      0.45,
+	"OPTIMIZE": 0.35,
 }
 
 // todoPattern matches TODO-style comments in common programming languages.
@@ -364,7 +364,7 @@ func isGitRepo(dir string) bool {
 
 // computeConfidence calculates the confidence score per DR-004:
 //   - Base score from keyword
-//   - Age boost: +0.1 if > 6 months, +0.2 if > 1 year
+//   - Recency boost: +0.1 if < 30 days old
 //   - Capped at 1.0
 func computeConfidence(sig signal.RawSignal) float64 {
 	keyword := strings.ToUpper(sig.Kind)
@@ -377,12 +377,9 @@ func computeConfidence(sig signal.RawSignal) float64 {
 
 	if !sig.Timestamp.IsZero() {
 		age := time.Since(sig.Timestamp)
-		sixMonths := 6 * 30 * 24 * time.Hour // ~180 days
-		oneYear := 365 * 24 * time.Hour      // ~365 days
+		thirtyDays := 30 * 24 * time.Hour
 
-		if age > oneYear {
-			score += 0.2
-		} else if age > sixMonths {
+		if age < thirtyDays {
 			score += 0.1
 		}
 	}

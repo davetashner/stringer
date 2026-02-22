@@ -107,6 +107,7 @@ func TestTodoPatternNoMatch(t *testing.T) {
 
 func TestComputeConfidence(t *testing.T) {
 	now := time.Now()
+	tenDaysAgo := now.Add(-10 * 24 * time.Hour)
 	sevenMonthsAgo := now.Add(-7 * 30 * 24 * time.Hour)
 	twoYearsAgo := now.Add(-2 * 365 * 24 * time.Hour)
 
@@ -115,17 +116,19 @@ func TestComputeConfidence(t *testing.T) {
 		sig  signal.RawSignal
 		want float64
 	}{
-		{name: "bug_base", sig: signal.RawSignal{Kind: "bug"}, want: 0.7},
-		{name: "fixme_base", sig: signal.RawSignal{Kind: "fixme"}, want: 0.6},
+		{name: "bug_base", sig: signal.RawSignal{Kind: "bug"}, want: 0.8},
+		{name: "fixme_base", sig: signal.RawSignal{Kind: "fixme"}, want: 0.65},
 		{name: "hack_base", sig: signal.RawSignal{Kind: "hack"}, want: 0.55},
 		{name: "todo_base", sig: signal.RawSignal{Kind: "todo"}, want: 0.5},
-		{name: "xxx_base", sig: signal.RawSignal{Kind: "xxx"}, want: 0.5},
-		{name: "optimize_base", sig: signal.RawSignal{Kind: "optimize"}, want: 0.4},
-		{name: "todo_6mo", sig: signal.RawSignal{Kind: "todo", Timestamp: sevenMonthsAgo}, want: 0.6},
-		{name: "fixme_6mo", sig: signal.RawSignal{Kind: "fixme", Timestamp: sevenMonthsAgo}, want: 0.7},
-		{name: "todo_2yr", sig: signal.RawSignal{Kind: "todo", Timestamp: twoYearsAgo}, want: 0.7},
-		{name: "bug_2yr", sig: signal.RawSignal{Kind: "bug", Timestamp: twoYearsAgo}, want: 0.9},
-		{name: "todo_recent", sig: signal.RawSignal{Kind: "todo", Timestamp: now}, want: 0.5},
+		{name: "xxx_base", sig: signal.RawSignal{Kind: "xxx"}, want: 0.45},
+		{name: "optimize_base", sig: signal.RawSignal{Kind: "optimize"}, want: 0.35},
+		{name: "todo_recent", sig: signal.RawSignal{Kind: "todo", Timestamp: tenDaysAgo}, want: 0.6},
+		{name: "bug_recent", sig: signal.RawSignal{Kind: "bug", Timestamp: tenDaysAgo}, want: 0.9},
+		{name: "todo_6mo", sig: signal.RawSignal{Kind: "todo", Timestamp: sevenMonthsAgo}, want: 0.5},
+		{name: "fixme_6mo", sig: signal.RawSignal{Kind: "fixme", Timestamp: sevenMonthsAgo}, want: 0.65},
+		{name: "todo_2yr", sig: signal.RawSignal{Kind: "todo", Timestamp: twoYearsAgo}, want: 0.5},
+		{name: "bug_2yr", sig: signal.RawSignal{Kind: "bug", Timestamp: twoYearsAgo}, want: 0.8},
+		{name: "todo_now", sig: signal.RawSignal{Kind: "todo", Timestamp: now}, want: 0.6},
 	}
 
 	for _, tt := range tests {
@@ -141,7 +144,7 @@ func TestComputeConfidence(t *testing.T) {
 func TestComputeConfidenceCap(t *testing.T) {
 	sig := signal.RawSignal{
 		Kind:      "bug",
-		Timestamp: time.Now().Add(-3 * 365 * 24 * time.Hour),
+		Timestamp: time.Now().Add(-10 * 24 * time.Hour),
 	}
 	got := computeConfidence(sig)
 	if got > 1.0+floatTolerance {
