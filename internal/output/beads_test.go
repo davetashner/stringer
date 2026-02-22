@@ -467,6 +467,25 @@ func TestLabelsWithNoTags(t *testing.T) {
 	}
 }
 
+func TestLabelsDeduplicateSource(t *testing.T) {
+	sig := signal.RawSignal{
+		Source: "complexity",
+		Kind:   "task",
+		Title:  "Test",
+		Tags:   []string{"complexity", "refactor-candidate"},
+	}
+	rec := NewBeadsFormatter().signalToBead(sig)
+	want := []string{"complexity", "refactor-candidate", "stringer-generated"}
+	if len(rec.Labels) != len(want) {
+		t.Fatalf("Labels = %v, want %v", rec.Labels, want)
+	}
+	for i, label := range want {
+		if rec.Labels[i] != label {
+			t.Errorf("Labels[%d] = %q, want %q", i, rec.Labels[i], label)
+		}
+	}
+}
+
 func TestFormatRoundTrip(t *testing.T) {
 	sig := testSignal()
 	var buf bytes.Buffer

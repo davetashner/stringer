@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -227,7 +228,7 @@ func (b *BeadsFormatter) buildLabels(sig signal.RawSignal) []string {
 		generatedLabel = "stringer_generated"
 	}
 	labels = append(labels, generatedLabel)
-	if sig.Source != "" {
+	if sig.Source != "" && !slices.Contains(labels, sig.Source) {
 		labels = append(labels, sig.Source)
 	}
 	if sig.Workspace != "" {
