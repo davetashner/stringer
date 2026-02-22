@@ -235,6 +235,52 @@ func TestScan_OutputFile(t *testing.T) {
 	}
 }
 
+func TestScan_OutputFileSARIFAutoDetect(t *testing.T) {
+	binary := buildBinary(t)
+	root := initTestRepo(t)
+	outFile := filepath.Join(t.TempDir(), "results.sarif")
+
+	// No --format flag; should infer sarif from .sarif extension.
+	cmd := exec.Command(binary, "scan", root, "-o", outFile, "--quiet") //nolint:gosec // test helper
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("stringer scan -o results.sarif failed: %v\n%s", err, out)
+	}
+
+	data, err := os.ReadFile(outFile) //nolint:gosec // test file with known path
+	if err != nil {
+		t.Fatalf("reading output file: %v", err)
+	}
+
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("SARIF output is not valid JSON: %v", err)
+	}
+	if v, ok := doc["version"].(string); !ok || v != "2.1.0" {
+		t.Errorf("expected SARIF version 2.1.0, got %v", doc["version"])
+	}
+}
+
+func TestInferFormatFromExt(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"results.sarif", "sarif"},
+		{"out.json", "json"},
+		{"out.jsonl", "beads"},
+		{"report.md", "markdown"},
+		{"out.html", ""},
+		{"out.txt", ""},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		got := inferFormatFromExt(tt.path)
+		if got != tt.want {
+			t.Errorf("inferFormatFromExt(%q) = %q, want %q", tt.path, got, tt.want)
+		}
+	}
+}
+
 func TestScan_QuietSuppressesStderr(t *testing.T) {
 	binary := buildBinary(t)
 	root := initTestRepo(t)

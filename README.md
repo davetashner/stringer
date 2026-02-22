@@ -75,6 +75,7 @@ Stringer extracts these signals automatically, scores them by confidence, and ou
 - **JSON** (`json`) — Raw signals with metadata envelope, TTY-aware pretty/compact output
 - **Markdown** (`markdown`) — Human-readable summary grouped by collector with priority distribution
 - **Tasks** (`tasks`) — Claude Code task format for direct agent consumption
+- **SARIF** (`sarif`) — [SARIF v2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) static analysis results for IDE and CI integration
 
 ### Pipeline
 
@@ -318,6 +319,36 @@ Stringer also supports a global config at `~/.config/stringer/config.yaml` (or `
 If no config file exists, stringer uses its built-in defaults (all collectors enabled, beads format, no issue cap).
 
 By default, stringer suppresses noise-prone signals (`missing-tests`, `low-test-ratio`, `low-lottery-risk`) in demo/example/tutorial directories (`examples/`, `tutorials/`, `demos/`, `samples/`, and variants). Use `--include-demo-paths` or set `include_demo_paths: true` per collector to scan these paths.
+
+## SARIF Integration
+
+Stringer can output [SARIF v2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) for IDE and CI integration. The format is auto-detected from the `.sarif` file extension, or set explicitly with `--format sarif`.
+
+```bash
+# Auto-detected from file extension
+stringer scan . -o results.sarif
+
+# Explicit format flag
+stringer scan . --format sarif -o results.sarif
+```
+
+### VS Code
+
+Install the [SARIF Viewer](https://marketplace.visualstudio.com/items?itemName=MS-SarifVSCode.sarif-viewer) extension, then open the `.sarif` file. Signals appear as inline annotations in the editor with severity levels mapped from stringer priority (P1=error, P2=warning, P3=note, P4=none).
+
+### GitHub Code Scanning
+
+Add stringer to a GitHub Actions workflow to surface signals as code scanning alerts:
+
+```yaml
+- name: Run stringer
+  run: stringer scan . -o results.sarif
+
+- name: Upload SARIF
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: results.sarif
+```
 
 ## Other Commands
 

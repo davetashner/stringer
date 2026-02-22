@@ -404,8 +404,13 @@ func loadScanConfig(cmd *cobra.Command, absPath, gitRoot string) (signal.ScanCon
 	}
 
 	// Apply default format if neither CLI nor file config specified one.
+	// If -o flag has a recognized extension, infer the format from it.
 	if scanCfg.OutputFormat == "" {
-		scanCfg.OutputFormat = "beads"
+		if ext := inferFormatFromExt(scanOutput); ext != "" {
+			scanCfg.OutputFormat = ext
+		} else {
+			scanCfg.OutputFormat = "beads"
+		}
 	}
 
 	// Filter disabled collectors from file config.
@@ -722,4 +727,19 @@ func exitError(code int, format string, args ...any) *exitCodeError {
 		}
 	}
 	return &exitCodeError{code: code, msg: msg}
+}
+
+// inferFormatFromExt returns a format name based on the output file extension,
+// or "" if the extension is not recognized.
+func inferFormatFromExt(path string) string {
+	if path == "" {
+		return ""
+	}
+	extMap := map[string]string{
+		".sarif": "sarif",
+		".json":  "json",
+		".jsonl": "beads",
+		".md":    "markdown",
+	}
+	return extMap[filepath.Ext(path)]
 }
