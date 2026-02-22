@@ -94,6 +94,7 @@ stringer/
 │   ├── pipeline/           # Scan orchestration
 │   │   ├── pipeline.go         # New(), Run() — parallel execution via errgroup
 │   │   ├── dedup.go            # Content-based signal deduplication
+│   │   ├── enrich.go           # Cross-signal confidence boosting (co-location)
 │   │   └── validate.go         # ScanConfig validation
 │   ├── redact/             # Secret redaction
 │   │   └── redact.go           # Scrub sensitive patterns from signal content

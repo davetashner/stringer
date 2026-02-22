@@ -147,6 +147,9 @@ func runScan(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// 3b. Cross-signal confidence enrichment.
+	pipeline.BoostColocatedSignals(sc.result.Signals)
+
 	// 4. Filter results (delta, beads dedup, confidence, kind).
 	sc.allSignals = sc.result.Signals
 	if err := sc.filterResults(); err != nil {
