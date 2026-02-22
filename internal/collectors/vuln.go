@@ -77,7 +77,7 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 	pythonFile, pythonQueries := parsePythonQueries(repoPath)
 
 	// Gather queries from Node.js manifest (non-fatal on parse error).
-	npmQueries := parseNpmQueries(repoPath)
+	npmFile, npmQueries := parseNpmQueries(repoPath)
 
 	// Build combined query list with file/ecosystem tracking.
 	// fileMap tracks which manifest a query came from; used for dedup and signal emission.
@@ -133,7 +133,7 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 	for _, q := range npmQueries {
 		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
 		if _, exists := fileMap[key]; !exists {
-			fileMap[key] = queryMeta{filePath: "package.json", ecosystem: "npm"}
+			fileMap[key] = queryMeta{filePath: npmFile, ecosystem: "npm"}
 			queries = append(queries, q)
 		}
 	}
@@ -432,23 +432,42 @@ func parsePythonQueries(repoPath string) (string, []PackageQuery) {
 	return "", nil
 }
 
-// parseNpmQueries reads package.json and returns PackageQuery entries for OSV lookup.
-// Returns nil if no package.json exists or on parse error (non-fatal, logged as warning).
-func parseNpmQueries(repoPath string) []PackageQuery {
-	data, err := FS.ReadFile(filepath.Join(repoPath, "package.json"))
-	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			slog.Warn("vuln: reading package.json", "error", err)
+// parseNpmQueries reads package-lock.json (preferred) or package.json and returns the
+// chosen filename and PackageQuery entries for OSV lookup.
+// Returns "", nil if no npm manifest exists or on parse error (non-fatal).
+// If package-lock.json exists, its resolved versions are used instead of semver ranges.
+func parseNpmQueries(repoPath string) (string, []PackageQuery) {
+	// Try package-lock.json first (resolved versions, no false positives from ranges).
+	data, err := FS.ReadFile(filepath.Join(repoPath, "package-lock.json"))
+	if err == nil {
+		queries, parseErr := parseNpmLockDeps(data)
+		if parseErr != nil {
+			slog.Warn("vuln: parsing package-lock.json", "error", parseErr)
+			return "", nil
 		}
-		return nil
+		if len(queries) > 0 {
+			return "package-lock.json", queries
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		slog.Warn("vuln: reading package-lock.json", "error", err)
 	}
 
-	queries, err := parseNpmDeps(data)
-	if err != nil {
-		slog.Warn("vuln: parsing package.json", "error", err)
-		return nil
+	// Fall back to package.json (semver ranges, stripped to base version).
+	data, err = FS.ReadFile(filepath.Join(repoPath, "package.json"))
+	if err == nil {
+		queries, parseErr := parseNpmDeps(data)
+		if parseErr != nil {
+			slog.Warn("vuln: parsing package.json", "error", parseErr)
+			return "", nil
+		}
+		if len(queries) > 0 {
+			return "package.json", queries
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		slog.Warn("vuln: reading package.json", "error", err)
 	}
-	return queries
+
+	return "", nil
 }
 
 // Metrics returns structured vulnerability data from the last Collect call.

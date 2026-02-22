@@ -256,6 +256,118 @@ func TestParseNpmDeps_RealWorld(t *testing.T) {
 	assert.False(t, names["shared-config"], "workspace: dep should be skipped")
 }
 
+// --- parseNpmLockDeps tests ---
+
+func TestParseNpmLockDeps_Basic(t *testing.T) {
+	data := []byte(`{
+		"packages": {
+			"": {"version": "1.0.0"},
+			"node_modules/express": {"version": "4.18.2"},
+			"node_modules/lodash": {"version": "4.17.21"}
+		}
+	}`)
+	queries, err := parseNpmLockDeps(data)
+	require.NoError(t, err)
+	require.Len(t, queries, 2)
+
+	names := make(map[string]string)
+	for _, q := range queries {
+		assert.Equal(t, "npm", q.Ecosystem)
+		names[q.Name] = q.Version
+	}
+	assert.Equal(t, "4.18.2", names["express"])
+	assert.Equal(t, "4.17.21", names["lodash"])
+}
+
+func TestParseNpmLockDeps_ScopedPackages(t *testing.T) {
+	data := []byte(`{
+		"packages": {
+			"": {"version": "1.0.0"},
+			"node_modules/@babel/core": {"version": "7.23.6"},
+			"node_modules/@types/node": {"version": "20.10.5"}
+		}
+	}`)
+	queries, err := parseNpmLockDeps(data)
+	require.NoError(t, err)
+	require.Len(t, queries, 2)
+
+	names := make(map[string]string)
+	for _, q := range queries {
+		names[q.Name] = q.Version
+	}
+	assert.Equal(t, "7.23.6", names["@babel/core"])
+	assert.Equal(t, "20.10.5", names["@types/node"])
+}
+
+func TestParseNpmLockDeps_NestedNodeModules(t *testing.T) {
+	data := []byte(`{
+		"packages": {
+			"": {"version": "1.0.0"},
+			"node_modules/debug": {"version": "4.3.4"},
+			"node_modules/express/node_modules/debug": {"version": "2.6.9"}
+		}
+	}`)
+	queries, err := parseNpmLockDeps(data)
+	require.NoError(t, err)
+	// First occurrence wins — "debug" is deduped.
+	require.Len(t, queries, 1)
+	assert.Equal(t, "debug", queries[0].Name)
+}
+
+func TestParseNpmLockDeps_SkipsRootEntry(t *testing.T) {
+	data := []byte(`{
+		"packages": {
+			"": {"version": "1.0.0", "name": "my-app"},
+			"node_modules/express": {"version": "4.18.2"}
+		}
+	}`)
+	queries, err := parseNpmLockDeps(data)
+	require.NoError(t, err)
+	require.Len(t, queries, 1)
+	assert.Equal(t, "express", queries[0].Name)
+}
+
+func TestParseNpmLockDeps_EmptyVersion(t *testing.T) {
+	data := []byte(`{
+		"packages": {
+			"": {"version": "1.0.0"},
+			"node_modules/linked-pkg": {"version": ""},
+			"node_modules/express": {"version": "4.18.2"}
+		}
+	}`)
+	queries, err := parseNpmLockDeps(data)
+	require.NoError(t, err)
+	require.Len(t, queries, 1)
+	assert.Equal(t, "express", queries[0].Name)
+}
+
+func TestParseNpmLockDeps_InvalidJSON(t *testing.T) {
+	data := []byte(`{"packages": {broken`)
+	queries, err := parseNpmLockDeps(data)
+	assert.Error(t, err)
+	assert.Nil(t, queries)
+}
+
+func TestParseNpmLockDeps_EmptyPackages(t *testing.T) {
+	data := []byte(`{"packages": {}}`)
+	queries, err := parseNpmLockDeps(data)
+	require.NoError(t, err)
+	assert.Empty(t, queries)
+}
+
+func TestParseNpmLockDeps_DevDeps(t *testing.T) {
+	data := []byte(`{
+		"packages": {
+			"": {"version": "1.0.0"},
+			"node_modules/express": {"version": "4.18.2", "dev": false},
+			"node_modules/jest": {"version": "29.7.0", "dev": true}
+		}
+	}`)
+	queries, err := parseNpmLockDeps(data)
+	require.NoError(t, err)
+	require.Len(t, queries, 2, "both prod and dev deps should be included")
+}
+
 // --- extractNpmVersion tests ---
 
 func TestExtractNpmVersion(t *testing.T) {
