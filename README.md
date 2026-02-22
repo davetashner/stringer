@@ -14,9 +14,9 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11942/badge?v=2)](https://www.bestpractices.dev/projects/11942)
 
-> **v1.2.0.** Seven collectors with multi-ecosystem vulnerability and dependency health scanning, four output formats, report command, parallel pipeline with signal deduplication, delta scanning, monorepo support (6 workspace types), LLM-powered clustering and priority inference, MCP server for agent integration, interactive `stringer init` wizard, and CLI config management.
+> **v1.3.0.** Thirteen collectors including complexity hotspots, dead code detection, git hygiene, documentation staleness, configuration drift, and API contract drift. Ten report sections with health trend analysis and module summaries. Language support expanded to 14 ecosystems (added PHP, Swift, Scala, Elixir). HTML dashboard export, parallel pipeline with signal deduplication, delta scanning, monorepo support (6 workspace types), LLM-powered clustering and priority inference, MCP server for agent integration, interactive `stringer init` wizard, and CLI config management.
 
-**Codebase archaeology for developers and AI agents.** Scan any repo for hidden tech debt — TODOs, vulnerabilities, bus-factor risk, stale branches, unhealthy dependencies — and get structured results you can act on immediately.
+**Codebase archaeology for developers and AI agents.** Scan any repo for hidden tech debt — TODOs, vulnerabilities, lottery risk, stale branches, unhealthy dependencies — and get structured results you can act on immediately.
 
 ```bash
 # Install via Homebrew
@@ -45,7 +45,7 @@ Stringer extracts these signals automatically, scores them by confidence, and ou
 
 ## Why Stringer?
 
-**Real scanning, not just TODO grep.** Seven collectors cover vulnerability detection across 7 ecosystems, dependency health across 6 ecosystems, bus-factor analysis, code churn, stale branches, coverage gaps, and GitHub issues — all in a single command. Most of this runs locally with zero network calls.
+**Real scanning, not just TODO grep.** Thirteen collectors cover vulnerability detection across 7 ecosystems, dependency health across 6 ecosystems, lottery risk analysis, code churn, stale branches, coverage gaps, complexity hotspots, dead code, git hygiene, documentation staleness, configuration drift, API contract drift, and GitHub issues — all in a single command. Most of this runs locally with zero network calls.
 
 **Works without AI, works better with it.** Core scanning is deterministic static analysis — no API keys, no per-request costs. The optional LLM pass adds signal clustering, priority inference, and dependency detection on top. Use `--no-llm` to skip it entirely.
 
@@ -57,11 +57,17 @@ Stringer extracts these signals automatically, scores them by confidence, and ou
 
 - **TODO collector** (`todos`) — Scans source files for `TODO`, `FIXME`, `HACK`, `XXX`, `BUG`, and `OPTIMIZE` comments. Enriched with git blame author and timestamp. Confidence scoring with age-based boosts.
 - **Git log collector** (`gitlog`) — Detects reverts, high-churn files, and stale branches from git history.
-- **Patterns collector** (`patterns`) — Flags large files and modules with low test coverage ratios. Test detection supports Go, JavaScript/TypeScript, Python, Ruby, Java, Kotlin, Rust, C#, PHP, and Swift.
+- **Patterns collector** (`patterns`) — Flags large files and modules with low test coverage ratios. Test detection supports Go, JavaScript/TypeScript, Python, Ruby, Java, Kotlin, Rust, C#, PHP, Swift, Scala, and Elixir.
 - **Lottery risk analyzer** (`lotteryrisk`) — Flags directories with low lottery risk (single-author ownership risk) using git blame and commit history with recency weighting.
 - **GitHub collector** (`github`) — Imports open issues, pull requests, and actionable review comments from GitHub. With `--include-closed`, also generates pre-closed signals from merged PRs and closed issues with architectural module context. Requires `GITHUB_TOKEN` env var.
 - **Dependency health collector** (`dephealth`) — Detects archived, deprecated, and stale dependencies across six ecosystems: Go (`go.mod`), npm (`package.json`), Rust (`Cargo.toml`), Java/Maven (`pom.xml`), C#/.NET (`*.csproj`), and Python (`requirements.txt`/`pyproject.toml`).
 - **Vulnerability scanner** (`vuln`) — Detects known CVEs across seven ecosystems via [OSV.dev](https://osv.dev/): Go (`go.mod`), Java/Maven (`pom.xml`), Java/Gradle (`build.gradle`/`.kts`), Rust (`Cargo.toml`), C#/.NET (`*.csproj`), Python (`requirements.txt`/`pyproject.toml`), and Node.js (`package.json`). No language toolchains required — only network access to osv.dev. Severity-based confidence scoring from CVSS vectors.
+- **Complexity hotspot collector** (`complexity`) — Detects complex functions using composite scoring (lines + branch count). Surfaces functions that are both complex and high-churn.
+- **Dead code detector** (`deadcode`) — Detects unused functions and types via regex heuristic and reference search across the codebase.
+- **Git hygiene detector** (`githygiene`) — Detects large binaries, merge conflict markers, committed secrets, and mixed line endings.
+- **Documentation staleness detector** (`docstale`) — Detects stale documentation, co-change drift between docs and source files, and broken internal links.
+- **Configuration drift detector** (`configdrift`) — Detects env var drift, dead config keys, and inconsistent defaults across environment files.
+- **API contract drift detector** (`apidrift`) — Detects drift between OpenAPI/Swagger specs and route handler registrations in code.
 
 ### Output Formats
 
@@ -82,40 +88,54 @@ Stringer extracts these signals automatically, scores them by confidence, and ou
 - **Monorepo support** — Auto-detects workspaces (go.work, pnpm, npm, lerna, nx, cargo) and scans each independently with `--workspace` filtering
 
 ```
-                       ┌─────────────────────────────────┐
-                       │        Target Repository        │
-                       └────────────────┬────────────────┘
-                                        │
-     ┌───────────┬───────────┬──────────┼──────────┬───────────┬──────────┐
-     ▼           ▼           ▼          ▼          ▼           ▼          ▼
- ┌───────┐ ┌─────────┐ ┌──────────┐ ┌─────────┐ ┌────────────┐ ┌──────┐ ┌──────┐
- │ TODOs │ │   Git   │ │ Patterns │ │ Lottery │ │   GitHub   │ │ Dep  │ │ Vuln │ (parallel)
- │       │ │   log   │ │          │ │  Risk   │ │ Issues/PRs │ │ Hlth │ │      │
- └───┬───┘ └────┬────┘ └────┬─────┘ └────┬────┘ └─────┬──────┘ └──┬───┘ └──┬───┘
-     └───────────┴───────────┴────────────┴────────────┴───────────┴───────┘
-                                        ▼
-                                 ┌────────────┐
-                                 │  Dedup +   │
-                                 │ Validation │
-                                 └──────┬─────┘
-                                        │
-                    ┌───────────────────┼────────────┬────────────┐
-                    ▼                   ▼            ▼            ▼
-               ┌─────────┐       ┌──────────┐ ┌──────────┐ ┌─────────┐
-               │  Beads  │       │   JSON   │ │ Markdown │ │  Tasks  │
-               │  JSONL  │       │          │ │          │ │         │
-               └─────────┘       └──────────┘ └──────────┘ └─────────┘
+                              ┌─────────────────────────────────┐
+                              │        Target Repository        │
+                              └────────────────┬────────────────┘
+                                               │
+     ┌──────────┬──────────┬──────────┬────────┼────────┬──────────┬──────────┐
+     ▼          ▼          ▼          ▼        ▼        ▼          ▼          ▼
+ ┌───────┐ ┌───────┐ ┌────────┐ ┌────────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────────┐
+ │ TODOs │ │  Git  │ │Patterns│ │Lottery │ │GitHub│ │ Dep  │ │ Vuln │ │Complexity│ (parallel)
+ │       │ │  log  │ │        │ │ Risk   │ │      │ │ Hlth │ │      │ │          │
+ └───┬───┘ └───┬───┘ └───┬────┘ └───┬────┘ └──┬───┘ └──┬───┘ └──┬───┘ └────┬─────┘
+     │         │         │         │          │        │        │           │
+     │    ┌────┴────┐ ┌──┴───┐ ┌──┴────┐ ┌───┴───┐ ┌─┴──────┐ │           │
+     │    │  Dead   │ │ Git  │ │  Doc  │ │Config │ │  API   │ │           │
+     │    │  code   │ │Hygne │ │ Stale │ │ Drift │ │ Drift  │ │           │
+     │    └────┬────┘ └──┬───┘ └──┬────┘ └───┬───┘ └───┬────┘ │           │
+     └─────────┴─────────┴────────┴──────────┴─────────┴──────┴───────────┘
+                                               ▼
+                                        ┌────────────┐
+                                        │  Dedup +   │
+                                        │ Validation │
+                                        └──────┬─────┘
+                                               │
+                           ┌───────────────────┼────────────┬────────────┐
+                           ▼                   ▼            ▼            ▼
+                      ┌─────────┐       ┌──────────┐ ┌──────────┐ ┌─────────┐
+                      │  Beads  │       │   JSON   │ │ Markdown │ │  Tasks  │
+                      │  JSONL  │       │          │ │          │ │         │
+                      └─────────┘       └──────────┘ └──────────┘ └─────────┘
 ```
 
-## What to Expect
+## Real-World Results
 
-Output volume depends on codebase size and coding style:
+Stringer tested against 10 popular open-source repositories across four languages and a wide range of codebase sizes — from 131-file libraries to 28k-file monorepos. All runs completed successfully with zero crashes.
 
-| Codebase             | Approximate signals |
-|----------------------|---------------------|
-| Small (<5k LOC)      | 5-30                |
-| Medium (10k-50k LOC) | 20-200              |
-| Large (100k+ LOC)    | 100-1,000+          |
+| Repository | Language | Files | Signals | Time | Highlights |
+|------------|----------|------:|--------:|-----:|------------|
+| [gin](https://github.com/gin-gonic/gin) | Go | 131 | 83 | 5s | 5 toxic hotspots, 27 untested files, 4 TODOs |
+| [express](https://github.com/expressjs/express) | JS | 214 | 65 | 2s | 1 CVE found, 6 lottery risks, 45 complex functions |
+| [flask](https://github.com/pallets/flask) | Python | 236 | 111 | 6s | 7 vulnerable deps, 42 dead code hits, 9 git hygiene issues |
+| [rustlings](https://github.com/rust-lang/rustlings) | Rust | 282 | 312 | 23s | 139 TODOs, 92 coverage gaps, 64 lottery risks |
+| [tokio](https://github.com/tokio-rs/tokio) | Rust | 848 | 825 | 36s | 174 dead code hits, 443 coverage gaps, 13 vulnerable deps |
+| [fastapi](https://github.com/tiangolo/fastapi) | Python | 2,867 | 607 | 20s | 91 stale docs, 85 lottery risks, 65 complex functions |
+| [react](https://github.com/facebook/react) | JS/TS | 6,840 | 4,415 | 2m 23s | 1,060 TODOs, 493 dead code hits, 37 vulnerable deps |
+| [django](https://github.com/django/django) | Python | 7,014 | 3,254 | 2m 37s | 1,441 dead code hits, 558 coverage gaps, 81 git hygiene issues |
+| [next.js](https://github.com/vercel/next.js) | JS/TS | 27,366 | 10,334 | 26m | 6,574 complex functions, 1,756 coverage gaps, 34 vulnerable deps |
+| [kubernetes](https://github.com/kubernetes/kubernetes) | Go | 28,284 | 40,117 | 1h 23m | 19,961 complex functions, 3,585 TODOs, 78 vulnerable deps |
+
+<sub>Tested February 2026 on stringer dev build. Repos cloned with `--depth 100`. Times include both `scan` and `report`.</sub>
 
 **Recommendation:** Use `--dry-run` first to see signal counts, then use `--max-issues` to cap output on your first scan.
 
@@ -254,7 +274,7 @@ stringer scan [path] [flags]
 
 **Global flags:** `--quiet` (`-q`), `--verbose` (`-v`), `--no-color`, `--help` (`-h`)
 
-**Available collectors:** `todos`, `gitlog`, `patterns`, `lotteryrisk`, `github`, `dephealth`, `vuln`
+**Available collectors:** `todos`, `gitlog`, `patterns`, `lotteryrisk`, `github`, `dephealth`, `vuln`, `complexity`, `deadcode`, `githygiene`, `docstale`, `configdrift`, `apidrift`
 
 **Available formats:** `beads`, `json`, `markdown`, `tasks`
 
@@ -303,12 +323,13 @@ By default, stringer suppresses noise-prone signals (`missing-tests`, `low-test-
 
 ### `stringer report`
 
-Generates a repository health report with analysis sections for lottery risk, code churn, TODO age distribution, coverage gaps, and actionable recommendations.
+Generates a repository health report with analysis sections for lottery risk, code churn, complexity hotspots, TODO age distribution, coverage gaps, module summaries, health trends, git hygiene, and actionable recommendations.
 
 ```bash
 stringer report .              # print to stdout
 stringer report . -o report.txt # write to file
-stringer report . --format json # machine-readable output
+stringer report . --format json     # machine-readable output
+stringer report . --format html-dir # HTML dashboard export
 stringer report . --sections lottery-risk,churn  # specific sections only
 ```
 
@@ -317,7 +338,7 @@ stringer report . --sections lottery-risk,churn  # specific sections only
 | `--collectors`          | `-c`  | (all)   | Comma-separated list of collectors to run                 |
 | `--sections`            |       | (all)   | Comma-separated report sections to include                |
 | `--output`              | `-o`  | stdout  | Output file path                                          |
-| `--format`              | `-f`  |         | Output format (`json` for machine-readable)               |
+| `--format`              | `-f`  |         | Output format (`json` for machine-readable, `html-dir` for dashboard) |
 | `--git-depth`           |       | `0`     | Max commits to examine (default 1000)                     |
 | `--git-since`           |       |         | Only examine commits after this duration (e.g., 90d, 6m)  |
 | `--anonymize`           |       | `auto`  | Anonymize author names: auto, always, or never            |
@@ -326,7 +347,7 @@ stringer report . --sections lottery-risk,churn  # specific sections only
 | `--paths`               |       |         | Restrict scanning to specific files or directories         |
 | `--workspace`           |       |         | Report only named workspace(s) (comma-separated)          |
 
-**Available sections:** `lottery-risk`, `churn`, `todo-age`, `coverage`, `recommendations`
+**Available sections:** `lottery-risk`, `churn`, `todo-age`, `coverage`, `recommendations`, `trends`, `hotspots`, `git-hygiene`, `complexity`, `module-summary`
 
 ### `stringer docs`
 
@@ -519,7 +540,6 @@ The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `tas
 
 Planned for future releases:
 
-- **Additional language support** — Expand test detection heuristics to more ecosystems (Scala, Elixir)
 - **Stable signal IDs** — Content-based hashing that survives line moves within a file
 
 ## Design Principles
