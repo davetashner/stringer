@@ -321,7 +321,7 @@ func findDeadConfigKeys(ctx context.Context, repoPath string, templateKeys map[s
 	// Build per-key reference found map.
 	keyFound := make(map[string]bool, len(templateKeys))
 
-	_ = FS.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error {
+	_ = FS.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error { //nolint:errcheck // best-effort directory scan; empty result on failure is acceptable
 		if walkErr != nil {
 			return nil
 		}
