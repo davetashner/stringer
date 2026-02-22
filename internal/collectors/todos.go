@@ -204,7 +204,7 @@ func (c *TodoCollector) Collect(ctx context.Context, repoPath string, opts signa
 		// For blame, we need the path relative to gitRoot (not repoPath).
 		blameRelPath := relPath
 		if gitRoot != repoPath {
-			blameRelPath, _ = filepath.Rel(gitRoot, path)
+			blameRelPath, _ = filepath.Rel(gitRoot, path) //nolint:errcheck // best-effort relative path; falls back to absolute
 		}
 
 		for i := range found {

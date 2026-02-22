@@ -99,12 +99,12 @@ func buildDirectoryTree(repoPath string, maxDepth int) []DirEntry {
 		".stringer": true, ".beads": true, "dist": true, "build": true,
 	}
 
-	_ = FS.WalkDir(repoPath, func(path string, d fs.DirEntry, err error) error {
+	_ = FS.WalkDir(repoPath, func(path string, d fs.DirEntry, err error) error { //nolint:errcheck // best-effort directory scan; empty result on failure is acceptable
 		if err != nil {
 			return nil // skip errors
 		}
 
-		rel, _ := filepath.Rel(repoPath, path)
+		rel, _ := filepath.Rel(repoPath, path) //nolint:errcheck // best-effort relative path; falls back to absolute
 		if rel == "." {
 			return nil
 		}

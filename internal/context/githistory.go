@@ -191,7 +191,7 @@ func collectTags(repo testable.GitRepository) []TagInfo {
 	}
 
 	var tags []TagInfo
-	_ = tagRefs.ForEach(func(ref *plumbing.Reference) error {
+	_ = tagRefs.ForEach(func(ref *plumbing.Reference) error { //nolint:errcheck // best-effort tag enumeration; missing tags are non-critical
 		name := ref.Name().Short()
 		if !semverTagPattern.MatchString(name) {
 			return nil
