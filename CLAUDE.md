@@ -62,6 +62,10 @@ CI warns when internal Go files change without an `AGENTS.md` update. To avoid n
 - For routine changes (adding language patterns, fixing bugs, refactoring internals), include `AGENTS.md` in the PR with a no-op touch or a genuine doc update to suppress the warning
 - The guard **hard-fails** if `Collector`, `Formatter`, or `Section` interface signatures drift between source and `AGENTS.md`
 
+## Terminology
+
+- **Always use "lottery risk"**, never "bus factor". The collector is `lotteryrisk`, the signals are `low-lottery-risk`, and all docs/UI should say "lottery risk". This applies to README, AGENTS.md, decision records, commit messages, and PR descriptions.
+
 ## Project Structure
 
 See `AGENTS.md` for full architecture documentation.

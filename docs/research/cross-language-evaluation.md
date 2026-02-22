@@ -186,12 +186,12 @@ them significantly.
 
 **Overall: Good (fully polyglot)**
 
-Bus factor analysis using git blame + commit history is language-agnostic.
+Lottery risk analysis using git blame + commit history is language-agnostic.
 
 | Repo | Finding | Notes |
 |------|---------|-------|
 | Flask | 5 CRITICAL signals, David Lord 60-93% dominant | Accurate, Flask is single-maintainer |
-| Express | 6 signals, Juan José 64-81% across lib/test | Accurate bus factor assessment |
+| Express | 6 signals, Juan José 64-81% across lib/test | Accurate lottery risk assessment |
 | ripgrep | 1 signal (matcher/tests only) | **Underdetecting** — should flag more crates; Andrew Gallant is sole author of most code |
 | Petclinic | 3 CRITICAL signals, Stéphane Nicoll 40-54% | Accurate for Spring sample project |
 | Aspire | 1 signal (test directory) | Accurate but limited |
@@ -321,7 +321,7 @@ git history.
    churn accurately across all repos. High-value security revert detection
    (Express CVE).
 
-3. **lotteryrisk collector** — Bus factor analysis is inherently
+3. **lotteryrisk collector** — Lottery risk analysis is inherently
    language-agnostic and produces accurate results. Minor underdetection
    with shallow clones.
 
