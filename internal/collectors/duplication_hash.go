@@ -10,8 +10,8 @@ import (
 	"unicode"
 )
 
-// windowSize is the number of consecutive normalized lines per hash window.
-const windowSize = 6
+// defaultWindowSize is the default number of consecutive normalized lines per hash window.
+const defaultWindowSize = 6
 
 // cloneLocation records where a hash window was found.
 type cloneLocation struct {
@@ -110,10 +110,10 @@ func normalizeType2(lines []string) []normalizedLine {
 	return result
 }
 
-// hashWindow computes an FNV-64a hash of windowSize consecutive normalized lines.
-func hashWindow(lines []normalizedLine, start int) uint64 {
+// hashWindow computes an FNV-64a hash of winSize consecutive normalized lines.
+func hashWindow(lines []normalizedLine, start, winSize int) uint64 {
 	h := fnv.New64a()
-	for i := start; i < start+windowSize && i < len(lines); i++ {
+	for i := start; i < start+winSize && i < len(lines); i++ {
 		_, _ = h.Write([]byte(lines[i].text))
 		_, _ = h.Write([]byte{'\n'})
 	}
@@ -129,14 +129,14 @@ type windowEntry struct {
 }
 
 // buildWindowHashes creates hash entries for all sliding windows in a file.
-func buildWindowHashes(normalized []normalizedLine, path string) []windowEntry {
-	if len(normalized) < windowSize {
+func buildWindowHashes(normalized []normalizedLine, path string, winSize int) []windowEntry {
+	if len(normalized) < winSize {
 		return nil
 	}
-	entries := make([]windowEntry, 0, len(normalized)-windowSize+1)
-	for i := 0; i <= len(normalized)-windowSize; i++ {
+	entries := make([]windowEntry, 0, len(normalized)-winSize+1)
+	for i := 0; i <= len(normalized)-winSize; i++ {
 		entries = append(entries, windowEntry{
-			hash:      hashWindow(normalized, i),
+			hash:      hashWindow(normalized, i, winSize),
 			path:      path,
 			startLine: normalized[i].origLine,
 			normIdx:   i,
@@ -147,7 +147,7 @@ func buildWindowHashes(normalized []normalizedLine, path string) []windowEntry {
 
 // groupClones groups window entries by hash, then extends adjacent matching
 // windows into larger blocks. Returns clone groups with 2+ locations.
-func groupClones(entries []windowEntry) []cloneGroup {
+func groupClones(entries []windowEntry, winSize int) []cloneGroup {
 	// Group by hash.
 	byHash := make(map[uint64][]windowEntry)
 	for _, e := range entries {
@@ -183,17 +183,17 @@ func groupClones(entries []windowEntry) []cloneGroup {
 			locs[i] = cloneLocation{Path: u.path, StartLine: u.startLine}
 		}
 		groups = append(groups, cloneGroup{
-			Lines:     windowSize,
+			Lines:     winSize,
 			Locations: locs,
 		})
 	}
 
-	return mergeAdjacentGroups(groups)
+	return mergeAdjacentGroups(groups, winSize)
 }
 
 // mergeAdjacentGroups merges clone groups whose locations are adjacent
-// (consecutive starting lines with windowSize offset) into larger blocks.
-func mergeAdjacentGroups(groups []cloneGroup) []cloneGroup {
+// (consecutive starting lines with winSize offset) into larger blocks.
+func mergeAdjacentGroups(groups []cloneGroup, winSize int) []cloneGroup {
 	if len(groups) == 0 {
 		return nil
 	}
@@ -238,7 +238,7 @@ func mergeAdjacentGroups(groups []cloneGroup) []cloneGroup {
 		for _, loc := range g.Locations {
 			// Check if a window starting 1 line after this one (in normalized space)
 			// exists in another group with the same set of paths.
-			for delta := 1; delta <= windowSize; delta++ {
+			for delta := 1; delta <= winSize; delta++ {
 				nextKey := locKey{loc.Path, loc.StartLine + delta}
 				if j, ok := locToGroup[nextKey]; ok && j != i {
 					// Verify the other group has matching paths.
@@ -318,7 +318,7 @@ func maxLines(a, b *cloneGroup) int {
 }
 
 // calcGroupLines estimates the line span of a merged group.
-// For merged adjacent windows, the span is windowSize + (number of merged windows - 1).
+// For merged adjacent windows, the span is winSize + (number of merged windows - 1).
 func calcGroupLines(g *cloneGroup) int {
 	if len(g.Locations) == 0 {
 		return g.Lines

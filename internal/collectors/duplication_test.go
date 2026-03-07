@@ -5,6 +5,7 @@ package collectors
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -113,9 +114,9 @@ func TestHashWindow(t *testing.T) {
 		{text: "d"}, {text: "e"}, {text: "g"},
 	}
 
-	h1 := hashWindow(lines1, 0)
-	h2 := hashWindow(lines2, 0)
-	h3 := hashWindow(lines3, 0)
+	h1 := hashWindow(lines1, 0, defaultWindowSize)
+	h2 := hashWindow(lines2, 0, defaultWindowSize)
+	h3 := hashWindow(lines3, 0, defaultWindowSize)
 
 	if h1 != h2 {
 		t.Error("identical windows should produce identical hashes")
@@ -130,7 +131,7 @@ func TestHashWindowShortFile(t *testing.T) {
 	lines := []normalizedLine{
 		{text: "a"}, {text: "b"},
 	}
-	entries := buildWindowHashes(lines, "short.go")
+	entries := buildWindowHashes(lines, "short.go", defaultWindowSize)
 	if len(entries) != 0 {
 		t.Errorf("expected 0 entries for short file, got %d", len(entries))
 	}
@@ -145,10 +146,10 @@ func TestGroupClones(t *testing.T) {
 	}
 
 	var entries []windowEntry
-	entries = append(entries, buildWindowHashes(lines, "file1.go")...)
-	entries = append(entries, buildWindowHashes(lines, "file2.go")...)
+	entries = append(entries, buildWindowHashes(lines, "file1.go", defaultWindowSize)...)
+	entries = append(entries, buildWindowHashes(lines, "file2.go", defaultWindowSize)...)
 
-	groups := groupClones(entries)
+	groups := groupClones(entries, defaultWindowSize)
 
 	if len(groups) == 0 {
 		t.Fatal("expected at least 1 clone group")
@@ -825,6 +826,102 @@ func TestCollectSignalCap(t *testing.T) {
 
 	if len(signals) > 3 {
 		t.Errorf("expected at most 3 signals with MaxIssues=3, got %d", len(signals))
+	}
+}
+
+// TestCollect_ConfigurableWindowSize verifies that a larger window size requires
+// more matching lines before emitting signals.
+func TestCollect_ConfigurableWindowSize(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create two files with exactly 8 identical normalized lines.
+	block := strings.Join([]string{
+		"package dup",
+		"",
+		"func work() {",
+		"a := 1",
+		"b := 2",
+		"c := a + b",
+		"d := c * 2",
+		"e := d + 1",
+		"f := e - 3",
+		"g := f + a",
+		"h := g * b",
+		"}",
+	}, "\n")
+
+	writeTestFile(t, dir, "file1.go", block)
+	writeTestFile(t, dir, "file2.go", block)
+
+	c := &DuplicationCollector{}
+
+	// With default window size (6), we should get signals.
+	sigs, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	if err != nil {
+		t.Fatalf("Collect() error: %v", err)
+	}
+	defaultCount := len(sigs)
+	if defaultCount == 0 {
+		t.Fatal("expected signals with default window size")
+	}
+
+	// With a very large window size (20), no blocks are long enough.
+	c2 := &DuplicationCollector{}
+	sigs2, err := c2.Collect(context.Background(), dir, signal.CollectorOpts{
+		DuplicationWindowSize: 20,
+	})
+	if err != nil {
+		t.Fatalf("Collect() error: %v", err)
+	}
+	if len(sigs2) != 0 {
+		t.Errorf("expected 0 signals with window size 20, got %d", len(sigs2))
+	}
+}
+
+// TestCollect_ConfigurableSignalCap verifies the signal cap option works.
+func TestCollect_ConfigurableSignalCap(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create multiple duplicated blocks to generate several signals.
+	for i := 0; i < 5; i++ {
+		block := fmt.Sprintf("package dup\n\nfunc work%d() {\na%d := 1\nb%d := 2\nc%d := 3\nd%d := 4\ne%d := 5\nf%d := 6\n}\n",
+			i, i, i, i, i, i, i)
+		writeTestFile(t, dir, fmt.Sprintf("dir%d/file.go", i), block)
+	}
+
+	c := &DuplicationCollector{}
+	sigs, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		DuplicationSignalCap: 1,
+	})
+	if err != nil {
+		t.Fatalf("Collect() error: %v", err)
+	}
+	if len(sigs) > 1 {
+		t.Errorf("expected at most 1 signal with cap=1, got %d", len(sigs))
+	}
+}
+
+// TestCollect_ConfigurableMaxFiles verifies the file cap option works.
+func TestCollect_ConfigurableMaxFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create 5 source files.
+	for i := 0; i < 5; i++ {
+		content := fmt.Sprintf("package p\nfunc f%d() { return }\n", i)
+		writeTestFile(t, dir, fmt.Sprintf("f%d.go", i), content)
+	}
+
+	c := &DuplicationCollector{}
+	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		DuplicationMaxFiles: 2,
+	})
+	if err != nil {
+		t.Fatalf("Collect() error: %v", err)
+	}
+	// Verify the collector respected the cap by checking metrics.
+	m := c.Metrics().(*DuplicationMetrics)
+	if m.FilesScanned > 2 {
+		t.Errorf("expected at most 2 files scanned with cap=2, got %d", m.FilesScanned)
 	}
 }
 

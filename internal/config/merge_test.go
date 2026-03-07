@@ -458,3 +458,64 @@ func TestMerge_TimeoutInvalidDurationIgnored(t *testing.T) {
 	result := Merge(fileCfg, cliCfg)
 	assert.Equal(t, time.Duration(0), result.CollectorOpts["todos"].Timeout)
 }
+
+func TestMerge_ConfigurableThresholdsFromFile(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"duplication": {
+				DuplicationWindowSize: 10,
+				DuplicationSignalCap:  50,
+				DuplicationMaxFiles:   5000,
+			},
+			"deadcode": {
+				DeadcodeMaxFiles: 8000,
+			},
+			"coupling": {
+				CouplingFanOutThreshold: 15,
+				CouplingMaxFiles:        7000,
+			},
+			"docstale": {
+				DocStaleDays:       365,
+				DocDriftMinCommits: 20,
+			},
+			"githygiene": {
+				LargeBinaryThreshold: 500000,
+			},
+			"patterns": {
+				TestRatioThreshold: 0.25,
+				TestRatioMinFiles:  5,
+			},
+		},
+	}
+	cliCfg := signal.ScanConfig{}
+
+	result := Merge(fileCfg, cliCfg)
+
+	assert.Equal(t, 10, result.CollectorOpts["duplication"].DuplicationWindowSize)
+	assert.Equal(t, 50, result.CollectorOpts["duplication"].DuplicationSignalCap)
+	assert.Equal(t, 5000, result.CollectorOpts["duplication"].DuplicationMaxFiles)
+	assert.Equal(t, 8000, result.CollectorOpts["deadcode"].DeadcodeMaxFiles)
+	assert.Equal(t, 15, result.CollectorOpts["coupling"].CouplingFanOutThreshold)
+	assert.Equal(t, 7000, result.CollectorOpts["coupling"].CouplingMaxFiles)
+	assert.Equal(t, 365, result.CollectorOpts["docstale"].DocStaleDays)
+	assert.Equal(t, 20, result.CollectorOpts["docstale"].DocDriftMinCommits)
+	assert.Equal(t, 500000, result.CollectorOpts["githygiene"].LargeBinaryThreshold)
+	assert.InDelta(t, 0.25, result.CollectorOpts["patterns"].TestRatioThreshold, 0.001)
+	assert.Equal(t, 5, result.CollectorOpts["patterns"].TestRatioMinFiles)
+}
+
+func TestMerge_ConfigurableThresholdsCLIOverride(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"duplication": {DuplicationWindowSize: 10},
+		},
+	}
+	cliCfg := signal.ScanConfig{
+		CollectorOpts: map[string]signal.CollectorOpts{
+			"duplication": {DuplicationWindowSize: 8},
+		},
+	}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.Equal(t, 8, result.CollectorOpts["duplication"].DuplicationWindowSize)
+}
