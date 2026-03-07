@@ -52,6 +52,16 @@ func (c *CouplingCollector) Metrics() any { return c.metrics }
 func (c *CouplingCollector) Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error) {
 	excludes := mergeExcludes(opts.ExcludePatterns)
 
+	// Resolve configurable thresholds with defaults.
+	fileCap := opts.CouplingMaxFiles
+	if fileCap == 0 {
+		fileCap = couplingFileCountCap
+	}
+	fanOutThreshold := opts.CouplingFanOutThreshold
+	if fanOutThreshold == 0 {
+		fanOutThreshold = defaultFanOutThreshold
+	}
+
 	// Phase 1: Walk files and assign modules.
 	type fileInfo struct {
 		relPath string
@@ -124,8 +134,8 @@ func (c *CouplingCollector) Collect(ctx context.Context, repoPath string, opts s
 		}
 
 		fileCount++
-		if fileCount > couplingFileCountCap {
-			return fmt.Errorf("file count exceeds cap (%d)", couplingFileCountCap)
+		if fileCount > fileCap {
+			return fmt.Errorf("file count exceeds cap (%d)", fileCap)
 		}
 
 		mod := moduleForFile(relPath, ext)
@@ -143,7 +153,7 @@ func (c *CouplingCollector) Collect(ctx context.Context, repoPath string, opts s
 		if strings.Contains(err.Error(), "file count exceeds cap") {
 			capExceeded = true
 			if opts.ProgressFunc != nil {
-				opts.ProgressFunc(fmt.Sprintf("coupling: file cap reached (%d files)", couplingFileCountCap))
+				opts.ProgressFunc(fmt.Sprintf("coupling: file cap reached (%d files)", fileCap))
 			}
 		} else {
 			return nil, fmt.Errorf("walking repo: %w", err)
@@ -191,7 +201,7 @@ func (c *CouplingCollector) Collect(ctx context.Context, repoPath string, opts s
 	sccs := tarjanSCC(graph)
 
 	// Phase 4: Compute fan-out.
-	highFanOut := fanOutModules(graph, defaultFanOutThreshold)
+	highFanOut := fanOutModules(graph, fanOutThreshold)
 
 	// Phase 5: Generate signals.
 	var signals []signal.RawSignal
@@ -213,7 +223,7 @@ func (c *CouplingCollector) Collect(ctx context.Context, repoPath string, opts s
 
 	for _, mod := range fanOutMods {
 		count := highFanOut[mod]
-		sig := buildFanOutSignal(mod, count, opts.MinConfidence)
+		sig := buildFanOutSignal(mod, count, fanOutThreshold, opts.MinConfidence)
 		if sig != nil {
 			signals = append(signals, *sig)
 		}
@@ -272,7 +282,7 @@ func buildCycleSignal(scc []string, minConfidence float64) *signal.RawSignal {
 
 // buildFanOutSignal creates a high-coupling signal for a module.
 // Returns nil if the confidence is below minConfidence.
-func buildFanOutSignal(module string, count int, minConfidence float64) *signal.RawSignal {
+func buildFanOutSignal(module string, count, threshold int, minConfidence float64) *signal.RawSignal {
 	conf := fanOutConfidence(count)
 	if conf < minConfidence {
 		return nil
@@ -282,7 +292,7 @@ func buildFanOutSignal(module string, count int, minConfidence float64) *signal.
 	desc := fmt.Sprintf(
 		"Module %q has %d direct dependencies, which is above the threshold of %d. "+
 			"High fan-out increases the risk of cascading breakage when any dependency changes.",
-		module, count, defaultFanOutThreshold,
+		module, count, threshold,
 	)
 
 	return &signal.RawSignal{
