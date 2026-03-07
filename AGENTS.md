@@ -93,7 +93,7 @@ stringer/
 │   │   ├── beads.go            # Beads JSONL writer (primary)
 │   │   ├── json.go             # JSON with metadata envelope
 │   │   ├── markdown.go         # Human-readable markdown summary
-│   │   ├── sarif.go            # SARIF v2.1.0 static analysis output
+│   │   ├── sarif.go            # SARIF v2.1.0 output with suppressions + baseline comparison
 │   │   ├── tasks.go            # Claude Code task format
 │   │   └── signalid.go         # Shared deterministic signal ID generation
 │   ├── pipeline/           # Scan orchestration
@@ -218,6 +218,9 @@ golangci-lint run ./...
 
 # Skip baseline suppression filtering
 ./stringer scan /path/to/repo --no-baseline
+
+# SARIF with baseline comparison (marks results as new/unchanged/absent)
+./stringer scan /path/to/repo --format sarif --sarif-baseline previous.sarif -o current.sarif
 ```
 
 ## Key Design Decisions

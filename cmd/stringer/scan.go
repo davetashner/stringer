@@ -56,6 +56,7 @@ var (
 	scanWorkspace         string
 	scanNoWorkspaces      bool
 	scanNoBaseline        bool
+	scanSARIFBaseline     string
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -99,6 +100,7 @@ func init() {
 	scanCmd.Flags().StringVar(&scanWorkspace, "workspace", "", "scan only named workspace(s) (comma-separated)")
 	scanCmd.Flags().BoolVar(&scanNoWorkspaces, "no-workspaces", false, "disable monorepo auto-detection, scan root as single directory")
 	scanCmd.Flags().BoolVar(&scanNoBaseline, "no-baseline", false, "skip baseline suppression filtering")
+	scanCmd.Flags().StringVar(&scanSARIFBaseline, "sarif-baseline", "", "previous SARIF file for baseline comparison (requires --format sarif)")
 }
 
 // scanContext holds shared state across the scan lifecycle, reducing parameter
@@ -112,8 +114,9 @@ type scanContext struct {
 	fileCfg         *config.Config
 	result          *signal.ScanResult
 	collectorNames  []string
-	allSignals      []signal.RawSignal // pre-filter signals for delta state
-	suppressedCount int                // count of baseline-suppressed signals
+	allSignals      []signal.RawSignal      // pre-filter signals for delta state
+	suppressedCount int                     // count of baseline-suppressed signals
+	baselineState   *baseline.BaselineState // retained for SARIF suppression mapping
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
@@ -130,6 +133,18 @@ func runScan(cmd *cobra.Command, args []string) error {
 	if scanMinConfidence < 0 || scanMinConfidence > 1.0 {
 		return exitError(ExitInvalidArgs,
 			"stringer: --min-confidence must be between 0.0 and 1.0 (got %.2f)", scanMinConfidence)
+	}
+
+	// Validate --sarif-baseline requires --format sarif.
+	if scanSARIFBaseline != "" {
+		effectiveFormat := scanFormat
+		if ext := inferFormatFromExt(scanOutput); ext != "" && !cmd.Flags().Changed("format") {
+			effectiveFormat = ext
+		}
+		if effectiveFormat != "sarif" {
+			return exitError(ExitInvalidArgs,
+				"stringer: --sarif-baseline requires --format sarif")
+		}
 	}
 
 	sc := &scanContext{
@@ -173,19 +188,26 @@ func runScan(cmd *cobra.Command, args []string) error {
 		return printDryRun(cmd, sc.result, exitCode, sc.suppressedCount)
 	}
 
-	// 8. Write formatted output.
+	// 8. Configure SARIF formatter with baseline state if applicable.
+	if sc.scanCfg.OutputFormat == "sarif" {
+		if err := sc.configureSARIFFormatter(); err != nil {
+			return err
+		}
+	}
+
+	// 9. Write formatted output.
 	if err := writeScanOutput(cmd, sc.result, sc.scanCfg); err != nil {
 		return err
 	}
 
-	// 9. Save delta state from ALL signals (pre-filter), not just new ones.
+	// 10. Save delta state from ALL signals (pre-filter), not just new ones.
 	if scanDelta {
 		if err := saveDeltaState(absPath, sc.collectorNames, sc.allSignals, sc.workspaces); err != nil {
 			return exitError(ExitTotalFailure, "stringer: failed to save delta state (%v)", err)
 		}
 	}
 
-	// 10. Save scan history (best-effort).
+	// 11. Save scan history (best-effort).
 	if err := saveHistory(absPath, sc.result, sc.workspaces); err != nil {
 		slog.Warn("failed to save scan history", "error", err)
 	}
@@ -536,16 +558,24 @@ func (sc *scanContext) filterResults() error {
 	}
 
 	// Baseline suppression filter: remove signals that have been suppressed.
+	// For SARIF format, retain the baseline state so the formatter can emit
+	// SARIF suppressions instead of filtering signals out.
 	if !scanNoBaseline {
 		blState, blErr := baseline.Load(sc.absPath)
 		if blErr != nil {
 			slog.Warn("failed to load baseline", "error", blErr)
 		} else if blState != nil {
-			before := len(sc.result.Signals)
-			sc.result.Signals, sc.suppressedCount = pipeline.FilterSuppressed(
-				sc.result.Signals, blState, "str-")
-			slog.Info("baseline filter", "before", before, "after", len(sc.result.Signals),
-				"suppressed", sc.suppressedCount)
+			if sc.scanCfg.OutputFormat == "sarif" {
+				// SARIF format: keep all signals but save baseline for annotation.
+				sc.baselineState = blState
+				slog.Info("baseline loaded for SARIF suppressions", "count", len(blState.Suppressions))
+			} else {
+				before := len(sc.result.Signals)
+				sc.result.Signals, sc.suppressedCount = pipeline.FilterSuppressed(
+					sc.result.Signals, blState, "str-")
+				slog.Info("baseline filter", "before", before, "after", len(sc.result.Signals),
+					"suppressed", sc.suppressedCount)
+			}
 		}
 	}
 
@@ -696,6 +726,33 @@ func printDryRun(cmd *cobra.Command, result *signal.ScanResult, exitCode int, su
 	if exitCode != ExitOK {
 		return exitError(exitCode, "")
 	}
+	return nil
+}
+
+// configureSARIFFormatter sets baseline state and SARIF baseline on the
+// registered SARIF formatter so it can emit suppressions and baselineState.
+func (sc *scanContext) configureSARIFFormatter() error {
+	formatter, _ := output.GetFormatter("sarif")
+	sf, ok := formatter.(*output.SARIFFormatter)
+	if !ok {
+		return nil
+	}
+
+	// Wire baseline state for suppression mapping (SA5.1).
+	if sc.baselineState != nil {
+		sf.Baseline = sc.baselineState
+		sf.BaselinePrefix = "str-"
+	}
+
+	// Wire SARIF baseline for comparison (SA5.3).
+	if scanSARIFBaseline != "" {
+		doc, err := output.ParseSARIFBaseline(scanSARIFBaseline)
+		if err != nil {
+			return exitError(ExitInvalidArgs, "stringer: %v", err)
+		}
+		sf.SARIFBaseline = doc
+	}
+
 	return nil
 }
 

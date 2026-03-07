@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/davetashner/stringer/internal/baseline"
 	"github.com/davetashner/stringer/internal/signal"
 	"github.com/google/uuid"
 )
@@ -37,6 +38,17 @@ type SARIFFormatter struct {
 
 	// NoSnippets disables code snippet embedding in results.
 	NoSnippets bool
+
+	// Baseline is the loaded baseline state. When set, results whose signal
+	// IDs match a suppression entry receive SARIF suppressions (§3.27.22).
+	// The prefix used for signal ID matching (e.g. "str-").
+	Baseline       *baseline.BaselineState
+	BaselinePrefix string
+
+	// SARIFBaseline is a previously-emitted SARIF document used for
+	// baseline comparison. When set, results receive baselineState
+	// values (new, unchanged, absent) per SARIF §3.27.24.
+	SARIFBaseline *sarifDocument
 }
 
 // Compile-time interface check.
@@ -122,10 +134,19 @@ type sarifResult struct {
 	RuleIndex           int                        `json:"ruleIndex"`
 	Level               string                     `json:"level"`
 	Rank                float64                    `json:"rank"`
+	BaselineState       string                     `json:"baselineState,omitempty"`
 	Message             sarifMultiformatMessage    `json:"message"`
 	Locations           []sarifLocation            `json:"locations,omitempty"`
+	Suppressions        []sarifSuppression         `json:"suppressions,omitempty"`
 	PartialFingerprints map[string]string          `json:"partialFingerprints,omitempty"`
 	Properties          map[string]json.RawMessage `json:"properties,omitempty"`
+}
+
+// sarifSuppression represents a SARIF suppression object (§3.27.22).
+type sarifSuppression struct {
+	Kind          string `json:"kind"`
+	Status        string `json:"status"`
+	Justification string `json:"justification,omitempty"`
 }
 
 type sarifLocation struct {
@@ -241,6 +262,15 @@ func (f *SARIFFormatter) buildRules(signals []signal.RawSignal) ([]sarifRule, ma
 func (f *SARIFFormatter) buildResults(signals []signal.RawSignal, ruleIndex map[string]int) []sarifResult {
 	results := make([]sarifResult, 0, len(signals))
 
+	// Build baseline lookup for suppression annotation.
+	blLookup := baseline.Lookup(f.Baseline)
+
+	// Build previous fingerprint set for baseline comparison.
+	var prevFingerprints map[string]bool
+	if f.SARIFBaseline != nil {
+		prevFingerprints = extractFingerprints(f.SARIFBaseline)
+	}
+
 	// File line cache for snippet extraction (path → lines).
 	fileCache := make(map[string][]string)
 
@@ -300,10 +330,117 @@ func (f *SARIFFormatter) buildResults(signals []signal.RawSignal, ruleIndex map[
 			result.Properties = props
 		}
 
+		// SA5.1: Map baseline suppressions to SARIF suppressions.
+		sigID := SignalID(sig, f.BaselinePrefix)
+		if sup, found := blLookup[sigID]; found && !baseline.IsExpired(sup) {
+			result.Suppressions = []sarifSuppression{
+				mapBaselineToSuppression(sup),
+			}
+		}
+
+		// SA5.3: Baseline comparison — assign baselineState.
+		if prevFingerprints != nil {
+			fp := result.PartialFingerprints["stringer/v1"]
+			if prevFingerprints[fp] {
+				result.BaselineState = "unchanged"
+			} else {
+				result.BaselineState = "new"
+			}
+		}
+
 		results = append(results, result)
 	}
 
+	// SA5.3: Emit absent results for fingerprints in previous but not current.
+	if prevFingerprints != nil {
+		currentFPs := make(map[string]bool, len(results))
+		for _, r := range results {
+			currentFPs[r.PartialFingerprints["stringer/v1"]] = true
+		}
+		absentResults := f.buildAbsentResults(prevFingerprints, currentFPs)
+		results = append(results, absentResults...)
+	}
+
 	return results
+}
+
+// mapBaselineToSuppression converts a baseline suppression reason to a SARIF
+// suppression object. Kind is always "external" (from baseline, not in-source).
+func mapBaselineToSuppression(sup baseline.Suppression) sarifSuppression {
+	s := sarifSuppression{
+		Kind:   "external",
+		Status: "accepted",
+	}
+	switch sup.Reason {
+	case baseline.ReasonAcknowledged:
+		// No justification needed, status is "accepted".
+	case baseline.ReasonWontFix:
+		s.Justification = "Won't fix"
+	case baseline.ReasonFalsePositive:
+		s.Justification = "False positive"
+	default:
+		// For any unrecognized reason, map to underReview.
+		s.Status = "underReview"
+	}
+
+	// Append the suppression note if present.
+	if sup.Comment != "" {
+		if s.Justification != "" {
+			s.Justification += ": " + sup.Comment
+		} else {
+			s.Justification = sup.Comment
+		}
+	}
+
+	return s
+}
+
+// extractFingerprints collects all stringer/v1 partialFingerprints from a
+// parsed SARIF document.
+func extractFingerprints(doc *sarifDocument) map[string]bool {
+	fps := make(map[string]bool)
+	for _, run := range doc.Runs {
+		for _, result := range run.Results {
+			if fp, ok := result.PartialFingerprints["stringer/v1"]; ok && fp != "" {
+				fps[fp] = true
+			}
+		}
+	}
+	return fps
+}
+
+// buildAbsentResults creates placeholder results for fingerprints that existed
+// in the previous SARIF baseline but are absent from the current scan.
+func (f *SARIFFormatter) buildAbsentResults(prevFPs map[string]bool, currentFPs map[string]bool) []sarifResult {
+	if f.SARIFBaseline == nil {
+		return nil
+	}
+
+	var absent []sarifResult
+	for _, run := range f.SARIFBaseline.Runs {
+		for _, prev := range run.Results {
+			fp := prev.PartialFingerprints["stringer/v1"]
+			if fp == "" || currentFPs[fp] {
+				continue
+			}
+			// Clone the previous result and mark as absent.
+			r := sarifResult{
+				RuleID:        prev.RuleID,
+				RuleIndex:     prev.RuleIndex,
+				Level:         prev.Level,
+				Rank:          prev.Rank,
+				BaselineState: "absent",
+				Message:       prev.Message,
+				Locations:     prev.Locations,
+				PartialFingerprints: map[string]string{
+					"stringer/v1": fp,
+				},
+				Properties: prev.Properties,
+			}
+			absent = append(absent, r)
+		}
+	}
+	return absent
 }
 
 // extractSnippet reads up to 3 lines of context around the target line.
@@ -456,6 +593,20 @@ func kindToCollector(kind string) string {
 		"local-replace": "dephealth", "retracted-version": "dephealth",
 	}
 	return collectorMap[kind]
+}
+
+// ParseSARIFBaseline reads a SARIF file and returns its parsed document.
+// This is used by --sarif-baseline to load the previous scan's output.
+func ParseSARIFBaseline(path string) (*sarifDocument, error) {
+	data, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return nil, fmt.Errorf("read sarif baseline: %w", err)
+	}
+	var doc sarifDocument
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("parse sarif baseline: %w", err)
+	}
+	return &doc, nil
 }
 
 func mustMarshal(v any) json.RawMessage {
