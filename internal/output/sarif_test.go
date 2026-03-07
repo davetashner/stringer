@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/davetashner/stringer/internal/baseline"
 	"github.com/davetashner/stringer/internal/signal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -585,4 +586,328 @@ func TestSARIFFormatter_Snippet_EmptyRepoPath(t *testing.T) {
 	region := doc.Runs[0].Results[0].Locations[0].PhysicalLocation.Region
 	require.NotNil(t, region)
 	assert.Nil(t, region.Snippet, "empty RepoPath should suppress snippets")
+}
+
+// --- SA5.1: Baseline suppression → SARIF suppression tests ---
+
+func TestSARIFFormatter_BaselineSuppressions(t *testing.T) {
+	// Create 5 signals, 3 of which are in the baseline.
+	signals := []signal.RawSignal{
+		{Source: "todos", Kind: "todo", FilePath: "a.go", Line: 1, Title: "TODO: fix A", Confidence: 0.5},
+		{Source: "todos", Kind: "todo", FilePath: "b.go", Line: 2, Title: "TODO: fix B", Confidence: 0.6},
+		{Source: "vuln", Kind: "vuln", FilePath: "go.mod", Line: 10, Title: "CVE-2024-001", Confidence: 0.9},
+		{Source: "todos", Kind: "fixme", FilePath: "c.go", Line: 3, Title: "FIXME: broken", Confidence: 0.7},
+		{Source: "gitlog", Kind: "churn", FilePath: "d.go", Line: 0, Title: "High churn", Confidence: 0.4},
+	}
+
+	// Build baseline with 3 suppressions matching signals 0, 2, 3.
+	prefix := "str-"
+	blState := &baseline.BaselineState{
+		Version: "1",
+		Suppressions: []baseline.Suppression{
+			{SignalID: SignalID(signals[0], prefix), Reason: baseline.ReasonAcknowledged, SuppressedAt: time.Now()},
+			{SignalID: SignalID(signals[2], prefix), Reason: baseline.ReasonWontFix, SuppressedAt: time.Now()},
+			{SignalID: SignalID(signals[3], prefix), Reason: baseline.ReasonFalsePositive, SuppressedAt: time.Now()},
+		},
+	}
+
+	f := NewSARIFFormatter()
+	f.Baseline = blState
+	f.BaselinePrefix = prefix
+
+	var buf bytes.Buffer
+	require.NoError(t, f.Format(signals, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	results := doc.Runs[0].Results
+	require.Len(t, results, 5, "all 5 signals should appear in output")
+
+	// Signal 0: acknowledged → accepted, no justification.
+	require.Len(t, results[0].Suppressions, 1)
+	assert.Equal(t, "external", results[0].Suppressions[0].Kind)
+	assert.Equal(t, "accepted", results[0].Suppressions[0].Status)
+	assert.Empty(t, results[0].Suppressions[0].Justification)
+
+	// Signal 1: not suppressed → no suppressions.
+	assert.Empty(t, results[1].Suppressions)
+
+	// Signal 2: won't-fix → accepted + "Won't fix".
+	require.Len(t, results[2].Suppressions, 1)
+	assert.Equal(t, "external", results[2].Suppressions[0].Kind)
+	assert.Equal(t, "accepted", results[2].Suppressions[0].Status)
+	assert.Equal(t, "Won't fix", results[2].Suppressions[0].Justification)
+
+	// Signal 3: false-positive → accepted + "False positive".
+	require.Len(t, results[3].Suppressions, 1)
+	assert.Equal(t, "external", results[3].Suppressions[0].Kind)
+	assert.Equal(t, "accepted", results[3].Suppressions[0].Status)
+	assert.Equal(t, "False positive", results[3].Suppressions[0].Justification)
+
+	// Signal 4: not suppressed → no suppressions.
+	assert.Empty(t, results[4].Suppressions)
+}
+
+func TestSARIFFormatter_BaselineSuppressions_NoBaseline(t *testing.T) {
+	f := NewSARIFFormatter()
+	// Baseline is nil → no suppressions emitted.
+
+	signals := []signal.RawSignal{
+		{Kind: "todo", Title: "test", Confidence: 0.5},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, f.Format(signals, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	assert.Empty(t, doc.Runs[0].Results[0].Suppressions)
+}
+
+func TestSARIFFormatter_BaselineSuppressions_ExpiredSkipped(t *testing.T) {
+	sig := signal.RawSignal{Source: "todos", Kind: "todo", FilePath: "a.go", Line: 1, Title: "TODO", Confidence: 0.5}
+	prefix := "str-"
+	expired := time.Now().Add(-24 * time.Hour)
+
+	blState := &baseline.BaselineState{
+		Version: "1",
+		Suppressions: []baseline.Suppression{
+			{SignalID: SignalID(sig, prefix), Reason: baseline.ReasonAcknowledged, SuppressedAt: time.Now(), ExpiresAt: &expired},
+		},
+	}
+
+	f := NewSARIFFormatter()
+	f.Baseline = blState
+	f.BaselinePrefix = prefix
+
+	var buf bytes.Buffer
+	require.NoError(t, f.Format([]signal.RawSignal{sig}, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	assert.Empty(t, doc.Runs[0].Results[0].Suppressions, "expired suppressions should not emit SARIF suppression")
+}
+
+func TestSARIFFormatter_BaselineSuppressions_WithComment(t *testing.T) {
+	sig := signal.RawSignal{Source: "todos", Kind: "todo", FilePath: "a.go", Line: 1, Title: "TODO", Confidence: 0.5}
+	prefix := "str-"
+
+	blState := &baseline.BaselineState{
+		Version: "1",
+		Suppressions: []baseline.Suppression{
+			{SignalID: SignalID(sig, prefix), Reason: baseline.ReasonWontFix, Comment: "tracked elsewhere", SuppressedAt: time.Now()},
+		},
+	}
+
+	f := NewSARIFFormatter()
+	f.Baseline = blState
+	f.BaselinePrefix = prefix
+
+	var buf bytes.Buffer
+	require.NoError(t, f.Format([]signal.RawSignal{sig}, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	require.Len(t, doc.Runs[0].Results[0].Suppressions, 1)
+	assert.Equal(t, "Won't fix: tracked elsewhere", doc.Runs[0].Results[0].Suppressions[0].Justification)
+}
+
+func TestMapBaselineToSuppression(t *testing.T) {
+	tests := []struct {
+		name        string
+		reason      baseline.Reason
+		comment     string
+		wantStatus  string
+		wantJustify string
+	}{
+		{"acknowledged", baseline.ReasonAcknowledged, "", "accepted", ""},
+		{"wont-fix", baseline.ReasonWontFix, "", "accepted", "Won't fix"},
+		{"false-positive", baseline.ReasonFalsePositive, "", "accepted", "False positive"},
+		{"acknowledged with comment", baseline.ReasonAcknowledged, "see ticket", "accepted", "see ticket"},
+		{"wont-fix with comment", baseline.ReasonWontFix, "low priority", "accepted", "Won't fix: low priority"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sup := baseline.Suppression{
+				Reason:  tt.reason,
+				Comment: tt.comment,
+			}
+			result := mapBaselineToSuppression(sup)
+			assert.Equal(t, "external", result.Kind)
+			assert.Equal(t, tt.wantStatus, result.Status)
+			assert.Equal(t, tt.wantJustify, result.Justification)
+		})
+	}
+}
+
+// --- SA5.3: SARIF baseline comparison tests ---
+
+func TestSARIFFormatter_BaselineComparison(t *testing.T) {
+	// Create 5 signals for the "previous" baseline SARIF.
+	prevSignals := []signal.RawSignal{
+		{Source: "todos", Kind: "todo", FilePath: "a.go", Line: 1, Title: "TODO: fix A", Confidence: 0.5},
+		{Source: "todos", Kind: "todo", FilePath: "b.go", Line: 2, Title: "TODO: fix B", Confidence: 0.6},
+		{Source: "vuln", Kind: "vuln", FilePath: "go.mod", Line: 10, Title: "CVE-2024-001", Confidence: 0.9},
+		{Source: "todos", Kind: "fixme", FilePath: "c.go", Line: 3, Title: "FIXME: broken", Confidence: 0.7},
+		{Source: "gitlog", Kind: "churn", FilePath: "d.go", Line: 5, Title: "High churn", Confidence: 0.4},
+	}
+
+	// Build previous SARIF document.
+	prevFormatter := NewSARIFFormatter()
+	var prevBuf bytes.Buffer
+	require.NoError(t, prevFormatter.Format(prevSignals, &prevBuf))
+	var prevDoc sarifDocument
+	require.NoError(t, json.Unmarshal(prevBuf.Bytes(), &prevDoc))
+
+	// Current scan has 5 signals: 3 unchanged (0,1,2) + 2 new (4,5).
+	// Signal 3 and 4 from previous are absent.
+	currentSignals := []signal.RawSignal{
+		prevSignals[0], // unchanged
+		prevSignals[1], // unchanged
+		prevSignals[2], // unchanged
+		{Source: "todos", Kind: "hack", FilePath: "e.go", Line: 1, Title: "HACK: workaround", Confidence: 0.3}, // new
+		{Source: "vuln", Kind: "vuln", FilePath: "go.mod", Line: 20, Title: "CVE-2024-999", Confidence: 0.8},   // new
+	}
+
+	f := NewSARIFFormatter()
+	f.SARIFBaseline = &prevDoc
+
+	var buf bytes.Buffer
+	require.NoError(t, f.Format(currentSignals, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	results := doc.Runs[0].Results
+
+	// 5 current + 2 absent = 7 total results.
+	require.Len(t, results, 7, "should have 5 current + 2 absent results")
+
+	// First 3 should be unchanged.
+	assert.Equal(t, "unchanged", results[0].BaselineState)
+	assert.Equal(t, "unchanged", results[1].BaselineState)
+	assert.Equal(t, "unchanged", results[2].BaselineState)
+
+	// Next 2 should be new.
+	assert.Equal(t, "new", results[3].BaselineState)
+	assert.Equal(t, "new", results[4].BaselineState)
+
+	// Last 2 should be absent.
+	assert.Equal(t, "absent", results[5].BaselineState)
+	assert.Equal(t, "absent", results[6].BaselineState)
+
+	// Verify absent results have correct fingerprints from previous.
+	for _, r := range results[5:] {
+		assert.NotEmpty(t, r.PartialFingerprints["stringer/v1"])
+	}
+}
+
+func TestSARIFFormatter_NoBaselineComparison_NoBaselineState(t *testing.T) {
+	f := NewSARIFFormatter()
+	// SARIFBaseline is nil → no baselineState on results.
+
+	signals := []signal.RawSignal{
+		{Kind: "todo", Title: "test", Confidence: 0.5},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, f.Format(signals, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	assert.Empty(t, doc.Runs[0].Results[0].BaselineState, "no baselineState when SARIFBaseline is nil")
+}
+
+func TestSARIFFormatter_BaselineComparison_AllNew(t *testing.T) {
+	// Empty previous doc.
+	prevDoc := sarifDocument{
+		Version: "2.1.0",
+		Runs:    []sarifRun{{Results: []sarifResult{}}},
+	}
+
+	f := NewSARIFFormatter()
+	f.SARIFBaseline = &prevDoc
+
+	signals := []signal.RawSignal{
+		{Kind: "todo", Title: "new signal", Confidence: 0.5},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, f.Format(signals, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	require.Len(t, doc.Runs[0].Results, 1)
+	assert.Equal(t, "new", doc.Runs[0].Results[0].BaselineState)
+}
+
+func TestSARIFFormatter_BaselineComparison_AllAbsent(t *testing.T) {
+	prevSignals := []signal.RawSignal{
+		{Source: "todos", Kind: "todo", FilePath: "a.go", Line: 1, Title: "old signal", Confidence: 0.5},
+	}
+
+	prevFormatter := NewSARIFFormatter()
+	var prevBuf bytes.Buffer
+	require.NoError(t, prevFormatter.Format(prevSignals, &prevBuf))
+	var prevDoc sarifDocument
+	require.NoError(t, json.Unmarshal(prevBuf.Bytes(), &prevDoc))
+
+	f := NewSARIFFormatter()
+	f.SARIFBaseline = &prevDoc
+
+	// Empty current signals → the previous signal is absent.
+	var buf bytes.Buffer
+	require.NoError(t, f.Format([]signal.RawSignal{}, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	require.Len(t, doc.Runs[0].Results, 1)
+	assert.Equal(t, "absent", doc.Runs[0].Results[0].BaselineState)
+	assert.Equal(t, "old signal", doc.Runs[0].Results[0].Message.Text)
+}
+
+func TestParseSARIFBaseline(t *testing.T) {
+	// Write a valid SARIF file and parse it.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "baseline.sarif")
+
+	f := NewSARIFFormatter()
+	signals := []signal.RawSignal{
+		{Source: "todos", Kind: "todo", FilePath: "a.go", Line: 1, Title: "test", Confidence: 0.5},
+	}
+	var buf bytes.Buffer
+	require.NoError(t, f.Format(signals, &buf))
+	require.NoError(t, os.WriteFile(path, buf.Bytes(), 0o600))
+
+	doc, err := ParseSARIFBaseline(path)
+	require.NoError(t, err)
+	require.NotNil(t, doc)
+	assert.Equal(t, "2.1.0", doc.Version)
+	require.Len(t, doc.Runs, 1)
+	require.Len(t, doc.Runs[0].Results, 1)
+	assert.NotEmpty(t, doc.Runs[0].Results[0].PartialFingerprints["stringer/v1"])
+}
+
+func TestParseSARIFBaseline_NotFound(t *testing.T) {
+	_, err := ParseSARIFBaseline("/nonexistent/path.sarif")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read sarif baseline")
+}
+
+func TestParseSARIFBaseline_InvalidJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.sarif")
+	require.NoError(t, os.WriteFile(path, []byte("not json"), 0o600))
+
+	_, err := ParseSARIFBaseline(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "parse sarif baseline")
 }
