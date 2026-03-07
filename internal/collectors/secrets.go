@@ -214,7 +214,7 @@ var builtinPatterns = []SecretPattern{
 	{
 		ID:         "slack-webhook",
 		Name:       "Slack webhook URL",
-		Pattern:    regexp.MustCompile(`https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]+`),
+		Pattern:    regexp.MustCompile(`\bhttps://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]+\b`),
 		Confidence: 0.7,
 		Keywords:   []string{"hooks.slack.com"},
 	},
