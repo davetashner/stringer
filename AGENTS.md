@@ -52,6 +52,8 @@ stringer/
 │   │   ├── coupling*.go        # Coupling: circular dependencies (Tarjan's SCC) and high fan-out modules via import graph
 │   │   ├── complexity.go       # Complexity: regex-based function detection and branch counting (all languages)
 │   │   ├── complexity_go.go    # Go AST-based complexity: cyclomatic, cognitive, nesting depth via go/parser
+│   │   ├── githygiene.go       # Git hygiene: large binaries, merge conflicts, committed secrets, mixed line endings
+│   │   ├── secrets.go          # Secret detection: 24+ built-in patterns, custom patterns, allowlist, entropy detection
 │   │   └── duration.go         # Duration parsing helpers
 │   ├── analysis/           # LLM-powered analysis
 │   │   ├── cluster.go          # Signal clustering via LLM
