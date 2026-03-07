@@ -351,8 +351,13 @@ func complexFunc(items []int) int {
 			found = true
 			assert.Equal(t, "complexity", sig.Source)
 			assert.Contains(t, sig.Tags, "complexity")
-			assert.Contains(t, sig.Tags, "refactor-candidate")
-			assert.True(t, sig.Confidence >= 0.5)
+			assert.Contains(t, sig.Tags, "go")
+			assert.Contains(t, sig.Tags, "ast-analyzed")
+			assert.True(t, sig.Confidence >= 0.3)
+			// AST-analyzed title includes cyclomatic, cognitive, nesting.
+			assert.Contains(t, sig.Title, "cyclomatic:")
+			assert.Contains(t, sig.Title, "cognitive:")
+			assert.Contains(t, sig.Title, "nesting:")
 			break
 		}
 	}
@@ -903,4 +908,212 @@ func TestComplexityCollector_Elixir(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "expected process function signal from Elixir file")
+}
+
+func TestComplexityCollector_GoAST_SignalFormat(t *testing.T) {
+	dir := t.TempDir()
+
+	goCode := `package main
+
+func complexHandler(items []int) int {
+	sum := 0
+	for _, item := range items {
+		if item > 0 {
+			sum += item
+		} else if item < -10 {
+			sum -= item
+		}
+		switch {
+		case item == 0:
+			continue
+		case item > 100:
+			break
+		}
+		if sum > 1000 || sum < -1000 {
+			return sum
+		}
+	}
+	for i := 0; i < len(items); i++ {
+		if items[i] > sum && items[i] < sum*2 {
+			sum = items[i]
+		}
+	}
+	return sum
+}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "handler.go"), []byte(goCode), 0o600))
+
+	c := &ComplexityCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		MinComplexityScore: 3.0,
+	})
+	require.NoError(t, err)
+
+	complexSigs := filterByKind(signals, "complex-function")
+	require.NotEmpty(t, complexSigs)
+
+	sig := complexSigs[0]
+	assert.Contains(t, sig.Title, "cyclomatic:")
+	assert.Contains(t, sig.Title, "cognitive:")
+	assert.Contains(t, sig.Title, "nesting:")
+	assert.Contains(t, sig.Description, "Lines")
+	assert.Contains(t, sig.Description, "handler.go")
+	assert.Contains(t, sig.Tags, "ast-analyzed")
+	assert.Contains(t, sig.Tags, "go")
+	assert.True(t, sig.Confidence >= 0.3 && sig.Confidence <= 0.9,
+		"confidence %f should be in [0.3, 0.9]", sig.Confidence)
+}
+
+func TestComplexityCollector_GoAST_MethodReceiver(t *testing.T) {
+	dir := t.TempDir()
+
+	goCode := `package main
+
+type Server struct{}
+
+func (s *Server) Handle(items []int) int {
+	sum := 0
+	for _, item := range items {
+		if item > 0 {
+			sum += item
+		} else if item < -10 {
+			sum -= item
+		}
+		switch {
+		case item == 0:
+			continue
+		case item > 100:
+			break
+		}
+		if sum > 1000 || sum < -1000 {
+			return sum
+		}
+	}
+	return sum
+}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "server.go"), []byte(goCode), 0o600))
+
+	c := &ComplexityCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		MinComplexityScore: 3.0,
+	})
+	require.NoError(t, err)
+
+	complexSigs := filterByKind(signals, "complex-function")
+	require.NotEmpty(t, complexSigs)
+
+	sig := complexSigs[0]
+	assert.Contains(t, sig.Title, "Complex method:")
+	assert.Contains(t, sig.Title, "(*Server).Handle")
+}
+
+func TestComplexityCollector_GoAST_SyntaxError(t *testing.T) {
+	dir := t.TempDir()
+
+	// Go file with syntax error should be skipped, not crash.
+	badCode := `package main
+
+func broken( {
+	if true {
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "bad.go"), []byte(badCode), 0o600))
+
+	c := &ComplexityCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		MinComplexityScore: 1.0,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, signals, "syntax error file should be skipped")
+}
+
+func TestComplexityCollector_GoAST_ThresholdFilter(t *testing.T) {
+	dir := t.TempDir()
+
+	// Simple function with cyclomatic = 1 (just a return).
+	goCode := `package main
+
+func simpleFunc(x int) int {
+	a := x + 1
+	b := a + 2
+	c := b + 3
+	d := c + 4
+	e := d + 5
+	return e
+}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "simple.go"), []byte(goCode), 0o600))
+
+	c := &ComplexityCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		MinComplexityScore: 6.0, // cyclomatic threshold
+	})
+	require.NoError(t, err)
+	assert.Empty(t, signals, "simple function should be below cyclomatic threshold")
+}
+
+func TestComplexityCollector_NonGoRegexUnchanged(t *testing.T) {
+	dir := t.TempDir()
+
+	// Python file should still use regex path.
+	pyCode := `def complex_handler(data):
+    result = []
+    for item in data:
+        if item > 0:
+            result.append(item)
+        elif item < -10:
+            result.append(-item)
+        else:
+            pass
+        for sub in item.children:
+            if sub.valid and sub.active:
+                result.append(sub)
+            elif sub.pending or sub.deferred:
+                pass
+        while len(result) > 100:
+            result.pop()
+    return result
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.py"), []byte(pyCode), 0o600))
+
+	c := &ComplexityCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		MinComplexityScore: 3.0,
+	})
+	require.NoError(t, err)
+
+	complexSigs := filterByKind(signals, "complex-function")
+	require.NotEmpty(t, complexSigs)
+
+	sig := complexSigs[0]
+	// Regex path: title should have "score", not "cyclomatic".
+	assert.Contains(t, sig.Title, "score")
+	assert.NotContains(t, sig.Title, "cyclomatic:")
+	assert.Contains(t, sig.Tags, "refactor-candidate")
+	assert.NotContains(t, sig.Tags, "ast-analyzed")
+}
+
+func TestASTComplexityConfidence(t *testing.T) {
+	tests := []struct {
+		name       string
+		cyclomatic int
+		cognitive  int
+		nesting    int
+		wantMin    float64
+		wantMax    float64
+	}{
+		{"low complexity", 2, 3, 1, 0.3, 0.3},
+		{"moderate cyclomatic", 10, 5, 2, 0.4, 0.6},
+		{"high cognitive", 5, 25, 3, 0.8, 0.9},
+		{"high nesting", 3, 3, 5, 0.9, 0.9},     // nesting/5 = 1.0, clamped to 0.9
+		{"extreme values", 30, 40, 8, 0.9, 0.9}, // all high, clamped to 0.9
+		{"cyclomatic 20", 20, 10, 2, 0.9, 0.9},  // cyc/20 = 1.0, clamped to 0.9
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conf := astComplexityConfidence(tt.cyclomatic, tt.cognitive, tt.nesting)
+			assert.GreaterOrEqual(t, conf, tt.wantMin, "confidence too low")
+			assert.LessOrEqual(t, conf, tt.wantMax, "confidence too high")
+		})
+	}
 }

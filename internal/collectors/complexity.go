@@ -7,6 +7,8 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -29,12 +31,17 @@ func init() {
 
 // FunctionComplexity holds complexity metrics for a single detected function.
 type FunctionComplexity struct {
-	FilePath  string
-	FuncName  string
-	StartLine int
-	Lines     int
-	Branches  int
-	Score     float64 // lines/50 + branches
+	FilePath   string
+	FuncName   string
+	StartLine  int
+	EndLine    int
+	Lines      int
+	Branches   int
+	Score      float64 // lines/50 + branches (regex) or max(cyc/20, cog/30, nest/5) (AST)
+	Cyclomatic int     // AST-based cyclomatic complexity (0 if regex-analyzed)
+	Cognitive  int     // AST-based cognitive complexity (0 if regex-analyzed)
+	MaxNesting int     // AST-based max nesting depth (0 if regex-analyzed)
+	ASTBased   bool    // true if analyzed via Go AST, false if regex-based
 }
 
 // ComplexityMetrics holds structured metrics from the complexity scan.
@@ -223,12 +230,45 @@ func (c *ComplexityCollector) Collect(ctx context.Context, repoPath string, opts
 			return nil
 		}
 
-		funcs, analyzeErr := analyzeFile(path, relPath, spec, minLines)
-		if analyzeErr != nil {
-			return nil
+		// Use AST analysis for Go files; regex for everything else.
+		if ext == ".go" {
+			goFuncs, astErr := analyzeGoFile(path)
+			if astErr != nil {
+				slog.Warn("complexity: Go AST parse failed, skipping file", "path", relPath, "error", astErr)
+				return nil
+			}
+			for _, gf := range goFuncs {
+				if gf.Lines < minLines {
+					continue
+				}
+				if gf.Cyclomatic < int(minScore) {
+					continue
+				}
+				funcName := gf.Name
+				if gf.Receiver != "" {
+					funcName = gf.Receiver + "." + gf.Name
+				}
+				allFunctions = append(allFunctions, FunctionComplexity{
+					FilePath:   relPath,
+					FuncName:   funcName,
+					StartLine:  gf.StartLine,
+					EndLine:    gf.EndLine,
+					Lines:      gf.Lines,
+					Branches:   gf.Cyclomatic - 1, // branches = cyclomatic - 1
+					Score:      float64(gf.Cognitive),
+					Cyclomatic: gf.Cyclomatic,
+					Cognitive:  gf.Cognitive,
+					MaxNesting: gf.MaxNesting,
+					ASTBased:   true,
+				})
+			}
+		} else {
+			funcs, analyzeErr := analyzeFile(path, relPath, spec, minLines)
+			if analyzeErr != nil {
+				return nil
+			}
+			allFunctions = append(allFunctions, funcs...)
 		}
-
-		allFunctions = append(allFunctions, funcs...)
 		fileCount++
 
 		if opts.ProgressFunc != nil && fileCount%500 == 0 {
@@ -250,19 +290,39 @@ func (c *ComplexityCollector) Collect(ctx context.Context, repoPath string, opts
 	// Build signals for functions above threshold.
 	var signals []signal.RawSignal
 	for _, fc := range allFunctions {
-		if fc.Score < minScore {
-			continue
+		if fc.ASTBased {
+			// AST-analyzed: already filtered by cyclomatic threshold above.
+			titleKind := "Complex function"
+			if strings.Contains(fc.FuncName, ".") {
+				titleKind = "Complex method"
+			}
+			conf := astComplexityConfidence(fc.Cyclomatic, fc.Cognitive, fc.MaxNesting)
+			signals = append(signals, signal.RawSignal{
+				Source:      "complexity",
+				Kind:        "complex-function",
+				FilePath:    fc.FilePath,
+				Line:        fc.StartLine,
+				Title:       fmt.Sprintf("%s: %s (cyclomatic: %d, cognitive: %d, nesting: %d)", titleKind, fc.FuncName, fc.Cyclomatic, fc.Cognitive, fc.MaxNesting),
+				Description: fmt.Sprintf("Lines %d-%d in %s", fc.StartLine, fc.EndLine, fc.FilePath),
+				Confidence:  conf,
+				Tags:        []string{"complexity", "go", "ast-analyzed"},
+			})
+		} else {
+			// Regex-analyzed: filter by minScore.
+			if fc.Score < minScore {
+				continue
+			}
+			conf := complexityConfidence(fc.Score)
+			signals = append(signals, signal.RawSignal{
+				Source:     "complexity",
+				Kind:       "complex-function",
+				FilePath:   fc.FilePath,
+				Line:       fc.StartLine,
+				Title:      fmt.Sprintf("Complex function: %s (score %.1f, %d lines, %d branches)", fc.FuncName, fc.Score, fc.Lines, fc.Branches),
+				Confidence: conf,
+				Tags:       []string{"complexity", "refactor-candidate"},
+			})
 		}
-		conf := complexityConfidence(fc.Score)
-		signals = append(signals, signal.RawSignal{
-			Source:     "complexity",
-			Kind:       "complex-function",
-			FilePath:   fc.FilePath,
-			Line:       fc.StartLine,
-			Title:      fmt.Sprintf("Complex function: %s (score %.1f, %d lines, %d branches)", fc.FuncName, fc.Score, fc.Lines, fc.Branches),
-			Confidence: conf,
-			Tags:       []string{"complexity", "refactor-candidate"},
-		})
 	}
 
 	c.metrics = &ComplexityMetrics{
@@ -547,6 +607,19 @@ func complexityConfidence(score float64) float64 {
 	default:
 		return 0.5
 	}
+}
+
+// astComplexityConfidence computes confidence for AST-analyzed functions.
+// Formula: max(cyclomatic/20, cognitive/30, nesting/5), clamped to [0.3, 0.9].
+func astComplexityConfidence(cyclomatic, cognitive, nesting int) float64 {
+	conf := math.Max(float64(cyclomatic)/20.0, math.Max(float64(cognitive)/30.0, float64(nesting)/5.0))
+	if conf < 0.3 {
+		conf = 0.3
+	}
+	if conf > 0.9 {
+		conf = 0.9
+	}
+	return conf
 }
 
 // Metrics returns structured metrics from the complexity scan.
