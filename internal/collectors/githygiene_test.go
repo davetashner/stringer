@@ -294,3 +294,28 @@ func TestGitHygieneCollector_OneSecretPerLine(t *testing.T) {
 	secrets := filterByKind(signals, "committed-secret")
 	assert.Len(t, secrets, 1, "should only report one secret per line")
 }
+
+func TestGitHygiene_ConfigurableLargeBinaryThreshold(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a binary file of ~500 bytes.
+	binData := make([]byte, 500)
+	binData[0] = 0x00 // null byte to make it binary
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "small.bin"), binData, 0o600))
+
+	// With default threshold (1MB), this small binary should NOT trigger.
+	c1 := &GitHygieneCollector{}
+	sigs1, err := c1.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	largeBins1 := filterByKind(sigs1, "large-binary")
+	assert.Empty(t, largeBins1, "500-byte binary should not trigger 1MB threshold")
+
+	// With threshold of 100 bytes, it SHOULD trigger.
+	c2 := &GitHygieneCollector{}
+	sigs2, err := c2.Collect(context.Background(), dir, signal.CollectorOpts{
+		LargeBinaryThreshold: 100,
+	})
+	require.NoError(t, err)
+	largeBins2 := filterByKind(sigs2, "large-binary")
+	assert.NotEmpty(t, largeBins2, "500-byte binary should trigger 100-byte threshold")
+}

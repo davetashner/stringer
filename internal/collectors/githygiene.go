@@ -52,6 +52,12 @@ var mergeConflictPattern = regexp.MustCompile(`^(<{7}|={7}|>{7})\s`)
 func (c *GitHygieneCollector) Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error) {
 	excludes := mergeExcludes(opts.ExcludePatterns)
 
+	// Resolve configurable threshold with default.
+	binaryThreshold := int64(opts.LargeBinaryThreshold)
+	if binaryThreshold == 0 {
+		binaryThreshold = defaultLargeBinaryThreshold
+	}
+
 	// Parse .gitattributes for LFS-tracked patterns.
 	lfsPatterns := parseLFSPatterns(repoPath)
 
@@ -105,7 +111,7 @@ func (c *GitHygieneCollector) Collect(ctx context.Context, repoPath string, opts
 		if binary {
 			if !isLFSTracked(relPath, lfsPatterns) {
 				info, statErr := FS.Stat(path)
-				if statErr == nil && info.Size() >= defaultLargeBinaryThreshold {
+				if statErr == nil && info.Size() >= binaryThreshold {
 					conf := 0.8
 					if conf >= opts.MinConfidence {
 						signals = append(signals, signal.RawSignal{
