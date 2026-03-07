@@ -4,10 +4,14 @@
 package output
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/davetashner/stringer/internal/signal"
 	"github.com/google/uuid"
@@ -23,13 +27,16 @@ type SARIFFormatter struct {
 	// If empty, "dev" is used.
 	Version string
 
-	// RepoPath is the repository root path. Used for automationDetails
-	// GUID generation.
+	// RepoPath is the repository root path. Used for resolving file paths
+	// for code snippets and for automationDetails GUID generation.
 	RepoPath string
 
-	// GitHead is the git HEAD commit hash.
-	// Used for automationDetails run correlation (first 7 chars).
+	// GitHead is the short git HEAD commit hash (first 7 chars).
+	// Used for automationDetails run correlation.
 	GitHead string
+
+	// NoSnippets disables code snippet embedding in results.
+	NoSnippets bool
 }
 
 // Compile-time interface check.
@@ -97,9 +104,9 @@ type sarifDriver struct {
 
 type sarifRule struct {
 	ID               string                     `json:"id"`
-	ShortDescription sarifMultiformatMessage     `json:"shortDescription"`
-	DefaultConfig    *sarifReportingConfig       `json:"defaultConfiguration,omitempty"`
-	Properties       map[string]json.RawMessage  `json:"properties,omitempty"`
+	ShortDescription sarifMultiformatMessage    `json:"shortDescription"`
+	DefaultConfig    *sarifReportingConfig      `json:"defaultConfiguration,omitempty"`
+	Properties       map[string]json.RawMessage `json:"properties,omitempty"`
 }
 
 type sarifMultiformatMessage struct {
@@ -115,10 +122,10 @@ type sarifResult struct {
 	RuleIndex           int                        `json:"ruleIndex"`
 	Level               string                     `json:"level"`
 	Rank                float64                    `json:"rank"`
-	Message             sarifMultiformatMessage     `json:"message"`
-	Locations           []sarifLocation             `json:"locations,omitempty"`
-	PartialFingerprints map[string]string           `json:"partialFingerprints,omitempty"`
-	Properties          map[string]json.RawMessage  `json:"properties,omitempty"`
+	Message             sarifMultiformatMessage    `json:"message"`
+	Locations           []sarifLocation            `json:"locations,omitempty"`
+	PartialFingerprints map[string]string          `json:"partialFingerprints,omitempty"`
+	Properties          map[string]json.RawMessage `json:"properties,omitempty"`
 }
 
 type sarifLocation struct {
@@ -136,7 +143,12 @@ type sarifArtifactLocation struct {
 }
 
 type sarifRegion struct {
-	StartLine int `json:"startLine"`
+	StartLine int                   `json:"startLine"`
+	Snippet   *sarifArtifactContent `json:"snippet,omitempty"`
+}
+
+type sarifArtifactContent struct {
+	Text string `json:"text"`
 }
 
 func (f *SARIFFormatter) buildDocument(signals []signal.RawSignal) sarifDocument {
@@ -229,6 +241,9 @@ func (f *SARIFFormatter) buildRules(signals []signal.RawSignal) ([]sarifRule, ma
 func (f *SARIFFormatter) buildResults(signals []signal.RawSignal, ruleIndex map[string]int) []sarifResult {
 	results := make([]sarifResult, 0, len(signals))
 
+	// File line cache for snippet extraction (path → lines).
+	fileCache := make(map[string][]string)
+
 	for _, sig := range signals {
 		priority := mapConfidenceToPriority(sig.Confidence)
 		if sig.Priority != nil {
@@ -258,9 +273,15 @@ func (f *SARIFFormatter) buildResults(signals []signal.RawSignal, ruleIndex map[
 				},
 			}
 			if sig.Line > 0 {
-				loc.PhysicalLocation.Region = &sarifRegion{
+				region := &sarifRegion{
 					StartLine: sig.Line,
 				}
+				if !f.NoSnippets && f.RepoPath != "" {
+					if snippet := f.extractSnippet(sig.FilePath, sig.Line, fileCache); snippet != "" {
+						region.Snippet = &sarifArtifactContent{Text: snippet}
+					}
+				}
+				loc.PhysicalLocation.Region = region
 			}
 			result.Locations = []sarifLocation{loc}
 		}
@@ -283,6 +304,65 @@ func (f *SARIFFormatter) buildResults(signals []signal.RawSignal, ruleIndex map[
 	}
 
 	return results
+}
+
+// extractSnippet reads up to 3 lines of context around the target line.
+// Returns the joined lines or empty string if the file cannot be read.
+// Uses fileCache to avoid re-reading the same file.
+func (f *SARIFFormatter) extractSnippet(filePath string, line int, cache map[string][]string) string {
+	fullPath := filepath.Join(f.RepoPath, filePath)
+
+	lines, ok := cache[fullPath]
+	if !ok {
+		var err error
+		lines, err = readFileLines(fullPath)
+		if err != nil {
+			// Mark as attempted so we don't retry.
+			cache[fullPath] = nil
+			return ""
+		}
+		cache[fullPath] = lines
+	}
+	if lines == nil {
+		return ""
+	}
+
+	// line is 1-indexed; convert to 0-indexed.
+	idx := line - 1
+	if idx < 0 || idx >= len(lines) {
+		return ""
+	}
+
+	start := idx - 1
+	if start < 0 {
+		start = 0
+	}
+	end := idx + 2 // exclusive, so line after target
+	if end > len(lines) {
+		end = len(lines)
+	}
+
+	return strings.Join(lines[start:end], "\n")
+}
+
+// readFileLines reads a file and returns its lines.
+func readFileLines(path string) ([]string, error) {
+	cleanPath := filepath.Clean(path)
+	file, err := os.Open(cleanPath) //nolint:gosec // path is constructed from RepoPath + signal FilePath
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return lines, nil
 }
 
 // priorityToSARIFLevel maps P1-P4 to SARIF level values.

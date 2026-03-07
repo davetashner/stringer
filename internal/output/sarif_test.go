@@ -6,6 +6,8 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -416,4 +418,171 @@ func TestSARIFFormatter_AutomationDetails_ShortHead(t *testing.T) {
 	ad := f.buildAutomationDetails()
 	require.NotNil(t, ad)
 	assert.Equal(t, "stringer/abc", ad.ID, "short head should be used as-is")
+}
+
+// --- SA5.4: code snippet tests ---
+
+func TestSARIFFormatter_Snippet_MiddleLine(t *testing.T) {
+	dir := t.TempDir()
+	content := "line1\nline2\nline3\nline4\nline5\nline6\nline7\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.go"), []byte(content), 0o600))
+
+	f := NewSARIFFormatter()
+	f.RepoPath = dir
+
+	signals := []signal.RawSignal{
+		{Kind: "todo", Title: "test", FilePath: "test.go", Line: 5, Confidence: 0.5},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, f.Format(signals, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	result := doc.Runs[0].Results[0]
+	require.Len(t, result.Locations, 1)
+	region := result.Locations[0].PhysicalLocation.Region
+	require.NotNil(t, region)
+	require.NotNil(t, region.Snippet)
+	assert.Equal(t, "line4\nline5\nline6", region.Snippet.Text)
+}
+
+func TestSARIFFormatter_Snippet_FirstLine(t *testing.T) {
+	dir := t.TempDir()
+	content := "first\nsecond\nthird\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.go"), []byte(content), 0o600))
+
+	f := NewSARIFFormatter()
+	f.RepoPath = dir
+
+	signals := []signal.RawSignal{
+		{Kind: "todo", Title: "test", FilePath: "test.go", Line: 1, Confidence: 0.5},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, f.Format(signals, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	region := doc.Runs[0].Results[0].Locations[0].PhysicalLocation.Region
+	require.NotNil(t, region.Snippet)
+	assert.Equal(t, "first\nsecond", region.Snippet.Text, "line 1 should include lines 1-2 only")
+}
+
+func TestSARIFFormatter_Snippet_LastLine(t *testing.T) {
+	dir := t.TempDir()
+	content := "alpha\nbeta\ngamma\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.go"), []byte(content), 0o600))
+
+	f := NewSARIFFormatter()
+	f.RepoPath = dir
+
+	signals := []signal.RawSignal{
+		{Kind: "todo", Title: "test", FilePath: "test.go", Line: 3, Confidence: 0.5},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, f.Format(signals, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	region := doc.Runs[0].Results[0].Locations[0].PhysicalLocation.Region
+	require.NotNil(t, region.Snippet)
+	assert.Equal(t, "beta\ngamma", region.Snippet.Text, "last line should include lines N-1 and N")
+}
+
+func TestSARIFFormatter_Snippet_MissingFile(t *testing.T) {
+	dir := t.TempDir()
+
+	f := NewSARIFFormatter()
+	f.RepoPath = dir
+
+	signals := []signal.RawSignal{
+		{Kind: "todo", Title: "test", FilePath: "nonexistent.go", Line: 5, Confidence: 0.5},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, f.Format(signals, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	region := doc.Runs[0].Results[0].Locations[0].PhysicalLocation.Region
+	require.NotNil(t, region)
+	assert.Nil(t, region.Snippet, "missing file should not produce snippet")
+}
+
+func TestSARIFFormatter_Snippet_NoSnippetsFlag(t *testing.T) {
+	dir := t.TempDir()
+	content := "line1\nline2\nline3\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.go"), []byte(content), 0o600))
+
+	f := NewSARIFFormatter()
+	f.RepoPath = dir
+	f.NoSnippets = true
+
+	signals := []signal.RawSignal{
+		{Kind: "todo", Title: "test", FilePath: "test.go", Line: 2, Confidence: 0.5},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, f.Format(signals, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	region := doc.Runs[0].Results[0].Locations[0].PhysicalLocation.Region
+	require.NotNil(t, region)
+	assert.Nil(t, region.Snippet, "NoSnippets=true should suppress snippets")
+}
+
+func TestSARIFFormatter_Snippet_SameFileCached(t *testing.T) {
+	dir := t.TempDir()
+	content := "aaa\nbbb\nccc\nddd\neee\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "shared.go"), []byte(content), 0o600))
+
+	f := NewSARIFFormatter()
+	f.RepoPath = dir
+
+	signals := []signal.RawSignal{
+		{Kind: "todo", Title: "first", FilePath: "shared.go", Line: 2, Confidence: 0.5},
+		{Kind: "todo", Title: "second", FilePath: "shared.go", Line: 4, Confidence: 0.5},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, f.Format(signals, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	// Both signals should have correct snippets.
+	r0 := doc.Runs[0].Results[0].Locations[0].PhysicalLocation.Region
+	require.NotNil(t, r0.Snippet)
+	assert.Equal(t, "aaa\nbbb\nccc", r0.Snippet.Text)
+
+	r1 := doc.Runs[0].Results[1].Locations[0].PhysicalLocation.Region
+	require.NotNil(t, r1.Snippet)
+	assert.Equal(t, "ccc\nddd\neee", r1.Snippet.Text)
+}
+
+func TestSARIFFormatter_Snippet_EmptyRepoPath(t *testing.T) {
+	f := NewSARIFFormatter()
+	// RepoPath is empty — snippets should be skipped
+
+	signals := []signal.RawSignal{
+		{Kind: "todo", Title: "test", FilePath: "test.go", Line: 1, Confidence: 0.5},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, f.Format(signals, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	region := doc.Runs[0].Results[0].Locations[0].PhysicalLocation.Region
+	require.NotNil(t, region)
+	assert.Nil(t, region.Snippet, "empty RepoPath should suppress snippets")
 }
