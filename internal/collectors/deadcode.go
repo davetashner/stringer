@@ -155,6 +155,12 @@ type fileContents struct {
 func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error) {
 	excludes := mergeExcludes(opts.ExcludePatterns)
 
+	// Resolve configurable file cap with default.
+	fileCap := opts.DeadcodeMaxFiles
+	if fileCap == 0 {
+		fileCap = defaultFileCountCap
+	}
+
 	// Pass 1: Walk files, extract symbols, cache content.
 	var symbols []symbolDef
 	var files []fileContents
@@ -214,8 +220,8 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 		}
 
 		fileCount++
-		if fileCount > defaultFileCountCap {
-			return fmt.Errorf("file count exceeds cap (%d)", defaultFileCountCap)
+		if fileCount > fileCap {
+			return fmt.Errorf("file count exceeds cap (%d)", fileCap)
 		}
 
 		// Read file content.

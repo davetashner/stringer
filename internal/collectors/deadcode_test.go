@@ -5,6 +5,7 @@ package collectors
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -999,4 +1000,24 @@ UsedServer.start()
 		assert.NotContains(t, sig.Title, "UsedServer")
 	}
 	assert.True(t, foundUnused, "expected UnusedServer to be detected")
+}
+
+func TestDeadCode_ConfigurableMaxFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create 5 Go files.
+	for i := 0; i < 5; i++ {
+		content := fmt.Sprintf("package p\n\nfunc Unused%d() {}\n", i)
+		require.NoError(t, os.MkdirAll(dir, 0o750))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%d.go", i)), []byte(content), 0o600))
+	}
+
+	c := &DeadCodeCollector{}
+	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		DeadcodeMaxFiles: 2,
+	})
+	// Should not return an error — the cap triggers a controlled skip.
+	require.NoError(t, err)
+	m := c.Metrics().(*DeadCodeMetrics)
+	assert.True(t, m.SkippedCapExceeded, "expected cap exceeded flag")
 }
