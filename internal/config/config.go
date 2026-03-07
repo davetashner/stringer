@@ -77,11 +77,23 @@ type CollectorConfig struct {
 	DocDriftMinCommits int `yaml:"doc_drift_min_commits,omitempty"`
 
 	// Git hygiene collector settings.
-	LargeBinaryThreshold int `yaml:"large_binary_threshold,omitempty"`
+	LargeBinaryThreshold int                   `yaml:"large_binary_threshold,omitempty"`
+	SecretPatterns       []SecretPatternConfig `yaml:"secret_patterns,omitempty"`
+	SecretAllowlist      []string              `yaml:"secret_allowlist,omitempty"`
+	EntropyDetection     *bool                 `yaml:"entropy_detection,omitempty"`
 
 	// Patterns collector test-ratio settings.
 	TestRatioThreshold float64 `yaml:"test_ratio_threshold,omitempty"`
 	TestRatioMinFiles  int     `yaml:"test_ratio_min_files,omitempty"`
+}
+
+// SecretPatternConfig holds a user-defined secret pattern from .stringer.yaml.
+type SecretPatternConfig struct {
+	ID         string   `yaml:"id"`
+	Name       string   `yaml:"name"`
+	Pattern    string   `yaml:"pattern"`
+	Confidence float64  `yaml:"confidence"`
+	Keywords   []string `yaml:"keywords,omitempty"`
 }
 
 // FileName is the expected config file name in a repository root.

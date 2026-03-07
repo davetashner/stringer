@@ -39,6 +39,15 @@ type RawSignal struct {
 	Workspace   string    `json:"workspace,omitempty"` // Monorepo workspace name (empty for non-monorepo).
 }
 
+// SecretPatternConfig holds a user-defined secret pattern for config wiring.
+type SecretPatternConfig struct {
+	ID         string
+	Name       string
+	Pattern    string
+	Confidence float64
+	Keywords   []string
+}
+
 // CollectorOpts holds per-collector configuration options.
 type CollectorOpts struct {
 	// MinConfidence filters signals below this threshold.
@@ -139,6 +148,18 @@ type CollectorOpts struct {
 	// LargeBinaryThreshold overrides the minimum file size in bytes to flag a
 	// binary file as large. 0 uses default (1000000).
 	LargeBinaryThreshold int
+
+	// SecretPatterns holds user-defined secret patterns to register alongside
+	// built-in patterns.
+	SecretPatterns []SecretPatternConfig
+
+	// SecretAllowlist holds regex patterns. Lines matching any allowlist
+	// pattern have their secret matches suppressed.
+	SecretAllowlist []string
+
+	// EntropyDetection enables Shannon entropy-based secret detection.
+	// Default false (opt-in).
+	EntropyDetection bool
 
 	// TestRatioThreshold overrides the minimum test-to-source file ratio.
 	// 0 uses default (0.10).
