@@ -83,6 +83,39 @@ func Merge(fileCfg *Config, cliCfg signal.ScanConfig) signal.ScanConfig {
 			if co.MinComplexityScore == 0 && fc.MinComplexityScore > 0 {
 				co.MinComplexityScore = fc.MinComplexityScore
 			}
+			if co.DuplicationWindowSize == 0 && fc.DuplicationWindowSize > 0 {
+				co.DuplicationWindowSize = fc.DuplicationWindowSize
+			}
+			if co.DuplicationSignalCap == 0 && fc.DuplicationSignalCap > 0 {
+				co.DuplicationSignalCap = fc.DuplicationSignalCap
+			}
+			if co.DuplicationMaxFiles == 0 && fc.DuplicationMaxFiles > 0 {
+				co.DuplicationMaxFiles = fc.DuplicationMaxFiles
+			}
+			if co.DeadcodeMaxFiles == 0 && fc.DeadcodeMaxFiles > 0 {
+				co.DeadcodeMaxFiles = fc.DeadcodeMaxFiles
+			}
+			if co.CouplingFanOutThreshold == 0 && fc.CouplingFanOutThreshold > 0 {
+				co.CouplingFanOutThreshold = fc.CouplingFanOutThreshold
+			}
+			if co.CouplingMaxFiles == 0 && fc.CouplingMaxFiles > 0 {
+				co.CouplingMaxFiles = fc.CouplingMaxFiles
+			}
+			if co.DocStaleDays == 0 && fc.DocStaleDays > 0 {
+				co.DocStaleDays = fc.DocStaleDays
+			}
+			if co.DocDriftMinCommits == 0 && fc.DocDriftMinCommits > 0 {
+				co.DocDriftMinCommits = fc.DocDriftMinCommits
+			}
+			if co.LargeBinaryThreshold == 0 && fc.LargeBinaryThreshold > 0 {
+				co.LargeBinaryThreshold = fc.LargeBinaryThreshold
+			}
+			if co.TestRatioThreshold == 0 && fc.TestRatioThreshold > 0 {
+				co.TestRatioThreshold = fc.TestRatioThreshold
+			}
+			if co.TestRatioMinFiles == 0 && fc.TestRatioMinFiles > 0 {
+				co.TestRatioMinFiles = fc.TestRatioMinFiles
+			}
 			result.CollectorOpts[name] = co
 		}
 	}

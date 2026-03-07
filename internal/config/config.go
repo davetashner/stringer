@@ -59,6 +59,29 @@ type CollectorConfig struct {
 	// Complexity collector settings.
 	MinFunctionLines   int     `yaml:"min_function_lines,omitempty"`
 	MinComplexityScore float64 `yaml:"min_complexity_score,omitempty"`
+
+	// Duplication collector settings.
+	DuplicationWindowSize int `yaml:"duplication_window_size,omitempty"`
+	DuplicationSignalCap  int `yaml:"duplication_signal_cap,omitempty"`
+	DuplicationMaxFiles   int `yaml:"duplication_max_files,omitempty"`
+
+	// Dead code collector settings.
+	DeadcodeMaxFiles int `yaml:"deadcode_max_files,omitempty"`
+
+	// Coupling collector settings.
+	CouplingFanOutThreshold int `yaml:"coupling_fan_out_threshold,omitempty"`
+	CouplingMaxFiles        int `yaml:"coupling_max_files,omitempty"`
+
+	// Doc staleness collector settings.
+	DocStaleDays       int `yaml:"doc_stale_days,omitempty"`
+	DocDriftMinCommits int `yaml:"doc_drift_min_commits,omitempty"`
+
+	// Git hygiene collector settings.
+	LargeBinaryThreshold int `yaml:"large_binary_threshold,omitempty"`
+
+	// Patterns collector test-ratio settings.
+	TestRatioThreshold float64 `yaml:"test_ratio_threshold,omitempty"`
+	TestRatioMinFiles  int     `yaml:"test_ratio_min_files,omitempty"`
 }
 
 // FileName is the expected config file name in a repository root.

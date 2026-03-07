@@ -5,6 +5,7 @@ package collectors
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,6 +13,8 @@ import (
 	"testing"
 
 	"github.com/davetashner/stringer/internal/signal"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // --- Import extraction tests ---
@@ -880,7 +883,7 @@ func TestBuildCycleSignal_FilteredByMinConfidence(t *testing.T) {
 }
 
 func TestBuildFanOutSignal_Components(t *testing.T) {
-	sig := buildFanOutSignal("hub", 15, 0.0)
+	sig := buildFanOutSignal("hub", 15, defaultFanOutThreshold, 0.0)
 	if sig == nil {
 		t.Fatal("expected non-nil signal")
 	}
@@ -896,7 +899,7 @@ func TestBuildFanOutSignal_Components(t *testing.T) {
 }
 
 func TestBuildFanOutSignal_FilteredByMinConfidence(t *testing.T) {
-	sig := buildFanOutSignal("hub", 10, 0.90)
+	sig := buildFanOutSignal("hub", 10, defaultFanOutThreshold, 0.90)
 	if sig != nil {
 		t.Error("expected nil signal when minConfidence exceeds fan-out confidence")
 	}
@@ -932,4 +935,53 @@ func writeCouplingTestFile(t *testing.T, dir, relPath, content string) {
 	if err := os.WriteFile(fullPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
+}
+
+func TestCoupling_ConfigurableFanOutThreshold(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a Go module with a hub file importing 5 packages.
+	writeCouplingTestFile(t, dir, "go.mod", "module example.com/test\ngo 1.21\n")
+	writeCouplingTestFile(t, dir, "hub/hub.go", `package hub
+
+import (
+	"example.com/test/a"
+	"example.com/test/b"
+	"example.com/test/c"
+	"example.com/test/d"
+	"example.com/test/e"
+)
+
+func Hub() { a.A(); b.B(); c.C(); d.D(); e.E() }
+`)
+	for _, pkg := range []string{"a", "b", "c", "d", "e"} {
+		writeCouplingTestFile(t, dir, pkg+"/"+pkg+".go",
+			fmt.Sprintf("package %s\n\nfunc %s() {}\n", pkg, strings.ToUpper(pkg)))
+	}
+
+	// With default threshold (10), 5 imports should NOT trigger.
+	c1 := &CouplingCollector{}
+	sigs1, err := c1.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	fanOutCount1 := 0
+	for _, s := range sigs1 {
+		if s.Kind == "high-coupling" {
+			fanOutCount1++
+		}
+	}
+	assert.Equal(t, 0, fanOutCount1, "should not trigger with default threshold 10")
+
+	// With threshold 3, 5 imports SHOULD trigger.
+	c2 := &CouplingCollector{}
+	sigs2, err := c2.Collect(context.Background(), dir, signal.CollectorOpts{
+		CouplingFanOutThreshold: 3,
+	})
+	require.NoError(t, err)
+	fanOutCount2 := 0
+	for _, s := range sigs2 {
+		if s.Kind == "high-coupling" {
+			fanOutCount2++
+		}
+	}
+	assert.Greater(t, fanOutCount2, 0, "should trigger with threshold 3")
 }

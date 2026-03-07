@@ -17,8 +17,11 @@ import (
 	"github.com/davetashner/stringer/internal/signal"
 )
 
-// maxDuplicationFiles is the file cap to prevent runaway on large repos.
-const maxDuplicationFiles = 10000
+// defaultDuplicationMaxFiles is the default file cap to prevent runaway on large repos.
+const defaultDuplicationMaxFiles = 10000
+
+// defaultDuplicationSignalCap is the default maximum number of duplication signals.
+const defaultDuplicationSignalCap = 200
 
 func init() {
 	collector.Register(&DuplicationCollector{})
@@ -46,6 +49,20 @@ func (c *DuplicationCollector) Name() string { return "duplication" }
 // and returns them as raw signals.
 func (c *DuplicationCollector) Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error) {
 	excludes := mergeExcludes(opts.ExcludePatterns)
+
+	// Resolve configurable thresholds with defaults.
+	fileCap := opts.DuplicationMaxFiles
+	if fileCap == 0 {
+		fileCap = defaultDuplicationMaxFiles
+	}
+	winSize := opts.DuplicationWindowSize
+	if winSize == 0 {
+		winSize = defaultWindowSize
+	}
+	sigCap := opts.DuplicationSignalCap
+	if sigCap == 0 {
+		sigCap = defaultDuplicationSignalCap
+	}
 
 	// Phase 1: Walk files and read source lines.
 	type fileData struct {
@@ -108,9 +125,9 @@ func (c *DuplicationCollector) Collect(ctx context.Context, repoPath string, opt
 		}
 
 		// Enforce file cap.
-		if fileCount >= maxDuplicationFiles {
+		if fileCount >= fileCap {
 			if opts.ProgressFunc != nil {
-				opts.ProgressFunc(fmt.Sprintf("duplication: file cap reached (%d files), skipping remaining", maxDuplicationFiles))
+				opts.ProgressFunc(fmt.Sprintf("duplication: file cap reached (%d files), skipping remaining", fileCap))
 			}
 			return filepath.SkipAll
 		}
@@ -145,10 +162,10 @@ func (c *DuplicationCollector) Collect(ctx context.Context, repoPath string, opt
 			return nil, err
 		}
 		normalized := normalizeType1(f.lines)
-		type1Entries = append(type1Entries, buildWindowHashes(normalized, f.relPath)...)
+		type1Entries = append(type1Entries, buildWindowHashes(normalized, f.relPath, winSize)...)
 	}
 
-	type1Groups := groupClones(type1Entries)
+	type1Groups := groupClones(type1Entries, winSize)
 
 	// Phase 3: Build Type 2 (near-clone) hash windows.
 	var type2Entries []windowEntry
@@ -157,10 +174,10 @@ func (c *DuplicationCollector) Collect(ctx context.Context, repoPath string, opt
 			return nil, err
 		}
 		normalized := normalizeType2(f.lines)
-		type2Entries = append(type2Entries, buildWindowHashes(normalized, f.relPath)...)
+		type2Entries = append(type2Entries, buildWindowHashes(normalized, f.relPath, winSize)...)
 	}
 
-	type2Groups := groupClones(type2Entries)
+	type2Groups := groupClones(type2Entries, winSize)
 	for i := range type2Groups {
 		type2Groups[i].NearClone = true
 	}
@@ -200,7 +217,7 @@ func (c *DuplicationCollector) Collect(ctx context.Context, repoPath string, opt
 	})
 
 	// Cap output to prevent overwhelming results on large repos.
-	maxDupSignals := 200
+	maxDupSignals := sigCap
 	if opts.MaxIssues > 0 {
 		maxDupSignals = opts.MaxIssues
 	}

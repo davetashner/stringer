@@ -103,6 +103,50 @@ type CollectorOpts struct {
 	// MinComplexityScore is the minimum composite complexity score to emit a
 	// signal. 0 uses default (6.0).
 	MinComplexityScore float64
+
+	// DuplicationWindowSize overrides the sliding window size for duplication
+	// detection. 0 uses default (6).
+	DuplicationWindowSize int
+
+	// DuplicationSignalCap overrides the maximum number of duplication signals
+	// emitted. 0 uses default (200).
+	DuplicationSignalCap int
+
+	// DuplicationMaxFiles overrides the file cap for the duplication collector.
+	// 0 uses default (10000).
+	DuplicationMaxFiles int
+
+	// DeadcodeMaxFiles overrides the file cap for the dead code collector.
+	// 0 uses default (10000).
+	DeadcodeMaxFiles int
+
+	// CouplingFanOutThreshold overrides the fan-out threshold for high-coupling
+	// signals. 0 uses default (10).
+	CouplingFanOutThreshold int
+
+	// CouplingMaxFiles overrides the file cap for the coupling collector.
+	// 0 uses default (10000).
+	CouplingMaxFiles int
+
+	// DocStaleDays overrides the minimum age gap in days between source and doc
+	// last-commit to flag a stale-doc signal. 0 uses default (180).
+	DocStaleDays int
+
+	// DocDriftMinCommits overrides the minimum source commits required before
+	// flagging doc-code-drift. 0 uses default (10).
+	DocDriftMinCommits int
+
+	// LargeBinaryThreshold overrides the minimum file size in bytes to flag a
+	// binary file as large. 0 uses default (1000000).
+	LargeBinaryThreshold int
+
+	// TestRatioThreshold overrides the minimum test-to-source file ratio.
+	// 0 uses default (0.10).
+	TestRatioThreshold float64
+
+	// TestRatioMinFiles overrides the minimum number of source files a directory
+	// must contain before reporting a low-test-ratio signal. 0 uses default (3).
+	TestRatioMinFiles int
 }
 
 // ScanConfig holds the overall configuration for a scan operation.
