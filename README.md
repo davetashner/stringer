@@ -14,7 +14,7 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11942/badge?v=2)](https://www.bestpractices.dev/projects/11942)
 
-> **v1.4.0.** Fifteen collectors — new: code duplication detector and coupling/circular dependency detector. SARIF v2.1.0 output with auto-detection. Cross-collector confidence boosting. Noise reduction: `eval/` default exclude, duplication signal cap. Ten report sections with health trend analysis and module summaries. Language support across 14 ecosystems. HTML dashboard export, parallel pipeline with signal deduplication, delta scanning, monorepo support (6 workspace types), LLM-powered clustering and priority inference, MCP server for agent integration, interactive `stringer init` wizard, and CLI config management.
+> **v1.5.0.** Signal suppression and baseline management — suppress known findings, track them across scans, filter noise on established codebases. Go AST-based complexity analysis with cyclomatic, cognitive, and nesting depth metrics. Secret detection expanded to 24 patterns with custom patterns, allowlists, and Shannon entropy detection. All collector thresholds now configurable via `.stringer.yaml`. SARIF enhanced with run correlation, code snippets, baseline suppressions, and `--sarif-baseline` comparison. Fifteen collectors, ten report sections, six output formats, 14 language ecosystems.
 
 **Codebase archaeology for developers and AI agents.** Scan any repo for hidden tech debt — TODOs, vulnerabilities, lottery risk, stale branches, unhealthy dependencies — and get structured results you can act on immediately.
 
@@ -62,9 +62,9 @@ Stringer extracts these signals automatically, scores them by confidence, and ou
 - **GitHub collector** (`github`) — Imports open issues, pull requests, and actionable review comments from GitHub. With `--include-closed`, also generates pre-closed signals from merged PRs and closed issues with architectural module context. Requires `GITHUB_TOKEN` env var.
 - **Dependency health collector** (`dephealth`) — Detects archived, deprecated, and stale dependencies across six ecosystems: Go (`go.mod`), npm (`package.json`), Rust (`Cargo.toml`), Java/Maven (`pom.xml`), C#/.NET (`*.csproj`), and Python (`requirements.txt`/`pyproject.toml`).
 - **Vulnerability scanner** (`vuln`) — Detects known CVEs across seven ecosystems via [OSV.dev](https://osv.dev/): Go (`go.mod`), Java/Maven (`pom.xml`), Java/Gradle (`build.gradle`/`.kts`), Rust (`Cargo.toml`), C#/.NET (`*.csproj`), Python (`requirements.txt`/`pyproject.toml`), and Node.js (`package.json`). No language toolchains required — only network access to osv.dev. Severity-based confidence scoring from CVSS vectors.
-- **Complexity hotspot collector** (`complexity`) — Detects complex functions using composite scoring (lines + branch count). Surfaces functions that are both complex and high-churn.
+- **Complexity hotspot collector** (`complexity`) — Detects complex functions using Go AST analysis (cyclomatic, cognitive complexity, nesting depth) or regex-based heuristics for other languages. Surfaces functions that are both complex and high-churn.
 - **Dead code detector** (`deadcode`) — Detects unused functions and types via regex heuristic and reference search across the codebase.
-- **Git hygiene detector** (`githygiene`) — Detects large binaries, merge conflict markers, committed secrets, and mixed line endings.
+- **Git hygiene detector** (`githygiene`) — Detects large binaries, merge conflict markers, committed secrets (24 built-in patterns + custom patterns + allowlist + entropy detection), and mixed line endings.
 - **Documentation staleness detector** (`docstale`) — Detects stale documentation, co-change drift between docs and source files, and broken internal links.
 - **Configuration drift detector** (`configdrift`) — Detects env var drift, dead config keys, and inconsistent defaults across environment files.
 - **API contract drift detector** (`apidrift`) — Detects drift between OpenAPI/Swagger specs and route handler registrations in code.
@@ -86,6 +86,7 @@ Stringer extracts these signals automatically, scores them by confidence, and ou
 - **Signal deduplication** — Content-based SHA-256 hashing merges duplicate signals
 - **Beads-aware dedup** — When using Beads output, filters signals already tracked in the repo
 - **Delta scanning** — `--delta` mode tracks state between scans, showing only new/removed/moved signals
+- **Baseline suppression** — Suppress known findings with `stringer baseline suppress`; suppressed signals filtered from scan output
 - **Pre-closed signals** — Generates closed entries from merged PRs, closed issues, and resolved TODOs
 - **Dry-run mode** — Preview signal counts without producing output
 - **Monorepo support** — Auto-detects workspaces (go.work, pnpm, npm, lerna, nx, cargo) and scans each independently with `--workspace` filtering
@@ -278,6 +279,9 @@ stringer scan [path] [flags]
 | `--no-llm`              |       |         | Skip all LLM passes (clustering, priority, dependencies)  |
 | `--workspace`           |       |         | Scan only named workspace(s) (comma-separated)            |
 | `--no-workspaces`       |       |         | Disable monorepo auto-detection, scan root as single dir  |
+| `--no-baseline`         |       |         | Skip baseline suppression filtering                       |
+| `--sarif-baseline`      |       |         | Previous SARIF file for baseline comparison (SARIF only)  |
+| `--no-snippets`         |       |         | Omit code snippets from SARIF output                      |
 
 **Global flags:** `--quiet` (`-q`), `--verbose` (`-v`), `--no-color`, `--help` (`-h`)
 
@@ -311,11 +315,25 @@ collectors:
     git_since: 6m
   patterns:
     include_demo_paths: true  # report missing-tests / low-test-ratio in example dirs
+    large_file_threshold: 1500  # lines
+    test_ratio_threshold: 0.1   # 10%
   lotteryrisk:
     include_demo_paths: true  # report lottery-risk in example dirs
   github:
     include_closed: true
     history_depth: 90d
+  complexity:
+    min_complexity_score: 6     # minimum score to emit signal
+    min_function_lines: 5       # skip tiny functions
+  duplication:
+    duplication_window_size: 6  # token window for sliding hash
+    duplication_signal_cap: 200 # max signals emitted
+    duplication_max_files: 10000
+  githygiene:
+    large_binary_threshold: 1000000  # bytes
+    secret_patterns: []              # custom [{id, pattern, confidence, keywords}]
+    secret_allowlist: []             # regex patterns to suppress false positives
+    entropy_detection: false         # opt-in Shannon entropy detection
 ```
 
 **Precedence:** CLI flags > `.stringer.yaml` > global config > defaults
@@ -328,7 +346,7 @@ By default, stringer suppresses noise-prone signals (`missing-tests`, `low-test-
 
 ## SARIF Integration
 
-Stringer can output [SARIF v2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) for IDE and CI integration. The format is auto-detected from the `.sarif` file extension, or set explicitly with `--format sarif`.
+Stringer can output [SARIF v2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) for IDE and CI integration. The format is auto-detected from the `.sarif` file extension, or set explicitly with `--format sarif`. SARIF output includes `automationDetails` for run correlation, code snippets with 3-line context, baseline suppression annotations, and `--sarif-baseline` for differential analysis.
 
 ```bash
 # Auto-detected from file extension
@@ -336,6 +354,12 @@ stringer scan . -o results.sarif
 
 # Explicit format flag
 stringer scan . --format sarif -o results.sarif
+
+# Baseline comparison — show only new findings
+stringer scan . --format sarif --sarif-baseline previous.sarif -o current.sarif
+
+# Without code snippets
+stringer scan . -o results.sarif --no-snippets
 ```
 
 ### VS Code
@@ -455,6 +479,30 @@ stringer config set --global no_llm true      # set in global config
 
 Use `--global` on `get`/`set` to target `~/.config/stringer/config.yaml` instead of the repo-level `.stringer.yaml`.
 
+### `stringer baseline`
+
+Manage signal suppressions. Create a baseline from the current scan, suppress known findings, and track them across scans. Suppressed signals are filtered from future scan output.
+
+```bash
+stringer baseline create .                              # snapshot current signals as baseline
+stringer baseline suppress str-0e4098f9 --reason acknowledged  # suppress a signal
+stringer baseline suppress str-11e6af70 --reason false-positive --note "Test fixture"
+stringer baseline suppress str-3afa7732 --reason won't-fix --expires 90d
+stringer baseline list                                  # show active suppressions
+stringer baseline remove str-0e4098f9                   # un-suppress a signal
+stringer baseline status                                # summary counts
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `create <path>` | Create baseline from current scan |
+| `suppress <id>` | Suppress a signal by ID |
+| `list` | List active suppressions |
+| `remove <id>` | Remove a suppression |
+| `status` | Show suppression summary |
+
+**Suppression reasons:** `acknowledged`, `won't-fix`, `false-positive`
+
 ### `stringer collectors`
 
 List and inspect registered collectors.
@@ -462,12 +510,13 @@ List and inspect registered collectors.
 ```bash
 stringer collectors list         # table of all collectors with status
 stringer collectors info todos   # detailed info, signal types, config options
+stringer collectors info duplication --json  # machine-readable with thresholds
 ```
 
 | Subcommand | Description |
 |------------|-------------|
 | `list` | Show all collectors with name, status, and description |
-| `info <name>` | Show detailed info including signal types and config options |
+| `info <name>` | Show detailed info including signal types, config options, and tunable thresholds |
 
 ## Agent Integration
 
