@@ -4,12 +4,17 @@
 package output
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/davetashner/stringer/internal/signal"
+	"github.com/google/uuid"
 )
 
 func init() {
@@ -21,6 +26,17 @@ type SARIFFormatter struct {
 	// Version is the stringer version to embed in the SARIF tool component.
 	// If empty, "dev" is used.
 	Version string
+
+	// RepoPath is the repository root path. Used for resolving file paths
+	// for code snippets and for automationDetails GUID generation.
+	RepoPath string
+
+	// GitHead is the short git HEAD commit hash (first 7 chars).
+	// Used for automationDetails run correlation.
+	GitHead string
+
+	// NoSnippets disables code snippet embedding in results.
+	NoSnippets bool
 }
 
 // Compile-time interface check.
@@ -65,8 +81,14 @@ type sarifDocument struct {
 }
 
 type sarifRun struct {
-	Tool    sarifTool     `json:"tool"`
-	Results []sarifResult `json:"results"`
+	Tool              sarifTool           `json:"tool"`
+	AutomationDetails *sarifRunAutomation `json:"automationDetails,omitempty"`
+	Results           []sarifResult       `json:"results"`
+}
+
+type sarifRunAutomation struct {
+	ID   string `json:"id,omitempty"`
+	GUID string `json:"guid,omitempty"`
 }
 
 type sarifTool struct {
@@ -121,7 +143,12 @@ type sarifArtifactLocation struct {
 }
 
 type sarifRegion struct {
-	StartLine int `json:"startLine"`
+	StartLine int                   `json:"startLine"`
+	Snippet   *sarifArtifactContent `json:"snippet,omitempty"`
+}
+
+type sarifArtifactContent struct {
+	Text string `json:"text"`
 }
 
 func (f *SARIFFormatter) buildDocument(signals []signal.RawSignal) sarifDocument {
@@ -133,22 +160,47 @@ func (f *SARIFFormatter) buildDocument(signals []signal.RawSignal) sarifDocument
 		version = "dev"
 	}
 
+	run := sarifRun{
+		Tool: sarifTool{
+			Driver: sarifDriver{
+				Name:           "stringer",
+				Version:        version,
+				InformationURI: "https://github.com/davetashner/stringer",
+				Rules:          rules,
+			},
+		},
+		AutomationDetails: f.buildAutomationDetails(),
+		Results:           results,
+	}
+
 	return sarifDocument{
 		Schema:  "https://json.schemastore.org/sarif-2.1.0.json",
 		Version: "2.1.0",
-		Runs: []sarifRun{
-			{
-				Tool: sarifTool{
-					Driver: sarifDriver{
-						Name:           "stringer",
-						Version:        version,
-						InformationURI: "https://github.com/davetashner/stringer",
-						Rules:          rules,
-					},
-				},
-				Results: results,
-			},
-		},
+		Runs:    []sarifRun{run},
+	}
+}
+
+// buildAutomationDetails creates SARIF automationDetails for run correlation.
+// Returns nil if GitHead is empty (backward compatible).
+func (f *SARIFFormatter) buildAutomationDetails() *sarifRunAutomation {
+	if f.GitHead == "" {
+		return nil
+	}
+
+	head := f.GitHead
+	if len(head) > 7 {
+		head = head[:7]
+	}
+
+	id := "stringer/" + head
+
+	// Deterministic UUID v5 from repo path + git head.
+	seed := f.RepoPath + f.GitHead
+	guid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(seed)).String()
+
+	return &sarifRunAutomation{
+		ID:   id,
+		GUID: guid,
 	}
 }
 
@@ -189,6 +241,9 @@ func (f *SARIFFormatter) buildRules(signals []signal.RawSignal) ([]sarifRule, ma
 func (f *SARIFFormatter) buildResults(signals []signal.RawSignal, ruleIndex map[string]int) []sarifResult {
 	results := make([]sarifResult, 0, len(signals))
 
+	// File line cache for snippet extraction (path → lines).
+	fileCache := make(map[string][]string)
+
 	for _, sig := range signals {
 		priority := mapConfidenceToPriority(sig.Confidence)
 		if sig.Priority != nil {
@@ -218,9 +273,15 @@ func (f *SARIFFormatter) buildResults(signals []signal.RawSignal, ruleIndex map[
 				},
 			}
 			if sig.Line > 0 {
-				loc.PhysicalLocation.Region = &sarifRegion{
+				region := &sarifRegion{
 					StartLine: sig.Line,
 				}
+				if !f.NoSnippets && f.RepoPath != "" {
+					if snippet := f.extractSnippet(sig.FilePath, sig.Line, fileCache); snippet != "" {
+						region.Snippet = &sarifArtifactContent{Text: snippet}
+					}
+				}
+				loc.PhysicalLocation.Region = region
 			}
 			result.Locations = []sarifLocation{loc}
 		}
@@ -243,6 +304,65 @@ func (f *SARIFFormatter) buildResults(signals []signal.RawSignal, ruleIndex map[
 	}
 
 	return results
+}
+
+// extractSnippet reads up to 3 lines of context around the target line.
+// Returns the joined lines or empty string if the file cannot be read.
+// Uses fileCache to avoid re-reading the same file.
+func (f *SARIFFormatter) extractSnippet(filePath string, line int, cache map[string][]string) string {
+	fullPath := filepath.Join(f.RepoPath, filePath)
+
+	lines, ok := cache[fullPath]
+	if !ok {
+		var err error
+		lines, err = readFileLines(fullPath)
+		if err != nil {
+			// Mark as attempted so we don't retry.
+			cache[fullPath] = nil
+			return ""
+		}
+		cache[fullPath] = lines
+	}
+	if lines == nil {
+		return ""
+	}
+
+	// line is 1-indexed; convert to 0-indexed.
+	idx := line - 1
+	if idx < 0 || idx >= len(lines) {
+		return ""
+	}
+
+	start := idx - 1
+	if start < 0 {
+		start = 0
+	}
+	end := idx + 2 // exclusive, so line after target
+	if end > len(lines) {
+		end = len(lines)
+	}
+
+	return strings.Join(lines[start:end], "\n")
+}
+
+// readFileLines reads a file and returns its lines.
+func readFileLines(path string) ([]string, error) {
+	cleanPath := filepath.Clean(path)
+	file, err := os.Open(cleanPath) //nolint:gosec // path is constructed from RepoPath + signal FilePath
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return lines, nil
 }
 
 // priorityToSARIFLevel maps P1-P4 to SARIF level values.
