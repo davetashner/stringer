@@ -109,6 +109,9 @@ stringer/
 │   │   ├── coverage.go         # Test coverage gaps section
 │   │   ├── recommendations.go  # Actionable recommendations section
 │   │   └── modulesummary.go    # Module health summary section
+│   ├── baseline/           # Signal suppression state (baseline.json)
+│   │   ├── baseline.go         # Load/Save/Lookup/AddOrUpdate/Remove for .stringer/baseline.json
+│   │   └── rename.go           # Atomic rename helper (overridable for tests)
 │   ├── signal/             # Domain types
 │   │   └── signal.go           # RawSignal, ScanConfig, ScanResult, CollectorOpts
 │   ├── state/              # Delta scan state persistence
