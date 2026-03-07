@@ -18,6 +18,7 @@ stringer/
 │   ├── init.go                 # init subcommand (bootstrap stringer in a repo)
 │   ├── config.go               # config get/set/list subcommands
 │   ├── collectors.go           # collectors list/info subcommands (info shows thresholds, supports --json)
+│   ├── baseline.go             # baseline create/suppress/list/remove/status subcommands
 │   ├── mcp.go                  # mcp serve subcommand (MCP server)
 │   ├── validate.go             # validate subcommand (JSONL validation)
 │   ├── version.go              # version subcommand
