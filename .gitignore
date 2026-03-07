@@ -30,6 +30,7 @@ credentials.json
 service-account*.json
 *secret*
 !*secret*_test.go
+!internal/collectors/secrets.go
 token.json
 .anthropic
 .openai

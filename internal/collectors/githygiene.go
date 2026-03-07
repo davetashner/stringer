@@ -46,29 +46,6 @@ func (c *GitHygieneCollector) Name() string { return "githygiene" }
 // mergeConflictPattern matches git merge conflict markers.
 var mergeConflictPattern = regexp.MustCompile(`^(<{7}|={7}|>{7})\s`)
 
-// secretPatterns maps pattern names to their regex and confidence scores.
-var secretPatterns = []struct {
-	name       string
-	pattern    *regexp.Regexp
-	confidence float64
-}{
-	{
-		name:       "AWS access key",
-		pattern:    regexp.MustCompile(`AKIA[0-9A-Z]{16}`),
-		confidence: 0.7,
-	},
-	{
-		name:       "GitHub token",
-		pattern:    regexp.MustCompile(`gh[ps]_[A-Za-z0-9_]{36,}`),
-		confidence: 0.7,
-	},
-	{
-		name:       "generic secret",
-		pattern:    regexp.MustCompile(`(?i)(api[_-]?key|secret[_-]?key|password)\s*[:=]\s*["'][^"']{8,}`),
-		confidence: 0.6,
-	},
-}
-
 // Collect walks the repository, performing four hygiene checks per file
 // in a single pass: large binaries, merge conflict markers, committed
 // secrets, and mixed line endings.
@@ -247,22 +224,20 @@ func scanTextFileHygiene(path, relPath string, minConfidence float64) []signal.R
 			}
 		}
 
-		// Check for committed secrets.
-		for _, sp := range secretPatterns {
-			if sp.confidence < minConfidence {
-				continue
-			}
-			if sp.pattern.MatchString(line) {
+		// Check for committed secrets using the registry.
+		if matches := defaultSecretRegistry.Match(line); len(matches) > 0 {
+			// Use the first match (one secret signal per line).
+			m := matches[0]
+			if m.Confidence >= minConfidence {
 				signals = append(signals, signal.RawSignal{
 					Source:     "githygiene",
 					Kind:       "committed-secret",
 					FilePath:   relPath,
 					Line:       lineNo + 1,
-					Title:      fmt.Sprintf("Possible %s in %s:%d", sp.name, relPath, lineNo+1),
-					Confidence: sp.confidence,
+					Title:      fmt.Sprintf("Possible %s in %s:%d", m.Name, relPath, lineNo+1),
+					Confidence: m.Confidence,
 					Tags:       []string{"git-hygiene", "security", "secret"},
 				})
-				break // one secret signal per line
 			}
 		}
 	}
