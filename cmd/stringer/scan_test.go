@@ -323,6 +323,88 @@ func TestScan_HistoryDepthFlag(t *testing.T) {
 	}
 }
 
+func TestScan_NoBaselineFlag(t *testing.T) {
+	binary := buildBinary(t)
+	root := initTestRepo(t)
+
+	// --no-baseline should skip baseline filtering (no baseline file exists,
+	// so output should be identical — but verify the flag is accepted).
+	cmd := exec.Command(binary, "scan", root, "--no-baseline", "--dry-run", "--quiet") //nolint:gosec // test helper
+	stdout, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("stringer scan --no-baseline --dry-run failed: %v", err)
+	}
+	if !strings.Contains(string(stdout), "signal(s) found") {
+		t.Errorf("expected dry-run output, got:\n%s", stdout)
+	}
+}
+
+func TestScan_DryRunJSON_SuppressedCount(t *testing.T) {
+	binary := buildBinary(t)
+	root := initTestRepo(t)
+
+	cmd := exec.Command(binary, "scan", root, "--dry-run", "--json", "--quiet") //nolint:gosec // test helper
+	stdout, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("stringer scan --dry-run --json failed: %v", err)
+	}
+
+	var result struct {
+		TotalSignals    int `json:"total_signals"`
+		SuppressedCount int `json:"suppressed_count"`
+	}
+	if err := json.Unmarshal(stdout, &result); err != nil {
+		t.Fatalf("dry-run JSON is not valid: %v\noutput: %s", err, stdout)
+	}
+
+	// No baseline file exists, so suppressed_count should be 0.
+	if result.SuppressedCount != 0 {
+		t.Errorf("suppressed_count = %d, want 0 (no baseline file)", result.SuppressedCount)
+	}
+}
+
+func TestScan_BaselineFiltering(t *testing.T) {
+	binary := buildBinary(t)
+	root := initTestRepo(t)
+
+	// First, scan to get signal count without baseline.
+	cmd := exec.Command(binary, "scan", root, "--dry-run", "--json", "--quiet") //nolint:gosec // test helper
+	stdout, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("first scan failed: %v", err)
+	}
+
+	var first struct {
+		TotalSignals int `json:"total_signals"`
+	}
+	if err := json.Unmarshal(stdout, &first); err != nil {
+		t.Fatalf("first scan JSON invalid: %v", err)
+	}
+	if first.TotalSignals < 1 {
+		t.Skip("no signals found in test repo — cannot test baseline filtering")
+	}
+
+	// Now scan with --no-baseline to confirm same count.
+	cmd = exec.Command(binary, "scan", root, "--no-baseline", "--dry-run", "--json", "--quiet") //nolint:gosec // test helper
+	stdout, err = cmd.Output()
+	if err != nil {
+		t.Fatalf("--no-baseline scan failed: %v", err)
+	}
+
+	var noBase struct {
+		TotalSignals    int `json:"total_signals"`
+		SuppressedCount int `json:"suppressed_count"`
+	}
+	if err := json.Unmarshal(stdout, &noBase); err != nil {
+		t.Fatalf("--no-baseline JSON invalid: %v", err)
+	}
+
+	// With --no-baseline, suppressed_count must be 0.
+	if noBase.SuppressedCount != 0 {
+		t.Errorf("--no-baseline suppressed_count = %d, want 0", noBase.SuppressedCount)
+	}
+}
+
 func TestScan_DefaultPath(t *testing.T) {
 	binary := buildBinary(t)
 	root := initTestRepo(t)

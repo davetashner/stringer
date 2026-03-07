@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/davetashner/stringer/internal/analysis"
+	"github.com/davetashner/stringer/internal/baseline"
 	"github.com/davetashner/stringer/internal/beads"
 	"github.com/davetashner/stringer/internal/collector"
 	_ "github.com/davetashner/stringer/internal/collectors"
@@ -54,6 +55,7 @@ var (
 	scanInferDeps         bool
 	scanWorkspace         string
 	scanNoWorkspaces      bool
+	scanNoBaseline        bool
 )
 
 // scanCmd is the subcommand for scanning a repository.
@@ -96,20 +98,22 @@ func init() {
 	scanCmd.Flags().BoolVar(&scanInferDeps, "infer-deps", false, "use LLM to detect dependencies between signals")
 	scanCmd.Flags().StringVar(&scanWorkspace, "workspace", "", "scan only named workspace(s) (comma-separated)")
 	scanCmd.Flags().BoolVar(&scanNoWorkspaces, "no-workspaces", false, "disable monorepo auto-detection, scan root as single directory")
+	scanCmd.Flags().BoolVar(&scanNoBaseline, "no-baseline", false, "skip baseline suppression filtering")
 }
 
 // scanContext holds shared state across the scan lifecycle, reducing parameter
 // passing between stages.
 type scanContext struct {
-	cmd            *cobra.Command
-	absPath        string
-	gitRoot        string
-	workspaces     []workspaceEntry
-	scanCfg        signal.ScanConfig
-	fileCfg        *config.Config
-	result         *signal.ScanResult
-	collectorNames []string
-	allSignals     []signal.RawSignal // pre-filter signals for delta state
+	cmd             *cobra.Command
+	absPath         string
+	gitRoot         string
+	workspaces      []workspaceEntry
+	scanCfg         signal.ScanConfig
+	fileCfg         *config.Config
+	result          *signal.ScanResult
+	collectorNames  []string
+	allSignals      []signal.RawSignal // pre-filter signals for delta state
+	suppressedCount int                // count of baseline-suppressed signals
 }
 
 func runScan(cmd *cobra.Command, args []string) error {
@@ -166,7 +170,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	// 7. Handle dry-run.
 	if scanDryRun {
-		return printDryRun(cmd, sc.result, exitCode)
+		return printDryRun(cmd, sc.result, exitCode, sc.suppressedCount)
 	}
 
 	// 8. Write formatted output.
@@ -531,6 +535,20 @@ func (sc *scanContext) filterResults() error {
 		}
 	}
 
+	// Baseline suppression filter: remove signals that have been suppressed.
+	if !scanNoBaseline {
+		blState, blErr := baseline.Load(sc.absPath)
+		if blErr != nil {
+			slog.Warn("failed to load baseline", "error", blErr)
+		} else if blState != nil {
+			before := len(sc.result.Signals)
+			sc.result.Signals, sc.suppressedCount = pipeline.FilterSuppressed(
+				sc.result.Signals, blState, "str-")
+			slog.Info("baseline filter", "before", before, "after", len(sc.result.Signals),
+				"suppressed", sc.suppressedCount)
+		}
+	}
+
 	// Post-pipeline confidence filter.
 	if scanMinConfidence > 0 {
 		var filtered []signal.RawSignal
@@ -625,7 +643,7 @@ func computeExitCode(result *signal.ScanResult, strict bool) int {
 }
 
 // printDryRun prints a summary of the scan results without producing formatted output.
-func printDryRun(cmd *cobra.Command, result *signal.ScanResult, exitCode int) error {
+func printDryRun(cmd *cobra.Command, result *signal.ScanResult, exitCode int, suppressedCount int) error {
 	if scanJSON {
 		type collectorSummary struct {
 			Name     string `json:"name"`
@@ -634,16 +652,18 @@ func printDryRun(cmd *cobra.Command, result *signal.ScanResult, exitCode int) er
 			Error    string `json:"error,omitempty"`
 		}
 		type dryRunOutput struct {
-			TotalSignals int                `json:"total_signals"`
-			Collectors   []collectorSummary `json:"collectors"`
-			Duration     string             `json:"duration"`
-			ExitCode     int                `json:"exit_code"`
+			TotalSignals    int                `json:"total_signals"`
+			SuppressedCount int                `json:"suppressed_count"`
+			Collectors      []collectorSummary `json:"collectors"`
+			Duration        string             `json:"duration"`
+			ExitCode        int                `json:"exit_code"`
 		}
 
 		out := dryRunOutput{
-			TotalSignals: len(result.Signals),
-			Duration:     result.Duration.String(),
-			ExitCode:     exitCode,
+			TotalSignals:    len(result.Signals),
+			SuppressedCount: suppressedCount,
+			Duration:        result.Duration.String(),
+			ExitCode:        exitCode,
 		}
 		for _, cr := range result.Results {
 			cs := collectorSummary{

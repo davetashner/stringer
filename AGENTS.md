@@ -97,6 +97,7 @@ stringer/
 │   │   ├── pipeline.go         # New(), Run() — parallel execution via errgroup
 │   │   ├── dedup.go            # Content-based signal deduplication
 │   │   ├── enrich.go           # Cross-signal confidence boosting (co-location)
+│   │   ├── baseline.go         # FilterSuppressed() — baseline suppression filtering
 │   │   └── validate.go         # ScanConfig validation
 │   ├── redact/             # Secret redaction
 │   │   └── redact.go           # Scrub sensitive patterns from signal content
@@ -211,6 +212,9 @@ golangci-lint run ./...
 
 # Dry run with machine-readable JSON output
 ./stringer scan /path/to/repo --dry-run --json
+
+# Skip baseline suppression filtering
+./stringer scan /path/to/repo --no-baseline
 ```
 
 ## Key Design Decisions
