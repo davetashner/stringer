@@ -50,6 +50,8 @@ stringer/
 │   │   ├── docstale.go         # Doc staleness: stale docs, co-change drift, broken links
 │   │   ├── duplication*.go     # Code duplication: exact clones (Type 1) and near-clones (Type 2) via FNV-64a sliding window
 │   │   ├── coupling*.go        # Coupling: circular dependencies (Tarjan's SCC) and high fan-out modules via import graph
+│   │   ├── complexity.go       # Complexity: regex-based function detection and branch counting (all languages)
+│   │   ├── complexity_go.go    # Go AST-based complexity: cyclomatic, cognitive, nesting depth via go/parser
 │   │   └── duration.go         # Duration parsing helpers
 │   ├── analysis/           # LLM-powered analysis
 │   │   ├── cluster.go          # Signal clustering via LLM
