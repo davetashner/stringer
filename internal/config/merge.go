@@ -110,6 +110,23 @@ func Merge(fileCfg *Config, cliCfg signal.ScanConfig) signal.ScanConfig {
 			if co.LargeBinaryThreshold == 0 && fc.LargeBinaryThreshold > 0 {
 				co.LargeBinaryThreshold = fc.LargeBinaryThreshold
 			}
+			if len(co.SecretPatterns) == 0 && len(fc.SecretPatterns) > 0 {
+				for _, sp := range fc.SecretPatterns {
+					co.SecretPatterns = append(co.SecretPatterns, signal.SecretPatternConfig{
+						ID:         sp.ID,
+						Name:       sp.Name,
+						Pattern:    sp.Pattern,
+						Confidence: sp.Confidence,
+						Keywords:   sp.Keywords,
+					})
+				}
+			}
+			if len(co.SecretAllowlist) == 0 && len(fc.SecretAllowlist) > 0 {
+				co.SecretAllowlist = fc.SecretAllowlist
+			}
+			if !co.EntropyDetection && fc.EntropyDetection != nil && *fc.EntropyDetection {
+				co.EntropyDetection = true
+			}
 			if co.TestRatioThreshold == 0 && fc.TestRatioThreshold > 0 {
 				co.TestRatioThreshold = fc.TestRatioThreshold
 			}

@@ -58,6 +58,29 @@ func (c *GitHygieneCollector) Collect(ctx context.Context, repoPath string, opts
 		binaryThreshold = defaultLargeBinaryThreshold
 	}
 
+	// Build per-scan registry: start from built-ins, add custom patterns,
+	// configure allowlist.
+	registry := newSecretRegistry()
+	for _, p := range builtinPatterns {
+		registry.Register(p)
+	}
+
+	// Register custom secret patterns from config.
+	for _, cp := range opts.SecretPatterns {
+		if err := registry.RegisterCustom(cp); err != nil {
+			return nil, fmt.Errorf("custom secret pattern: %w", err)
+		}
+	}
+
+	// Configure allowlist.
+	if len(opts.SecretAllowlist) > 0 {
+		if err := registry.SetAllowlist(opts.SecretAllowlist); err != nil {
+			return nil, fmt.Errorf("secret allowlist: %w", err)
+		}
+	}
+
+	entropyEnabled := opts.EntropyDetection
+
 	// Parse .gitattributes for LFS-tracked patterns.
 	lfsPatterns := parseLFSPatterns(repoPath)
 
@@ -135,7 +158,7 @@ func (c *GitHygieneCollector) Collect(ctx context.Context, repoPath string, opts
 		}
 
 		// Read file content for text-based checks.
-		fileSignals := scanTextFileHygiene(path, relPath, opts.MinConfidence)
+		fileSignals := scanTextFileHygiene(path, relPath, opts.MinConfidence, registry, entropyEnabled)
 		for i := range fileSignals {
 			switch fileSignals[i].Kind {
 			case "merge-conflict-marker":
@@ -173,7 +196,7 @@ func (c *GitHygieneCollector) Collect(ctx context.Context, repoPath string, opts
 
 // scanTextFileHygiene reads a text file and checks for merge conflict
 // markers, committed secrets, and mixed line endings in a single pass.
-func scanTextFileHygiene(path, relPath string, minConfidence float64) []signal.RawSignal {
+func scanTextFileHygiene(path, relPath string, minConfidence float64, registry *secretRegistry, entropyEnabled bool) []signal.RawSignal {
 	f, err := FS.Open(path)
 	if err != nil {
 		return nil
@@ -231,7 +254,8 @@ func scanTextFileHygiene(path, relPath string, minConfidence float64) []signal.R
 		}
 
 		// Check for committed secrets using the registry.
-		if matches := defaultSecretRegistry.Match(line); len(matches) > 0 {
+		secretFound := false
+		if matches := registry.Match(line); len(matches) > 0 {
 			// Use the first match (one secret signal per line).
 			m := matches[0]
 			if m.Confidence >= minConfidence {
@@ -244,6 +268,34 @@ func scanTextFileHygiene(path, relPath string, minConfidence float64) []signal.R
 					Confidence: m.Confidence,
 					Tags:       []string{"git-hygiene", "security", "secret"},
 				})
+				secretFound = true
+			}
+		}
+
+		// Entropy-based detection (only if enabled and no pattern match already).
+		if entropyEnabled && !secretFound {
+			if secretAssignmentPattern.MatchString(line) {
+				for _, lit := range stringLiteralPattern.FindAllStringSubmatch(line, -1) {
+					if len(lit) < 2 {
+						continue
+					}
+					val := lit[1]
+					if len(val) >= 16 && shannonEntropy(val) >= 4.0 {
+						conf := 0.4
+						if conf >= minConfidence {
+							signals = append(signals, signal.RawSignal{
+								Source:     "githygiene",
+								Kind:       "committed-secret",
+								FilePath:   relPath,
+								Line:       lineNo + 1,
+								Title:      fmt.Sprintf("Possible high-entropy secret in %s:%d", relPath, lineNo+1),
+								Confidence: conf,
+								Tags:       []string{"git-hygiene", "security", "secret", "entropy-based"},
+							})
+						}
+						break // one signal per line
+					}
+				}
 			}
 		}
 	}
