@@ -38,7 +38,7 @@ func TestComplexity_Analyze_NilMetrics(t *testing.T) {
 	assert.True(t, errors.Is(err, ErrMetricsNotAvailable))
 }
 
-func TestComplexity_AnalyzeAndRender(t *testing.T) {
+func TestComplexity_AnalyzeAndRender_RegexOnly(t *testing.T) {
 	s := &complexitySection{}
 	result := &signal.ScanResult{
 		Metrics: map[string]any{
@@ -61,6 +61,8 @@ func TestComplexity_AnalyzeAndRender(t *testing.T) {
 
 	out := buf.String()
 	assert.Contains(t, out, "Function Complexity")
+	assert.Contains(t, out, "Heuristic-based analysis")
+	assert.NotContains(t, out, "AST-based analysis")
 	assert.Contains(t, out, "processRequest")
 	assert.Contains(t, out, "parse")
 	assert.Contains(t, out, "simple")
@@ -69,6 +71,117 @@ func TestComplexity_AnalyzeAndRender(t *testing.T) {
 	processIdx := bytes.Index(buf.Bytes(), []byte("processRequest"))
 	parseIdx := bytes.Index(buf.Bytes(), []byte("parse"))
 	assert.True(t, processIdx < parseIdx, "processRequest (24.0) before parse (12.0)")
+}
+
+func TestComplexity_AnalyzeAndRender_ASTBased(t *testing.T) {
+	s := &complexitySection{}
+	result := &signal.ScanResult{
+		Metrics: map[string]any{
+			"complexity": &collectors.ComplexityMetrics{
+				Functions: []collectors.FunctionComplexity{
+					{
+						FilePath: "server.go", FuncName: "(*Server).Handle",
+						StartLine: 10, EndLine: 50, Lines: 38,
+						Cyclomatic: 12, Cognitive: 20, MaxNesting: 4,
+						ASTBased: true, Score: 20,
+					},
+					{
+						FilePath: "parser.go", FuncName: "parseExpr",
+						StartLine: 5, EndLine: 30, Lines: 23,
+						Cyclomatic: 8, Cognitive: 15, MaxNesting: 3,
+						ASTBased: true, Score: 15,
+					},
+				},
+				FilesAnalyzed:  2,
+				FunctionsFound: 2,
+			},
+		},
+	}
+
+	require.NoError(t, s.Analyze(result))
+	assert.True(t, s.hasAST)
+
+	var buf bytes.Buffer
+	require.NoError(t, s.Render(&buf))
+
+	out := buf.String()
+	assert.Contains(t, out, "AST-based analysis (Go)")
+	assert.NotContains(t, out, "Heuristic-based analysis")
+	assert.Contains(t, out, "Cyclomatic")
+	assert.Contains(t, out, "Cognitive")
+	assert.Contains(t, out, "Nesting")
+	assert.Contains(t, out, "(*Server).Handle")
+	assert.Contains(t, out, "parseExpr")
+
+	// Should be sorted by cognitive descending: Handle(20) before parseExpr(15).
+	handleIdx := bytes.Index(buf.Bytes(), []byte("(*Server).Handle"))
+	parseIdx := bytes.Index(buf.Bytes(), []byte("parseExpr"))
+	assert.True(t, handleIdx < parseIdx,
+		"Handle (cognitive 20) should appear before parseExpr (cognitive 15)")
+}
+
+func TestComplexity_AnalyzeAndRender_Mixed(t *testing.T) {
+	s := &complexitySection{}
+	result := &signal.ScanResult{
+		Metrics: map[string]any{
+			"complexity": &collectors.ComplexityMetrics{
+				Functions: []collectors.FunctionComplexity{
+					{
+						FilePath: "handler.go", FuncName: "processRequest",
+						StartLine: 10, EndLine: 50, Lines: 38,
+						Cyclomatic: 12, Cognitive: 20, MaxNesting: 4,
+						ASTBased: true, Score: 20,
+					},
+					{
+						FilePath: "app.py", FuncName: "handle_request",
+						StartLine: 5, Lines: 100, Branches: 15,
+						Score: 17.0,
+					},
+				},
+				FilesAnalyzed:  2,
+				FunctionsFound: 2,
+			},
+		},
+	}
+
+	require.NoError(t, s.Analyze(result))
+
+	var buf bytes.Buffer
+	require.NoError(t, s.Render(&buf))
+
+	out := buf.String()
+	assert.Contains(t, out, "AST-based analysis (Go)")
+	assert.Contains(t, out, "Heuristic-based analysis")
+	assert.Contains(t, out, "processRequest")
+	assert.Contains(t, out, "handle_request")
+}
+
+func TestComplexity_SortByCognitive(t *testing.T) {
+	s := &complexitySection{}
+	result := &signal.ScanResult{
+		Metrics: map[string]any{
+			"complexity": &collectors.ComplexityMetrics{
+				Functions: []collectors.FunctionComplexity{
+					{
+						FilePath: "a.go", FuncName: "lowCognitive",
+						Cyclomatic: 15, Cognitive: 5, MaxNesting: 2,
+						ASTBased: true, Score: 5,
+					},
+					{
+						FilePath: "b.go", FuncName: "highCognitive",
+						Cyclomatic: 8, Cognitive: 25, MaxNesting: 3,
+						ASTBased: true, Score: 25,
+					},
+				},
+			},
+		},
+	}
+
+	require.NoError(t, s.Analyze(result))
+
+	// highCognitive should be first despite lower cyclomatic.
+	assert.Equal(t, "highCognitive", s.functions[0].FuncName)
+	assert.Equal(t, "lowCognitive", s.functions[1].FuncName)
 }
 
 func TestComplexity_TopN_Cap(t *testing.T) {
@@ -106,18 +219,40 @@ func TestComplexity_Render_Empty(t *testing.T) {
 }
 
 func TestColorComplexity(t *testing.T) {
-	// High score — should contain original text.
 	high := ColorComplexity("20.0")
 	assert.Contains(t, high, "20.0")
 
-	// Medium score — should contain original text.
 	med := ColorComplexity("10.0")
 	assert.Contains(t, med, "10.0")
 
-	// Low score returned as-is.
 	low := ColorComplexity("5.0")
 	assert.Equal(t, "5.0", low)
 
-	// Non-numeric returned as-is.
 	assert.Equal(t, "n/a", ColorComplexity("n/a"))
+}
+
+func TestColorCyclomatic(t *testing.T) {
+	high := ColorCyclomatic("25")
+	assert.Contains(t, high, "25")
+
+	med := ColorCyclomatic("12")
+	assert.Contains(t, med, "12")
+
+	low := ColorCyclomatic("5")
+	assert.Equal(t, "5", low)
+
+	assert.Equal(t, "n/a", ColorCyclomatic("n/a"))
+}
+
+func TestColorCognitive(t *testing.T) {
+	high := ColorCognitive("30")
+	assert.Contains(t, high, "30")
+
+	med := ColorCognitive("18")
+	assert.Contains(t, med, "18")
+
+	low := ColorCognitive("5")
+	assert.Equal(t, "5", low)
+
+	assert.Equal(t, "n/a", ColorCognitive("n/a"))
 }
