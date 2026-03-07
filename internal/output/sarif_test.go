@@ -344,3 +344,76 @@ func TestSARIFFormatter_Registration(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "sarif", f.Name())
 }
+
+// --- SA5.2: automationDetails tests ---
+
+func TestSARIFFormatter_AutomationDetails_Present(t *testing.T) {
+	f := NewSARIFFormatter()
+	f.RepoPath = "/tmp/myrepo"
+	f.GitHead = "abc1234def5678"
+
+	signals := []signal.RawSignal{
+		{Kind: "todo", Title: "test", Confidence: 0.5},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, f.Format(signals, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	run := doc.Runs[0]
+	require.NotNil(t, run.AutomationDetails)
+	assert.Equal(t, "stringer/abc1234", run.AutomationDetails.ID)
+	assert.NotEmpty(t, run.AutomationDetails.GUID)
+}
+
+func TestSARIFFormatter_AutomationDetails_Deterministic(t *testing.T) {
+	f1 := &SARIFFormatter{RepoPath: "/tmp/repo", GitHead: "abc1234"}
+	f2 := &SARIFFormatter{RepoPath: "/tmp/repo", GitHead: "abc1234"}
+
+	ad1 := f1.buildAutomationDetails()
+	ad2 := f2.buildAutomationDetails()
+
+	require.NotNil(t, ad1)
+	require.NotNil(t, ad2)
+	assert.Equal(t, ad1.GUID, ad2.GUID, "same inputs should produce same GUID")
+}
+
+func TestSARIFFormatter_AutomationDetails_DifferentHead(t *testing.T) {
+	f1 := &SARIFFormatter{RepoPath: "/tmp/repo", GitHead: "abc1234"}
+	f2 := &SARIFFormatter{RepoPath: "/tmp/repo", GitHead: "def5678"}
+
+	ad1 := f1.buildAutomationDetails()
+	ad2 := f2.buildAutomationDetails()
+
+	require.NotNil(t, ad1)
+	require.NotNil(t, ad2)
+	assert.NotEqual(t, ad1.GUID, ad2.GUID, "different heads should produce different GUIDs")
+	assert.NotEqual(t, ad1.ID, ad2.ID)
+}
+
+func TestSARIFFormatter_AutomationDetails_EmptyHead(t *testing.T) {
+	f := NewSARIFFormatter()
+	f.RepoPath = "/tmp/repo"
+	// GitHead is empty
+
+	signals := []signal.RawSignal{
+		{Kind: "todo", Title: "test", Confidence: 0.5},
+	}
+
+	var buf bytes.Buffer
+	require.NoError(t, f.Format(signals, &buf))
+
+	var doc sarifDocument
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &doc))
+
+	assert.Nil(t, doc.Runs[0].AutomationDetails, "empty GitHead should omit automationDetails")
+}
+
+func TestSARIFFormatter_AutomationDetails_ShortHead(t *testing.T) {
+	f := &SARIFFormatter{RepoPath: "/tmp/repo", GitHead: "abc"}
+	ad := f.buildAutomationDetails()
+	require.NotNil(t, ad)
+	assert.Equal(t, "stringer/abc", ad.ID, "short head should be used as-is")
+}

@@ -10,6 +10,7 @@ import (
 	"slices"
 
 	"github.com/davetashner/stringer/internal/signal"
+	"github.com/google/uuid"
 )
 
 func init() {
@@ -21,6 +22,14 @@ type SARIFFormatter struct {
 	// Version is the stringer version to embed in the SARIF tool component.
 	// If empty, "dev" is used.
 	Version string
+
+	// RepoPath is the repository root path. Used for automationDetails
+	// GUID generation.
+	RepoPath string
+
+	// GitHead is the git HEAD commit hash.
+	// Used for automationDetails run correlation (first 7 chars).
+	GitHead string
 }
 
 // Compile-time interface check.
@@ -65,8 +74,14 @@ type sarifDocument struct {
 }
 
 type sarifRun struct {
-	Tool    sarifTool     `json:"tool"`
-	Results []sarifResult `json:"results"`
+	Tool              sarifTool           `json:"tool"`
+	AutomationDetails *sarifRunAutomation `json:"automationDetails,omitempty"`
+	Results           []sarifResult       `json:"results"`
+}
+
+type sarifRunAutomation struct {
+	ID   string `json:"id,omitempty"`
+	GUID string `json:"guid,omitempty"`
 }
 
 type sarifTool struct {
@@ -82,9 +97,9 @@ type sarifDriver struct {
 
 type sarifRule struct {
 	ID               string                     `json:"id"`
-	ShortDescription sarifMultiformatMessage    `json:"shortDescription"`
-	DefaultConfig    *sarifReportingConfig      `json:"defaultConfiguration,omitempty"`
-	Properties       map[string]json.RawMessage `json:"properties,omitempty"`
+	ShortDescription sarifMultiformatMessage     `json:"shortDescription"`
+	DefaultConfig    *sarifReportingConfig       `json:"defaultConfiguration,omitempty"`
+	Properties       map[string]json.RawMessage  `json:"properties,omitempty"`
 }
 
 type sarifMultiformatMessage struct {
@@ -100,10 +115,10 @@ type sarifResult struct {
 	RuleIndex           int                        `json:"ruleIndex"`
 	Level               string                     `json:"level"`
 	Rank                float64                    `json:"rank"`
-	Message             sarifMultiformatMessage    `json:"message"`
-	Locations           []sarifLocation            `json:"locations,omitempty"`
-	PartialFingerprints map[string]string          `json:"partialFingerprints,omitempty"`
-	Properties          map[string]json.RawMessage `json:"properties,omitempty"`
+	Message             sarifMultiformatMessage     `json:"message"`
+	Locations           []sarifLocation             `json:"locations,omitempty"`
+	PartialFingerprints map[string]string           `json:"partialFingerprints,omitempty"`
+	Properties          map[string]json.RawMessage  `json:"properties,omitempty"`
 }
 
 type sarifLocation struct {
@@ -133,22 +148,47 @@ func (f *SARIFFormatter) buildDocument(signals []signal.RawSignal) sarifDocument
 		version = "dev"
 	}
 
+	run := sarifRun{
+		Tool: sarifTool{
+			Driver: sarifDriver{
+				Name:           "stringer",
+				Version:        version,
+				InformationURI: "https://github.com/davetashner/stringer",
+				Rules:          rules,
+			},
+		},
+		AutomationDetails: f.buildAutomationDetails(),
+		Results:           results,
+	}
+
 	return sarifDocument{
 		Schema:  "https://json.schemastore.org/sarif-2.1.0.json",
 		Version: "2.1.0",
-		Runs: []sarifRun{
-			{
-				Tool: sarifTool{
-					Driver: sarifDriver{
-						Name:           "stringer",
-						Version:        version,
-						InformationURI: "https://github.com/davetashner/stringer",
-						Rules:          rules,
-					},
-				},
-				Results: results,
-			},
-		},
+		Runs:    []sarifRun{run},
+	}
+}
+
+// buildAutomationDetails creates SARIF automationDetails for run correlation.
+// Returns nil if GitHead is empty (backward compatible).
+func (f *SARIFFormatter) buildAutomationDetails() *sarifRunAutomation {
+	if f.GitHead == "" {
+		return nil
+	}
+
+	head := f.GitHead
+	if len(head) > 7 {
+		head = head[:7]
+	}
+
+	id := "stringer/" + head
+
+	// Deterministic UUID v5 from repo path + git head.
+	seed := f.RepoPath + f.GitHead
+	guid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(seed)).String()
+
+	return &sarifRunAutomation{
+		ID:   id,
+		GUID: guid,
 	}
 }
 
