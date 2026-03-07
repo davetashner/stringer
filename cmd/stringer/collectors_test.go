@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -302,6 +303,121 @@ func TestFormatFieldValue_EmptySlice(t *testing.T) {
 	cc := config.CollectorConfig{}
 	printConfigFields(stdout, cc, []string{"include_patterns"})
 	assert.Contains(t, stdout.String(), "(none)")
+}
+
+func TestCollectorsInfo_ThresholdsSection_Duplication(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	stdout := new(bytes.Buffer)
+	rootCmd.SetOut(stdout)
+	rootCmd.SetArgs([]string{"collectors", "info", "duplication"})
+
+	err := rootCmd.Execute()
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "Thresholds:")
+	assert.Contains(t, out, "duplication_window_size")
+	assert.Contains(t, out, "duplication_signal_cap")
+	assert.Contains(t, out, "duplication_max_files")
+	assert.Contains(t, out, "collectors.duplication.duplication_window_size")
+	// Defaults should appear.
+	assert.Contains(t, out, "6")
+	assert.Contains(t, out, "200")
+	assert.Contains(t, out, "10000")
+}
+
+func TestCollectorsInfo_NoThresholdsSection_Todos(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	stdout := new(bytes.Buffer)
+	rootCmd.SetOut(stdout)
+	rootCmd.SetArgs([]string{"collectors", "info", "todos"})
+
+	err := rootCmd.Execute()
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.NotContains(t, out, "Thresholds:")
+}
+
+func TestCollectorsInfo_ThresholdsWithConfig(t *testing.T) {
+	dir := t.TempDir()
+	yamlContent := "collectors:\n  duplication:\n    duplication_window_size: 12\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, config.FileName), []byte(yamlContent), 0o600))
+
+	origDir, _ := os.Getwd()
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	stdout := new(bytes.Buffer)
+	rootCmd.SetOut(stdout)
+	rootCmd.SetArgs([]string{"collectors", "info", "duplication"})
+
+	err := rootCmd.Execute()
+	require.NoError(t, err)
+
+	out := stdout.String()
+	assert.Contains(t, out, "Thresholds:")
+	// Current should show 12 for window size.
+	assert.Contains(t, out, "12")
+}
+
+func TestCollectorsInfo_JSONOutput(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	stdout := new(bytes.Buffer)
+	rootCmd.SetOut(stdout)
+	rootCmd.SetArgs([]string{"collectors", "info", "duplication", "--json"})
+
+	err := rootCmd.Execute()
+	require.NoError(t, err)
+
+	var result map[string]interface{}
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+	assert.Equal(t, "duplication", result["name"])
+	assert.Equal(t, "enabled", result["status"])
+
+	thresholds, ok := result["thresholds"].([]interface{})
+	require.True(t, ok, "thresholds should be an array")
+	assert.Len(t, thresholds, 3)
+
+	first := thresholds[0].(map[string]interface{})
+	assert.Equal(t, "duplication_window_size", first["name"])
+	assert.Equal(t, "6", first["default"])
+	assert.Equal(t, "6", first["current"])
+	assert.Equal(t, "collectors.duplication.duplication_window_size", first["config_key"])
+}
+
+func TestCollectorsInfo_JSONNoThresholds(t *testing.T) {
+	dir := t.TempDir()
+	origDir, _ := os.Getwd()
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	stdout := new(bytes.Buffer)
+	rootCmd.SetOut(stdout)
+	rootCmd.SetArgs([]string{"collectors", "info", "todos", "--json"})
+
+	err := rootCmd.Execute()
+	require.NoError(t, err)
+
+	var result map[string]interface{}
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+
+	assert.Equal(t, "todos", result["name"])
+	_, hasThresholds := result["thresholds"]
+	assert.False(t, hasThresholds, "todos should not have thresholds in JSON")
 }
 
 func boolPtr(b bool) *bool {

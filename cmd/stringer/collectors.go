@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
@@ -113,6 +114,56 @@ var commonConfigFields = []string{
 	"anonymize", "include_demo_paths", "timeout",
 }
 
+// ThresholdInfo describes a single configurable threshold for a collector.
+type ThresholdInfo struct {
+	Name      string `json:"name"`       // e.g. "duplication_window_size"
+	Default   string `json:"default"`    // e.g. "6"
+	Current   string `json:"current"`    // e.g. "8" (from config) or same as default
+	ConfigKey string `json:"config_key"` // e.g. "collectors.duplication.duplication_window_size"
+}
+
+// collectorThresholds maps collector names to their tunable threshold definitions.
+// Each entry lists the yaml field name, default value, and config key path.
+var collectorThresholds = map[string][]struct {
+	Field      string
+	DefaultVal string
+}{
+	"duplication": {
+		{"duplication_window_size", "6"},
+		{"duplication_signal_cap", "200"},
+		{"duplication_max_files", "10000"},
+	},
+	"deadcode": {
+		{"deadcode_max_files", "10000"},
+	},
+	"coupling": {
+		{"coupling_fan_out_threshold", "10"},
+		{"coupling_max_files", "10000"},
+	},
+	"docstale": {
+		{"doc_stale_days", "180"},
+		{"doc_drift_min_commits", "10"},
+	},
+	"githygiene": {
+		{"large_binary_threshold", "1000000"},
+	},
+	"patterns": {
+		{"large_file_threshold", "1500"},
+		{"test_ratio_threshold", "0.1"},
+		{"test_ratio_min_files", "3"},
+	},
+	"complexity": {
+		{"min_complexity_score", "6"},
+		{"min_function_lines", "5"},
+	},
+	"lotteryrisk": {
+		{"lottery_risk_threshold", "1"},
+	},
+}
+
+// collectorsInfoJSON controls --json output for the info subcommand.
+var collectorsInfoJSON bool
+
 // collectorsCmd is the parent command for collector introspection.
 var collectorsCmd = &cobra.Command{
 	Use:   "collectors",
@@ -151,6 +202,7 @@ with their current values from .stringer.yaml.`,
 func init() {
 	collectorsCmd.AddCommand(collectorsListCmd)
 	collectorsCmd.AddCommand(collectorsInfoCmd)
+	collectorsInfoCmd.Flags().BoolVar(&collectorsInfoJSON, "json", false, "output in JSON format")
 }
 
 func runCollectorsList(cmd *cobra.Command, _ []string) error {
@@ -198,19 +250,33 @@ func runCollectorsInfo(cmd *cobra.Command, args []string) error {
 	}
 
 	meta, hasMeta := knownCollectors[name]
+
+	// Load config.
+	cfg, _ := config.Load(".")
+
+	cc := config.CollectorConfig{}
+	if cfgCC, ok := cfg.Collectors[name]; ok {
+		cc = cfgCC
+	}
+
+	status := "enabled"
+	if cc.Enabled != nil && !*cc.Enabled {
+		status = "disabled"
+	}
+
+	// Build threshold info.
+	thresholds := buildThresholds(name, cc)
+
+	if collectorsInfoJSON {
+		return renderCollectorsInfoJSON(w, name, meta, hasMeta, status, cc, thresholds)
+	}
+
 	bold := color.New(color.Bold)
 
 	// Header.
 	_, _ = fmt.Fprintf(w, "%s %s\n", bold.Sprint("Collector:"), name)
 	if hasMeta {
 		_, _ = fmt.Fprintf(w, "%s %s\n", bold.Sprint("Description:"), meta.Description)
-	}
-
-	// Status from config.
-	cfg, _ := config.Load(".")
-	status := "enabled"
-	if cc, ok := cfg.Collectors[name]; ok && cc.Enabled != nil && !*cc.Enabled {
-		status = "disabled"
 	}
 	_, _ = fmt.Fprintf(w, "%s %s\n", bold.Sprint("Status:"), status)
 
@@ -225,20 +291,94 @@ func runCollectorsInfo(cmd *cobra.Command, args []string) error {
 	// Config options.
 	_, _ = fmt.Fprintf(w, "\n%s\n", bold.Sprint("Configuration options:"))
 
-	cc := config.CollectorConfig{}
-	if cfgCC, ok := cfg.Collectors[name]; ok {
-		cc = cfgCC
-	}
-
-	// Show common fields, then collector-specific fields.
 	allFields := commonConfigFields
 	if hasMeta {
 		allFields = append(allFields, meta.ConfigFields...)
 	}
-
 	printConfigFields(w, cc, allFields)
 
+	// Thresholds.
+	if len(thresholds) > 0 {
+		_, _ = fmt.Fprintf(w, "\n%s\n", bold.Sprint("Thresholds:"))
+		tw := tabwriter.NewWriter(w, 0, 0, 4, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "  Name\tDefault\tCurrent\tConfig Key")
+		for _, ti := range thresholds {
+			_, _ = fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\n",
+				ti.Name, ti.Default, ti.Current, ti.ConfigKey)
+		}
+		_ = tw.Flush()
+	}
+
 	return nil
+}
+
+// buildThresholds constructs ThresholdInfo entries for the named collector
+// using the loaded CollectorConfig to determine current values.
+func buildThresholds(name string, cc config.CollectorConfig) []ThresholdInfo {
+	defs, ok := collectorThresholds[name]
+	if !ok {
+		return nil
+	}
+
+	// Build yaml tag → field index map for CollectorConfig.
+	rv := reflect.ValueOf(cc)
+	rt := rv.Type()
+	tagIdx := make(map[string]int)
+	for i := range rt.NumField() {
+		tag := rt.Field(i).Tag.Get("yaml")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		yamlName := strings.Split(tag, ",")[0]
+		tagIdx[yamlName] = i
+	}
+
+	var thresholds []ThresholdInfo
+	for _, def := range defs {
+		current := def.DefaultVal
+		if idx, found := tagIdx[def.Field]; found {
+			fv := rv.Field(idx)
+			if !fv.IsZero() {
+				current = fmt.Sprintf("%v", fv.Interface())
+			}
+		}
+		thresholds = append(thresholds, ThresholdInfo{
+			Name:      def.Field,
+			Default:   def.DefaultVal,
+			Current:   current,
+			ConfigKey: fmt.Sprintf("collectors.%s.%s", name, def.Field),
+		})
+	}
+	return thresholds
+}
+
+// collectorInfoJSON is the JSON representation of collector info output.
+type collectorInfoJSON struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Status      string          `json:"status"`
+	SignalTypes []string        `json:"signal_types,omitempty"`
+	Thresholds  []ThresholdInfo `json:"thresholds,omitempty"`
+}
+
+func renderCollectorsInfoJSON(w interface{ Write([]byte) (int, error) },
+	name string, meta collectorMeta, hasMeta bool,
+	status string, _ config.CollectorConfig, thresholds []ThresholdInfo,
+) error {
+	info := collectorInfoJSON{
+		Name:   name,
+		Status: status,
+	}
+	if hasMeta {
+		info.Description = meta.Description
+		info.SignalTypes = meta.SignalKinds
+	}
+	if len(thresholds) > 0 {
+		info.Thresholds = thresholds
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(info)
 }
 
 // printConfigFields prints config field names and current values.
