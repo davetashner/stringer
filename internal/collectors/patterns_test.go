@@ -1650,3 +1650,64 @@ func TestPatternsCollector_GitRootForTimestamps(t *testing.T) {
 			"signal should have non-zero timestamp when GitRoot is set")
 	}
 }
+
+func TestPatterns_ConfigurableTestRatioThreshold(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a directory with 5 source files and 1 test file.
+	// Ratio = 1/5 = 0.20.
+	pkg := filepath.Join(dir, "pkg")
+	require.NoError(t, os.MkdirAll(pkg, 0o750))
+
+	for i := 0; i < 5; i++ {
+		content := fmt.Sprintf("package pkg\nfunc F%d() {}\n", i)
+		require.NoError(t, os.WriteFile(filepath.Join(pkg, fmt.Sprintf("f%d.go", i)), []byte(content), 0o600))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(pkg, "f0_test.go"),
+		[]byte("package pkg\nimport \"testing\"\nfunc TestF0(t *testing.T) {}\n"), 0o600))
+
+	// With default threshold (0.10), ratio 0.20 is ABOVE threshold → no signal.
+	c1 := &PatternsCollector{}
+	sigs1, err := c1.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	lowRatio1 := filterByKind(sigs1, "low-test-ratio")
+	assert.Empty(t, lowRatio1, "ratio 0.20 should not trigger default threshold 0.10")
+
+	// With threshold 0.50, ratio 0.20 is BELOW threshold → signal.
+	c2 := &PatternsCollector{}
+	sigs2, err := c2.Collect(context.Background(), dir, signal.CollectorOpts{
+		TestRatioThreshold: 0.50,
+	})
+	require.NoError(t, err)
+	lowRatio2 := filterByKind(sigs2, "low-test-ratio")
+	assert.NotEmpty(t, lowRatio2, "ratio 0.20 should trigger threshold 0.50")
+}
+
+func TestPatterns_ConfigurableTestRatioMinFiles(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a directory with 2 source files and 0 test files.
+	pkg := filepath.Join(dir, "small")
+	require.NoError(t, os.MkdirAll(pkg, 0o750))
+
+	for i := 0; i < 2; i++ {
+		content := fmt.Sprintf("package small\nfunc F%d() {}\n", i)
+		require.NoError(t, os.WriteFile(filepath.Join(pkg, fmt.Sprintf("f%d.go", i)), []byte(content), 0o600))
+	}
+
+	// With default min-files (3), 2 source files should NOT trigger.
+	c1 := &PatternsCollector{}
+	sigs1, err := c1.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	lowRatio1 := filterByKind(sigs1, "low-test-ratio")
+	assert.Empty(t, lowRatio1, "2 files should not trigger with default min-files=3")
+
+	// With min-files=1, 2 source files SHOULD trigger.
+	c2 := &PatternsCollector{}
+	sigs2, err := c2.Collect(context.Background(), dir, signal.CollectorOpts{
+		TestRatioMinFiles: 1,
+	})
+	require.NoError(t, err)
+	lowRatio2 := filterByKind(sigs2, "low-test-ratio")
+	assert.NotEmpty(t, lowRatio2, "2 files should trigger with min-files=1")
+}

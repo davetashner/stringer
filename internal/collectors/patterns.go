@@ -121,6 +121,16 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 		threshold = opts.LargeFileThreshold
 	}
 
+	// Resolve configurable test-ratio thresholds with defaults.
+	testRatioThreshold := opts.TestRatioThreshold
+	if testRatioThreshold == 0 {
+		testRatioThreshold = lowTestRatioThreshold
+	}
+	testRatioMinFiles := opts.TestRatioMinFiles
+	if testRatioMinFiles == 0 {
+		testRatioMinFiles = minSourceFilesForRatio
+	}
+
 	var signals []signal.RawSignal
 	var fileCount int
 
@@ -278,7 +288,7 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 			})
 		}
 
-		if stats.sourceFiles < minSourceFilesForRatio {
+		if stats.sourceFiles < testRatioMinFiles {
 			continue
 		}
 
@@ -288,14 +298,14 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 		}
 
 		ratio := float64(stats.testFiles) / float64(stats.sourceFiles)
-		if ratio < lowTestRatioThreshold {
+		if ratio < testRatioThreshold {
 			signals = append(signals, signal.RawSignal{
 				Source:      "patterns",
 				Kind:        "low-test-ratio",
 				FilePath:    dir,
 				Line:        0,
 				Title:       fmt.Sprintf("Low test ratio in %s: %d test files / %d source files", dir, stats.testFiles, stats.sourceFiles),
-				Description: fmt.Sprintf("Test-to-source ratio is %.1f%%, below the %.0f%% threshold. Consider adding more tests.", ratio*100, lowTestRatioThreshold*100),
+				Description: fmt.Sprintf("Test-to-source ratio is %.1f%%, below the %.0f%% threshold. Consider adding more tests.", ratio*100, testRatioThreshold*100),
 				Confidence:  lowTestRatioConfidence,
 				Tags:        []string{"low-test-ratio"},
 			})
