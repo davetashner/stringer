@@ -219,7 +219,7 @@ func TestPrintDryRun_TextMode(t *testing.T) {
 		Duration: 50 * time.Millisecond,
 	}
 
-	err := printDryRun(cmd, result, ExitOK)
+	err := printDryRun(cmd, result, ExitOK, 0)
 	require.NoError(t, err)
 
 	out := buf.String()
@@ -251,7 +251,7 @@ func TestPrintDryRun_TextModeWithError(t *testing.T) {
 		Duration: 10 * time.Millisecond,
 	}
 
-	err := printDryRun(cmd, result, ExitTotalFailure)
+	err := printDryRun(cmd, result, ExitTotalFailure, 0)
 	require.Error(t, err)
 
 	var ece *exitCodeError
@@ -296,7 +296,7 @@ func TestPrintDryRun_JSONMode(t *testing.T) {
 		Duration: 250 * time.Millisecond,
 	}
 
-	err := printDryRun(cmd, result, ExitOK)
+	err := printDryRun(cmd, result, ExitOK, 0)
 	require.NoError(t, err)
 
 	var parsed struct {
@@ -348,7 +348,7 @@ func TestPrintDryRun_JSONModeWithErrors(t *testing.T) {
 		Duration: 60 * time.Millisecond,
 	}
 
-	err := printDryRun(cmd, result, ExitPartialFailure)
+	err := printDryRun(cmd, result, ExitPartialFailure, 0)
 	require.Error(t, err)
 
 	var ece *exitCodeError
@@ -386,7 +386,7 @@ func TestPrintDryRun_ExitOKReturnsNil(t *testing.T) {
 		Duration: 1 * time.Millisecond,
 	}
 
-	err := printDryRun(cmd, result, ExitOK)
+	err := printDryRun(cmd, result, ExitOK, 0)
 	assert.NoError(t, err)
 }
 
@@ -418,7 +418,7 @@ func TestPrintDryRun_TextModeMultipleCollectors(t *testing.T) {
 		Duration: 250 * time.Millisecond,
 	}
 
-	err := printDryRun(cmd, result, ExitOK)
+	err := printDryRun(cmd, result, ExitOK, 0)
 	require.NoError(t, err)
 
 	out := buf.String()
@@ -442,7 +442,7 @@ func TestPrintDryRun_JSONModeZeroSignals(t *testing.T) {
 		Duration: 5 * time.Millisecond,
 	}
 
-	err := printDryRun(cmd, result, ExitOK)
+	err := printDryRun(cmd, result, ExitOK, 0)
 	require.NoError(t, err)
 
 	var parsed struct {
