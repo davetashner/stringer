@@ -75,6 +75,16 @@ func (c *DocStaleCollector) Collect(ctx context.Context, repoPath string, opts s
 	excludes := mergeExcludes(opts.ExcludePatterns)
 	metrics := &DocStaleMetrics{}
 
+	// Resolve configurable thresholds with defaults.
+	staleDays := opts.DocStaleDays
+	if staleDays == 0 {
+		staleDays = defaultStalenessThresholdDays
+	}
+	driftMinCommits := opts.DocDriftMinCommits
+	if driftMinCommits == 0 {
+		driftMinCommits = defaultDriftMinCommits
+	}
+
 	gitRoot := opts.GitRoot
 	if gitRoot == "" {
 		gitRoot = repoPath
@@ -168,7 +178,7 @@ func (c *DocStaleCollector) Collect(ctx context.Context, repoPath string, opts s
 		}
 
 		driftDays := int(srcTime.Sub(docTime).Hours() / 24)
-		if driftDays >= defaultStalenessThresholdDays {
+		if driftDays >= staleDays {
 			conf := staleConfidence(driftDays)
 			if conf >= opts.MinConfidence {
 				signals = append(signals, signal.RawSignal{
@@ -197,7 +207,7 @@ func (c *DocStaleCollector) Collect(ctx context.Context, repoPath string, opts s
 
 	commits, logErr := gitcli.LogNumstat(ctx, gitRoot, depth, since)
 	if logErr == nil && len(commits) > 0 {
-		driftSignals := detectDocCodeDrift(commits, docFiles, repoPath, opts.MinConfidence)
+		driftSignals := detectDocCodeDrift(commits, docFiles, repoPath, opts.MinConfidence, driftMinCommits)
 		signals = append(signals, driftSignals...)
 		metrics.DriftSignals += len(driftSignals)
 	}
@@ -341,7 +351,7 @@ func findBrokenLinks(repoPath, relPath string) []brokenLink {
 
 // detectDocCodeDrift analyzes commit history to find source dirs with many
 // commits but zero associated doc updates.
-func detectDocCodeDrift(commits []gitcli.NumstatCommit, docFiles []string, repoPath string, minConfidence float64) []signal.RawSignal {
+func detectDocCodeDrift(commits []gitcli.NumstatCommit, docFiles []string, repoPath string, minConfidence float64, driftMinCommits int) []signal.RawSignal {
 	// Build doc→source and source→doc mappings.
 	type dirPair struct {
 		docFile   string
@@ -393,7 +403,7 @@ func detectDocCodeDrift(commits []gitcli.NumstatCommit, docFiles []string, repoP
 
 	for i, pair := range pairs {
 		c := pairCounts[i]
-		if c.sourceCommits >= defaultDriftMinCommits && c.docCommits == 0 {
+		if c.sourceCommits >= driftMinCommits && c.docCommits == 0 {
 			signals = append(signals, signal.RawSignal{
 				Source:     "docstale",
 				Kind:       "doc-code-drift",

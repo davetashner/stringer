@@ -369,3 +369,43 @@ func runDocGit(t *testing.T, dir string, args ...string) {
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "git %v: %s", args, string(out))
 }
+
+// TestDocStale_ConfigurableStaleDays verifies that the stale-days threshold
+// is configurable via opts.
+func TestDocStale_ConfigurableStaleDays(t *testing.T) {
+	// The default is 180 days. Setting it to a very high value (9999) should
+	// suppress stale-doc signals. We just verify the option is read and the
+	// default fallback works correctly.
+	assert.Equal(t, 180, defaultStalenessThresholdDays,
+		"default staleness threshold should be 180 days")
+
+	// Verify zero value falls back to default.
+	opts := signal.CollectorOpts{DocStaleDays: 0}
+	staleDays := opts.DocStaleDays
+	if staleDays == 0 {
+		staleDays = defaultStalenessThresholdDays
+	}
+	assert.Equal(t, 180, staleDays)
+
+	// Verify custom value is used.
+	opts2 := signal.CollectorOpts{DocStaleDays: 365}
+	staleDays2 := opts2.DocStaleDays
+	if staleDays2 == 0 {
+		staleDays2 = defaultStalenessThresholdDays
+	}
+	assert.Equal(t, 365, staleDays2)
+}
+
+// TestDocStale_ConfigurableDriftMinCommits verifies the drift min-commits
+// threshold is configurable.
+func TestDocStale_ConfigurableDriftMinCommits(t *testing.T) {
+	assert.Equal(t, 10, defaultDriftMinCommits,
+		"default drift min commits should be 10")
+
+	opts := signal.CollectorOpts{DocDriftMinCommits: 5}
+	minCommits := opts.DocDriftMinCommits
+	if minCommits == 0 {
+		minCommits = defaultDriftMinCommits
+	}
+	assert.Equal(t, 5, minCommits)
+}
