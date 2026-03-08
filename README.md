@@ -1,7 +1,7 @@
 # Stringer
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/hero-github-dark.png">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/hero-github-dark-v2.png">
   <source media="(prefers-color-scheme: light)" srcset="assets/hero-github-light.png">
   <img alt="Stringer" src="assets/hero-github-light.png">
 </picture>
