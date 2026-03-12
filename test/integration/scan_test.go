@@ -95,6 +95,10 @@ func normalizeGoldenJSON(t *testing.T, line string) string {
 	require.NoError(t, json.Unmarshal([]byte(line), &rec), "invalid JSON: %s", line)
 	delete(rec, "created_at")
 	delete(rec, "created_by")
+	// Priority depends on the recency boost (+0.1 if < 30 days old), which
+	// is derived from git blame timestamps — these vary between local and CI
+	// environments, making priority non-deterministic for golden file tests.
+	delete(rec, "priority")
 
 	// Strip "estimated-timestamp" from labels — it only appears when blame
 	// fails and we fall back to mtime, which is environment-dependent.
