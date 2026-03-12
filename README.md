@@ -14,7 +14,7 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11942/badge?v=2)](https://www.bestpractices.dev/projects/11942)
 
-> **v1.5.0.** Signal suppression and baseline management — suppress known findings, track them across scans, filter noise on established codebases. Go AST-based complexity analysis with cyclomatic, cognitive, and nesting depth metrics. Secret detection expanded to 24 patterns with custom patterns, allowlists, and Shannon entropy detection. All collector thresholds now configurable via `.stringer.yaml`. SARIF enhanced with run correlation, code snippets, baseline suppressions, and `--sarif-baseline` comparison. Fifteen collectors, ten report sections, six output formats, 14 language ecosystems.
+> **v1.6.0.** Minimum Go version bumped to 1.25. Dependency updates: `golang.org/x/sync` v0.20.0, CI action bumps (CodeQL, SBOM, cosign). Fifteen collectors, ten report sections, six output formats, 14 language ecosystems.
 
 **Codebase archaeology for developers and AI agents.** Scan any repo for hidden tech debt — TODOs, vulnerabilities, lottery risk, stale branches, unhealthy dependencies — and get structured results you can act on immediately.
 
@@ -553,17 +553,16 @@ Each signal gets a confidence score (0.0-1.0) based on keyword severity and age 
 
 | Keyword    | Base Score |
 | ---------- | ---------- |
-| `BUG`      | 0.7        |
-| `FIXME`    | 0.6        |
+| `BUG`      | 0.8        |
+| `FIXME`    | 0.65       |
 | `HACK`     | 0.55       |
 | `TODO`     | 0.5        |
-| `XXX`      | 0.5        |
-| `OPTIMIZE` | 0.4        |
+| `XXX`      | 0.45       |
+| `OPTIMIZE` | 0.35       |
 
-**Age boost from git blame:**
-- Older than 1 year: +0.2
-- Older than 6 months: +0.1
-- No blame data or recent: +0.0
+**Recency boost from git blame:**
+- Less than 30 days old: +0.1
+- Older or no blame data: +0.0
 
 Score is capped at 1.0. See [DR-004](docs/decisions/004-confidence-scoring-semantics.md) for the full design rationale.
 
@@ -642,7 +641,7 @@ Planned for future releases:
 
 ## Requirements
 
-- Go 1.24+ (for building from source)
+- Go 1.25+ (for building from source)
 - Git (for blame enrichment and git log analysis)
 - `GITHUB_TOKEN` env var (optional — only needed for the GitHub collector)
 - [`bd` CLI](https://github.com/steveyegge/beads) (optional — only needed for Beads JSONL import)
