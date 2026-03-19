@@ -19,6 +19,7 @@ import (
 	"github.com/google/go-github/v68/github"
 
 	"github.com/davetashner/stringer/internal/collector"
+	"github.com/davetashner/stringer/internal/gitcli"
 	"github.com/davetashner/stringer/internal/signal"
 	"github.com/davetashner/stringer/internal/testable"
 )
@@ -106,11 +107,18 @@ func (c *GitHubCollector) Collect(ctx context.Context, repoPath string, opts sig
 	}
 
 	// Parse owner/repo from git remote.
+	// Use GitRoot when set so that subdirectory scans (e.g. individual Cargo
+	// workspace members) resolve the remote from the repo root rather than the
+	// crate directory, which has no .git of its own.
 	opener := c.GitOpener
 	if opener == nil {
 		opener = testable.DefaultGitOpener
 	}
-	owner, repo, err := parseGitHubRemoteWith(opener, repoPath)
+	gitPath := repoPath
+	if opts.GitRoot != "" {
+		gitPath = opts.GitRoot
+	}
+	owner, repo, err := parseGitHubRemoteWith(opener, gitPath)
 	if err != nil {
 		slog.Info("cannot determine GitHub remote, skipping GitHub collector", "error", err)
 		return nil, nil
@@ -179,10 +187,19 @@ func parseGitHubRemote(repoPath string) (owner, repo string, err error) {
 
 // parseGitHubRemoteWith extracts the owner and repo name using the provided
 // GitOpener. This allows tests to inject a mock opener.
+// When go-git cannot open the repository (e.g. because the repo has
+// extensions.worktreeConfig=true which go-git does not yet support), it falls
+// back to shelling out to the system git binary via gitcli.
 func parseGitHubRemoteWith(opener testable.GitOpener, repoPath string) (owner, repo string, err error) {
 	gitRepo, err := opener.PlainOpen(repoPath)
 	if err != nil {
-		return "", "", fmt.Errorf("opening repo: %w", err)
+		// Fall back to the system git CLI when go-git cannot open the repo.
+		// This handles repos with unsupported extensions (e.g. worktreeConfig).
+		rawURL, cliErr := gitcli.Exec(context.Background(), repoPath, "remote", "get-url", "origin")
+		if cliErr != nil {
+			return "", "", fmt.Errorf("opening repo: %w", err)
+		}
+		return parseGitHubURL(strings.TrimSpace(rawURL))
 	}
 
 	remotes, err := gitRepo.Remotes()

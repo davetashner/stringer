@@ -420,12 +420,16 @@ func loadScanConfig(cmd *cobra.Command, absPath, gitRoot string) (signal.ScanCon
 	scanCfg = config.Merge(fileCfg, scanCfg)
 
 	// Set GitRoot on all collector opts so collectors can open the git repo
-	// even when scanning a subdirectory.
+	// even when scanning a subdirectory. Use the full registry rather than a
+	// hardcoded subset so that any collector that reads opts.GitRoot (todos,
+	// gitlog, lotteryrisk, apidrift, patterns, githygiene, configdrift,
+	// coupling, github, …) receives the correct root without needing to be
+	// listed here explicitly.
 	if gitRoot != absPath {
 		if scanCfg.CollectorOpts == nil {
 			scanCfg.CollectorOpts = make(map[string]signal.CollectorOpts)
 		}
-		for _, name := range []string{"todos", "gitlog", "lotteryrisk"} {
+		for _, name := range collector.List() {
 			co := scanCfg.CollectorOpts[name]
 			co.GitRoot = gitRoot
 			scanCfg.CollectorOpts[name] = co
