@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -125,6 +127,42 @@ func TestGitHubCollector_NonGitHubRemote(t *testing.T) {
 	signals, err := c.Collect(context.Background(), repoPath, signal.CollectorOpts{})
 	require.NoError(t, err)
 	assert.Empty(t, signals)
+}
+
+// TestGitHubCollector_SubdirectoryScan verifies that the github collector
+// resolves the GitHub remote from opts.GitRoot when the scan path is a
+// subdirectory (e.g. an individual Cargo workspace member that has no .git).
+func TestGitHubCollector_SubdirectoryScan(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "test-token")
+
+	// Set up git repo at root with a GitHub remote.
+	repoRoot := initGitHubTestRepo(t, "https://github.com/testowner/testrepo.git")
+
+	// Create a subdirectory simulating a Cargo workspace member.
+	subDir := filepath.Join(repoRoot, "crates", "mylib")
+	require.NoError(t, os.MkdirAll(subDir, 0o755))
+
+	now := time.Now()
+	mock := &mockGitHubAPI{
+		issues: []*github.Issue{
+			makeIssue(1, "Bug in subdirectory workspace", now, []string{"bug"}),
+		},
+		issueResp: emptyResponse(),
+		prs:       []*github.PullRequest{},
+		prResp:    emptyResponse(),
+		reviews:   map[int][]*github.PullRequestReview{},
+		comments:  map[int][]*github.PullRequestComment{},
+	}
+
+	c := &GitHubCollector{api: mock}
+	// Scan from the subdirectory, passing GitRoot pointing to the repo root.
+	// Without the GitRoot fix, this would fail to open the repo and return no signals.
+	signals, err := c.Collect(context.Background(), subDir, signal.CollectorOpts{
+		GitRoot: repoRoot,
+	})
+	require.NoError(t, err)
+	require.Len(t, signals, 1, "expected 1 signal when GitRoot resolves the remote from the repo root")
+	assert.Equal(t, "github-bug", signals[0].Kind)
 }
 
 func TestGitHubCollector_IssuesWithLabels(t *testing.T) {

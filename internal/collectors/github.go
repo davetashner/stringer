@@ -106,11 +106,18 @@ func (c *GitHubCollector) Collect(ctx context.Context, repoPath string, opts sig
 	}
 
 	// Parse owner/repo from git remote.
+	// Use GitRoot when set so that subdirectory scans (e.g. individual Cargo
+	// workspace members) resolve the remote from the repo root rather than the
+	// crate directory, which has no .git of its own.
 	opener := c.GitOpener
 	if opener == nil {
 		opener = testable.DefaultGitOpener
 	}
-	owner, repo, err := parseGitHubRemoteWith(opener, repoPath)
+	gitPath := repoPath
+	if opts.GitRoot != "" {
+		gitPath = opts.GitRoot
+	}
+	owner, repo, err := parseGitHubRemoteWith(opener, gitPath)
 	if err != nil {
 		slog.Info("cannot determine GitHub remote, skipping GitHub collector", "error", err)
 		return nil, nil
