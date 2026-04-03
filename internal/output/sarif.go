@@ -68,7 +68,10 @@ func (f *SARIFFormatter) Format(signals []signal.RawSignal, w io.Writer) error {
 		signals = []signal.RawSignal{}
 	}
 
-	doc := f.buildDocument(signals)
+	doc, err := f.buildDocument(signals)
+	if err != nil {
+		return fmt.Errorf("build sarif: %w", err)
+	}
 
 	data, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
@@ -172,9 +175,15 @@ type sarifArtifactContent struct {
 	Text string `json:"text"`
 }
 
-func (f *SARIFFormatter) buildDocument(signals []signal.RawSignal) sarifDocument {
-	rules, ruleIndex := f.buildRules(signals)
-	results := f.buildResults(signals, ruleIndex)
+func (f *SARIFFormatter) buildDocument(signals []signal.RawSignal) (sarifDocument, error) {
+	rules, ruleIndex, err := f.buildRules(signals)
+	if err != nil {
+		return sarifDocument{}, err
+	}
+	results, err := f.buildResults(signals, ruleIndex)
+	if err != nil {
+		return sarifDocument{}, err
+	}
 
 	version := f.Version
 	if version == "" {
@@ -198,7 +207,7 @@ func (f *SARIFFormatter) buildDocument(signals []signal.RawSignal) sarifDocument
 		Schema:  "https://json.schemastore.org/sarif-2.1.0.json",
 		Version: "2.1.0",
 		Runs:    []sarifRun{run},
-	}
+	}, nil
 }
 
 // buildAutomationDetails creates SARIF automationDetails for run correlation.
@@ -227,7 +236,7 @@ func (f *SARIFFormatter) buildAutomationDetails() *sarifRunAutomation {
 
 // buildRules collects unique signal kinds into SARIF rule objects.
 // Returns the rules and a map from kind to rule index.
-func (f *SARIFFormatter) buildRules(signals []signal.RawSignal) ([]sarifRule, map[string]int) {
+func (f *SARIFFormatter) buildRules(signals []signal.RawSignal) ([]sarifRule, map[string]int, error) {
 	ruleIndex := make(map[string]int)
 	var rules []sarifRule
 
@@ -244,6 +253,10 @@ func (f *SARIFFormatter) buildRules(signals []signal.RawSignal) ([]sarifRule, ma
 	// Build rules in sorted order and update index.
 	for i, kind := range kinds {
 		ruleIndex[kind] = i
+		props, err := ruleProperties(kind)
+		if err != nil {
+			return nil, nil, fmt.Errorf("rule properties for %q: %w", kind, err)
+		}
 		rules = append(rules, sarifRule{
 			ID: kind,
 			ShortDescription: sarifMultiformatMessage{
@@ -252,14 +265,14 @@ func (f *SARIFFormatter) buildRules(signals []signal.RawSignal) ([]sarifRule, ma
 			DefaultConfig: &sarifReportingConfig{
 				Level: "warning",
 			},
-			Properties: ruleProperties(kind),
+			Properties: props,
 		})
 	}
 
-	return rules, ruleIndex
+	return rules, ruleIndex, nil
 }
 
-func (f *SARIFFormatter) buildResults(signals []signal.RawSignal, ruleIndex map[string]int) []sarifResult {
+func (f *SARIFFormatter) buildResults(signals []signal.RawSignal, ruleIndex map[string]int) ([]sarifResult, error) {
 	results := make([]sarifResult, 0, len(signals))
 
 	// Build baseline lookup for suppression annotation.
@@ -318,13 +331,25 @@ func (f *SARIFFormatter) buildResults(signals []signal.RawSignal, ruleIndex map[
 
 		props := make(map[string]json.RawMessage)
 		if sig.Source != "" {
-			props["collector"] = mustMarshal(sig.Source)
+			data, err := marshalJSON(sig.Source)
+			if err != nil {
+				return nil, fmt.Errorf("marshal collector for signal %q: %w", sig.Title, err)
+			}
+			props["collector"] = data
 		}
 		if sig.Author != "" {
-			props["author"] = mustMarshal(sig.Author)
+			data, err := marshalJSON(sig.Author)
+			if err != nil {
+				return nil, fmt.Errorf("marshal author for signal %q: %w", sig.Title, err)
+			}
+			props["author"] = data
 		}
 		if len(sig.Tags) > 0 {
-			props["tags"] = mustMarshal(sig.Tags)
+			data, err := marshalJSON(sig.Tags)
+			if err != nil {
+				return nil, fmt.Errorf("marshal tags for signal %q: %w", sig.Title, err)
+			}
+			props["tags"] = data
 		}
 		if len(props) > 0 {
 			result.Properties = props
@@ -361,7 +386,7 @@ func (f *SARIFFormatter) buildResults(signals []signal.RawSignal, ruleIndex map[
 		results = append(results, absentResults...)
 	}
 
-	return results
+	return results, nil
 }
 
 // mapBaselineToSuppression converts a baseline suppression reason to a SARIF
@@ -561,14 +586,18 @@ func ruleDescription(kind string) string {
 }
 
 // ruleProperties returns SARIF properties for a rule, mapping kinds to collectors.
-func ruleProperties(kind string) map[string]json.RawMessage {
+func ruleProperties(kind string) (map[string]json.RawMessage, error) {
 	collector := kindToCollector(kind)
 	if collector == "" {
-		return nil
+		return nil, nil
+	}
+	data, err := marshalJSON(collector)
+	if err != nil {
+		return nil, err
 	}
 	return map[string]json.RawMessage{
-		"collector": mustMarshal(collector),
-	}
+		"collector": data,
+	}, nil
 }
 
 func kindToCollector(kind string) string {
@@ -609,10 +638,10 @@ func ParseSARIFBaseline(path string) (*sarifDocument, error) {
 	return &doc, nil
 }
 
-func mustMarshal(v any) json.RawMessage {
+func marshalJSON(v any) (json.RawMessage, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
-		panic(fmt.Sprintf("mustMarshal: %v", err))
+		return nil, fmt.Errorf("json marshal: %w", err)
 	}
-	return data
+	return data, nil
 }
