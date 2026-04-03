@@ -124,7 +124,7 @@ Stringer occupies a unique niche: it is the only tool designed to produce **bead
 
 ## Stringer Differentiators
 
-1. **Beads-native output.** The only tool that produces JSONL ready for `bd import`. No transformation step required.
+1. **Beads-native output.** The only tool that produces JSONL compatible with [Beads](https://github.com/steveyegge/beads). No transformation step required.
 
 2. **Git blame enrichment.** Each signal carries author and timestamp from `git blame`, enabling age-based confidence boosting and attribution.
 
