@@ -202,14 +202,8 @@ func (c *ComplexityCollector) Collect(ctx context.Context, repoPath string, opts
 		}
 
 		// Skip symlinks outside repo tree.
-		if d.Type()&os.ModeSymlink != 0 {
-			resolved, resolveErr := FS.EvalSymlinks(path)
-			if resolveErr != nil {
-				return nil
-			}
-			if !strings.HasPrefix(resolved, repoPath+string(filepath.Separator)) && resolved != repoPath {
-				return nil
-			}
+		if d.Type()&os.ModeSymlink != 0 && isSymlinkOutsideRepo(path, repoPath) {
+			return nil
 		}
 
 		if len(opts.IncludePatterns) > 0 && !matchesAny(relPath, opts.IncludePatterns) {
