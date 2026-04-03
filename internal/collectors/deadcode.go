@@ -47,7 +47,8 @@ type DeadCodeMetrics struct {
 // symbol extraction and in-memory reference searching. Follows the
 // regex-over-AST philosophy from DR-013/DR-014.
 type DeadCodeCollector struct {
-	metrics *DeadCodeMetrics
+	metrics    *DeadCodeMetrics
+	regexCache map[string]*regexp.Regexp
 }
 
 // Name returns the collector name used for registration and filtering.
@@ -92,8 +93,14 @@ var skipNames = map[string]bool{
 var skipPrefixes = []string{"Test", "Benchmark", "Example", "test_", "test"}
 
 // wordBoundary builds a regex to match a symbol name at word boundaries.
-func wordBoundary(name string) *regexp.Regexp {
-	return regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`)
+// Results are cached on the collector to avoid redundant compilation.
+func (c *DeadCodeCollector) wordBoundary(name string) *regexp.Regexp {
+	if re, ok := c.regexCache[name]; ok {
+		return re
+	}
+	re := regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`)
+	c.regexCache[name] = re
+	return re
 }
 
 // shouldSkipSymbol returns true if the symbol name should never be flagged.
@@ -263,6 +270,7 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 	}
 
 	// Pass 2: Search for references to each symbol.
+	c.regexCache = make(map[string]*regexp.Regexp, len(symbols))
 	var signals []signal.RawSignal
 	deadCount := 0
 
@@ -276,7 +284,7 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 			continue
 		}
 
-		dead, testOnly := isDeadSymbol(sym, files)
+		dead, testOnly := c.isDeadSymbol(sym, files)
 		if !dead && !testOnly {
 			continue
 		}
@@ -410,9 +418,9 @@ func extractSymbols(content, relPath, ext string) []symbolDef {
 // isDeadSymbol checks if a symbol has no references outside its definition.
 // Returns (dead, testOnly) where testOnly means the only external references
 // are in test files.
-func isDeadSymbol(sym *symbolDef, files []fileContents) (dead bool, testOnly bool) {
+func (c *DeadCodeCollector) isDeadSymbol(sym *symbolDef, files []fileContents) (dead bool, testOnly bool) {
 	// Fast pre-filter: check if the name appears in any other file.
-	pat := wordBoundary(sym.Name)
+	pat := c.wordBoundary(sym.Name)
 	foundInNonTest := false
 	foundInTest := false
 

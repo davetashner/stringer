@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -1020,4 +1021,49 @@ func TestDeadCode_ConfigurableMaxFiles(t *testing.T) {
 	require.NoError(t, err)
 	m := c.Metrics().(*DeadCodeMetrics)
 	assert.True(t, m.SkippedCapExceeded, "expected cap exceeded flag")
+}
+
+func TestDeadCode_RegexCacheMemoization(t *testing.T) {
+	c := &DeadCodeCollector{
+		regexCache: make(map[string]*regexp.Regexp),
+	}
+
+	// First call should compile and cache.
+	re1 := c.wordBoundary("mySymbol")
+	require.NotNil(t, re1)
+	assert.Len(t, c.regexCache, 1)
+
+	// Second call with the same name should return the cached instance.
+	re2 := c.wordBoundary("mySymbol")
+	assert.Same(t, re1, re2, "expected same *regexp.Regexp pointer from cache")
+
+	// Different name should create a new entry.
+	re3 := c.wordBoundary("otherSymbol")
+	assert.NotSame(t, re1, re3)
+	assert.Len(t, c.regexCache, 2)
+}
+
+func BenchmarkWordBoundary_Cached(b *testing.B) {
+	c := &DeadCodeCollector{
+		regexCache: make(map[string]*regexp.Regexp),
+	}
+	// Pre-warm the cache.
+	c.wordBoundary("benchSymbol")
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c.wordBoundary("benchSymbol")
+	}
+}
+
+func BenchmarkWordBoundary_Uncached(b *testing.B) {
+	c := &DeadCodeCollector{
+		regexCache: make(map[string]*regexp.Regexp),
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Force a new name each iteration to avoid cache hits.
+		c.wordBoundary(fmt.Sprintf("symbol%d", i))
+	}
 }
