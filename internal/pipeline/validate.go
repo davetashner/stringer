@@ -54,6 +54,16 @@ func ValidateSignal(s signal.RawSignal) []ValidationError {
 		})
 	}
 
+	if s.FilePath != "" {
+		cleaned := filepath.Clean(s.FilePath)
+		if strings.HasPrefix(cleaned, "..") {
+			errs = append(errs, ValidationError{
+				Field:   "FilePath",
+				Message: "must not contain path traversal (..)",
+			})
+		}
+	}
+
 	if s.Confidence < 0.0 || s.Confidence > 1.0 {
 		errs = append(errs, ValidationError{
 			Field:   "Confidence",

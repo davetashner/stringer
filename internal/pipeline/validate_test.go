@@ -90,6 +90,38 @@ func TestValidateSignal_EmptyFilePathOK(t *testing.T) {
 	assertNoFieldError(t, errs, "FilePath")
 }
 
+func TestValidateSignal_PathTraversalDirect(t *testing.T) {
+	s := validSignal()
+	s.FilePath = "../etc/passwd"
+
+	errs := ValidateSignal(s)
+	assertHasFieldError(t, errs, "FilePath")
+}
+
+func TestValidateSignal_PathTraversalNested(t *testing.T) {
+	s := validSignal()
+	s.FilePath = "foo/../../etc/passwd"
+
+	errs := ValidateSignal(s)
+	assertHasFieldError(t, errs, "FilePath")
+}
+
+func TestValidateSignal_RelativeSubdirOK(t *testing.T) {
+	s := validSignal()
+	s.FilePath = "foo/bar"
+
+	errs := ValidateSignal(s)
+	assertNoFieldError(t, errs, "FilePath")
+}
+
+func TestValidateSignal_DoubleDotInFilenameOK(t *testing.T) {
+	s := validSignal()
+	s.FilePath = "foo/..bar"
+
+	errs := ValidateSignal(s)
+	assertNoFieldError(t, errs, "FilePath")
+}
+
 func TestValidateSignal_ConfidenceTooLow(t *testing.T) {
 	s := validSignal()
 	s.Confidence = -0.1
