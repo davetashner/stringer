@@ -896,6 +896,19 @@ func TestParseSARIFBaseline(t *testing.T) {
 	assert.NotEmpty(t, doc.Runs[0].Results[0].PartialFingerprints["stringer/v1"])
 }
 
+func TestMarshalJSON_Error(t *testing.T) {
+	// Channels are not JSON-marshalable.
+	_, err := marshalJSON(make(chan int))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "json marshal")
+}
+
+func TestMarshalJSON_Success(t *testing.T) {
+	data, err := marshalJSON("hello")
+	require.NoError(t, err)
+	assert.Equal(t, json.RawMessage(`"hello"`), data)
+}
+
 func TestParseSARIFBaseline_NotFound(t *testing.T) {
 	_, err := ParseSARIFBaseline("/nonexistent/path.sarif")
 	require.Error(t, err)
