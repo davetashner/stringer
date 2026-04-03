@@ -14,7 +14,7 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11942/badge?v=2)](https://www.bestpractices.dev/projects/11942)
 
-> **v1.6.0.** Minimum Go version bumped to 1.25. Dependency updates: `golang.org/x/sync` v0.20.0, CI action bumps (CodeQL, SBOM, cosign). Fifteen collectors, ten report sections, six output formats, 14 language ecosystems.
+> **v1.6.2.** Fixed documentation references to nonexistent `bd import` command — README now includes a working `bd create` workaround with a note linking to the [upstream feature request](https://github.com/steveyegge/beads/issues/2505). Thanks to [@kevglynn](https://github.com/kevglynn) for reporting [#275](https://github.com/davetashner/stringer/issues/275) and cross-filing upstream.
 
 **Codebase archaeology for developers and AI agents.** Scan any repo for hidden tech debt — TODOs, vulnerabilities, lottery risk, stale branches, unhealthy dependencies — and get structured results you can act on immediately.
 
