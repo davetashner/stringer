@@ -140,7 +140,7 @@ func TestGitHubCollector_SubdirectoryScan(t *testing.T) {
 
 	// Create a subdirectory simulating a Cargo workspace member.
 	subDir := filepath.Join(repoRoot, "crates", "mylib")
-	require.NoError(t, os.MkdirAll(subDir, 0o755))
+	require.NoError(t, os.MkdirAll(subDir, 0o750))
 
 	now := time.Now()
 	mock := &mockGitHubAPI{
