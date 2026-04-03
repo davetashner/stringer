@@ -14,7 +14,7 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11942/badge?v=2)](https://www.bestpractices.dev/projects/11942)
 
-> **v1.6.2.** Fixed documentation references to nonexistent `bd import` command — README now includes a working `bd create` workaround with a note linking to the [upstream feature request](https://github.com/steveyegge/beads/issues/2505). Thanks to [@kevglynn](https://github.com/kevglynn) for reporting [#275](https://github.com/davetashner/stringer/issues/275) and cross-filing upstream.
+> **v1.7.0.** SARIF formatter no longer panics on marshal failures. Path traversal validation hardened. Deadcode collector regex memoization for faster scans. Symlink safety checks deduplicated across 7 collectors. Dry-run output now includes workspace metadata for monorepo debugging.
 
 **Codebase archaeology for developers and AI agents.** Scan any repo for hidden tech debt — TODOs, vulnerabilities, lottery risk, stale branches, unhealthy dependencies — and get structured results you can act on immediately.
 
