@@ -122,7 +122,7 @@ stringer/
 │   │   └── signal.go           # RawSignal, ScanConfig, ScanResult, CollectorOpts
 │   ├── state/              # Delta scan state persistence
 │   │   └── state.go            # Load/Save/FilterNew/Build for .stringer/last-scan.json
-│   ├── validate/           # JSONL validation for bd import compatibility
+│   ├── validate/           # JSONL validation for beads compatibility
 │   │   └── validate.go         # Validate() — field-level JSONL validation
 │   └── testable/           # Interfaces for test mock injection
 │       ├── exec.go             # CommandExecutor interface
@@ -229,9 +229,9 @@ golangci-lint run ./...
 
 2. **The LLM pass is optional.** `--no-llm` mode skips clustering and produces one bead per signal. Useful for CI, air-gapped environments, or when you just want the raw TODO scan.
 
-3. **Output is always valid `bd import` input.** The beads JSONL writer is the critical path. Every output must round-trip through `bd import` cleanly. Test this in CI.
+3. **Output is always valid beads JSONL.** The beads JSONL writer is the critical path. Every output must produce valid JSONL compatible with `bd create`. Test this in CI.
 
-4. **Stringer never modifies the target repo.** It is read-only. It writes output to stdout or a specified file. The user decides when and how to `bd import`.
+4. **Stringer never modifies the target repo.** It is read-only. It writes output to stdout or a specified file. The user decides when and how to import signals into their backlog.
 
 5. **Idempotency matters.** Running stringer twice on the same repo should produce the same output (modulo LLM non-determinism in clustering mode). Use deterministic hashing for signal deduplication.
 
@@ -387,7 +387,7 @@ type RawSignal struct {
 
 ### Beads JSONL output contract
 
-Each line must be a valid JSON object that `bd import` accepts. Required fields:
+Each line must be a valid JSON object compatible with beads. Required fields:
 - `id`: deterministic hash with `str-` prefix (e.g., `str-0e4098f9`) — SHA-256 of source+kind+filepath+line+title, truncated to 8 hex chars
 - `title`: string
 - `type`: one of `bug`, `task`, `chore` (mapped from signal kind)
@@ -404,7 +404,7 @@ Optional but valuable:
 
 - `go test -race ./...` — all tests pass
 - `golangci-lint run ./...` — no new warnings
-- Test output against `bd import` on a real repo
+- Test output against `bd create` on a real repo
 - Update AGENTS.md if you changed the architecture or interfaces
 
 ### Main branch integrity

@@ -73,7 +73,7 @@ Stringer extracts these signals automatically, scores them by confidence, and ou
 
 ### Output Formats
 
-- **Beads JSONL** (`beads`) — Produces JSONL ready for `bd import`, with deterministic content-based IDs
+- **Beads JSONL** (`beads`) — Produces JSONL compatible with [Beads](https://github.com/steveyegge/beads), with deterministic content-based IDs
 - **JSON** (`json`) — Raw signals with metadata envelope, TTY-aware pretty/compact output
 - **Markdown** (`markdown`) — Human-readable summary grouped by collector with priority distribution
 - **Tasks** (`tasks`) — Claude Code task format for direct agent consumption
@@ -182,12 +182,20 @@ stringer scan . -c vuln,dephealth -f markdown
 
 ### Seed a Beads backlog
 
-If you use [Beads](https://github.com/steveyegge/beads) for agent task tracking, stringer's default output format pipes directly into `bd import`:
+If you use [Beads](https://github.com/steveyegge/beads) for agent task tracking, stringer's default output produces beads-compatible JSONL. Use `bd create` to import individual signals:
 
 ```bash
-stringer scan . --max-issues 20 | bd import -i -
+# Import scan results into a beads backlog
+stringer scan . --max-issues 20 -q | while IFS= read -r line; do
+  title=$(echo "$line" | jq -r .title)
+  desc=$(echo "$line" | jq -r .description)
+  bd create "$title" -d "$desc"
+done
+
 bd ready --json
 ```
+
+> **Note:** A native `bd import` command for bulk JSONL ingestion is [requested upstream](https://github.com/steveyegge/beads/issues/2505). Once available, this will simplify to `stringer scan . | bd import -i -`.
 
 ### Machine-readable dry run
 
