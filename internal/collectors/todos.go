@@ -176,14 +176,8 @@ func (c *TodoCollector) Collect(ctx context.Context, repoPath string, opts signa
 		}
 
 		// Skip symlinks that resolve outside the repo tree to prevent traversal.
-		if d.Type()&os.ModeSymlink != 0 {
-			resolved, resolveErr := FS.EvalSymlinks(path)
-			if resolveErr != nil {
-				return nil // skip unresolvable symlinks
-			}
-			if !strings.HasPrefix(resolved, repoPath+string(filepath.Separator)) && resolved != repoPath {
-				return nil
-			}
+		if d.Type()&os.ModeSymlink != 0 && isSymlinkOutsideRepo(path, repoPath) {
+			return nil
 		}
 
 		// Apply include-pattern filtering if patterns are set.
