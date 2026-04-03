@@ -185,7 +185,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 
 	// 7. Handle dry-run.
 	if scanDryRun {
-		return printDryRun(cmd, sc.result, exitCode, sc.suppressedCount)
+		return printDryRun(cmd, sc.result, exitCode, sc.suppressedCount, sc.workspaces)
 	}
 
 	// 8. Configure SARIF formatter with baseline state if applicable.
@@ -676,8 +676,14 @@ func computeExitCode(result *signal.ScanResult, strict bool) int {
 	}
 }
 
+// workspaceSummary describes a workspace for dry-run output.
+type workspaceSummary struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
 // printDryRun prints a summary of the scan results without producing formatted output.
-func printDryRun(cmd *cobra.Command, result *signal.ScanResult, exitCode int, suppressedCount int) error {
+func printDryRun(cmd *cobra.Command, result *signal.ScanResult, exitCode int, suppressedCount int, workspaces []workspaceEntry) error {
 	if scanJSON {
 		type collectorSummary struct {
 			Name     string `json:"name"`
@@ -689,6 +695,7 @@ func printDryRun(cmd *cobra.Command, result *signal.ScanResult, exitCode int, su
 			TotalSignals    int                `json:"total_signals"`
 			SuppressedCount int                `json:"suppressed_count"`
 			Collectors      []collectorSummary `json:"collectors"`
+			Workspaces      []workspaceSummary `json:"workspaces,omitempty"`
 			Duration        string             `json:"duration"`
 			ExitCode        int                `json:"exit_code"`
 		}
@@ -710,6 +717,14 @@ func printDryRun(cmd *cobra.Command, result *signal.ScanResult, exitCode int, su
 			}
 			out.Collectors = append(out.Collectors, cs)
 		}
+		for _, ws := range workspaces {
+			if ws.Name != "" {
+				out.Workspaces = append(out.Workspaces, workspaceSummary{
+					Name: ws.Name,
+					Path: ws.Rel,
+				})
+			}
+		}
 
 		data, err := json.MarshalIndent(out, "", "  ")
 		if err != nil {
@@ -724,6 +739,17 @@ func printDryRun(cmd *cobra.Command, result *signal.ScanResult, exitCode int, su
 				status = fmt.Sprintf("error: %v", cr.Err)
 			}
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s: %s (%s)\n", cr.Collector, status, cr.Duration.Round(1_000_000))
+		}
+		// Show detected workspaces (monorepo mode).
+		hasNamed := false
+		for _, ws := range workspaces {
+			if ws.Name != "" {
+				if !hasNamed {
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "workspaces:")
+					hasNamed = true
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s (%s)\n", ws.Name, ws.Rel)
+			}
 		}
 	}
 

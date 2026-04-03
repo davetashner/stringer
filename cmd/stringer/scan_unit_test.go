@@ -219,7 +219,7 @@ func TestPrintDryRun_TextMode(t *testing.T) {
 		Duration: 50 * time.Millisecond,
 	}
 
-	err := printDryRun(cmd, result, ExitOK, 0)
+	err := printDryRun(cmd, result, ExitOK, 0, nil)
 	require.NoError(t, err)
 
 	out := buf.String()
@@ -251,7 +251,7 @@ func TestPrintDryRun_TextModeWithError(t *testing.T) {
 		Duration: 10 * time.Millisecond,
 	}
 
-	err := printDryRun(cmd, result, ExitTotalFailure, 0)
+	err := printDryRun(cmd, result, ExitTotalFailure, 0, nil)
 	require.Error(t, err)
 
 	var ece *exitCodeError
@@ -296,7 +296,7 @@ func TestPrintDryRun_JSONMode(t *testing.T) {
 		Duration: 250 * time.Millisecond,
 	}
 
-	err := printDryRun(cmd, result, ExitOK, 0)
+	err := printDryRun(cmd, result, ExitOK, 0, nil)
 	require.NoError(t, err)
 
 	var parsed struct {
@@ -348,7 +348,7 @@ func TestPrintDryRun_JSONModeWithErrors(t *testing.T) {
 		Duration: 60 * time.Millisecond,
 	}
 
-	err := printDryRun(cmd, result, ExitPartialFailure, 0)
+	err := printDryRun(cmd, result, ExitPartialFailure, 0, nil)
 	require.Error(t, err)
 
 	var ece *exitCodeError
@@ -386,7 +386,7 @@ func TestPrintDryRun_ExitOKReturnsNil(t *testing.T) {
 		Duration: 1 * time.Millisecond,
 	}
 
-	err := printDryRun(cmd, result, ExitOK, 0)
+	err := printDryRun(cmd, result, ExitOK, 0, nil)
 	assert.NoError(t, err)
 }
 
@@ -418,7 +418,7 @@ func TestPrintDryRun_TextModeMultipleCollectors(t *testing.T) {
 		Duration: 250 * time.Millisecond,
 	}
 
-	err := printDryRun(cmd, result, ExitOK, 0)
+	err := printDryRun(cmd, result, ExitOK, 0, nil)
 	require.NoError(t, err)
 
 	out := buf.String()
@@ -442,7 +442,7 @@ func TestPrintDryRun_JSONModeZeroSignals(t *testing.T) {
 		Duration: 5 * time.Millisecond,
 	}
 
-	err := printDryRun(cmd, result, ExitOK, 0)
+	err := printDryRun(cmd, result, ExitOK, 0, nil)
 	require.NoError(t, err)
 
 	var parsed struct {
@@ -452,6 +452,129 @@ func TestPrintDryRun_JSONModeZeroSignals(t *testing.T) {
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
 	assert.Equal(t, 0, parsed.TotalSignals)
 	assert.Equal(t, 0, parsed.ExitCode)
+}
+
+func TestPrintDryRun_JSONModeWithWorkspaces(t *testing.T) {
+	resetScanFlags()
+	scanDryRun = true
+	scanJSON = true
+
+	cmd := &cobra.Command{}
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+
+	result := &signal.ScanResult{
+		Signals: []signal.RawSignal{{Title: "s1"}},
+		Results: []signal.CollectorResult{
+			{Collector: "todos", Signals: []signal.RawSignal{{Title: "s1"}}, Duration: 10 * time.Millisecond},
+		},
+		Duration: 15 * time.Millisecond,
+	}
+
+	workspaces := []workspaceEntry{
+		{Name: "svc-a", Path: "/root/svc-a", Rel: "svc-a"},
+		{Name: "svc-b", Path: "/root/svc-b", Rel: "svc-b"},
+	}
+
+	err := printDryRun(cmd, result, ExitOK, 0, workspaces)
+	require.NoError(t, err)
+
+	var parsed struct {
+		TotalSignals int `json:"total_signals"`
+		Workspaces   []struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		} `json:"workspaces"`
+	}
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &parsed))
+	require.Len(t, parsed.Workspaces, 2)
+	assert.Equal(t, "svc-a", parsed.Workspaces[0].Name)
+	assert.Equal(t, "svc-a", parsed.Workspaces[0].Path)
+	assert.Equal(t, "svc-b", parsed.Workspaces[1].Name)
+	assert.Equal(t, "svc-b", parsed.Workspaces[1].Path)
+}
+
+func TestPrintDryRun_JSONModeNoNamedWorkspaces(t *testing.T) {
+	resetScanFlags()
+	scanDryRun = true
+	scanJSON = true
+
+	cmd := &cobra.Command{}
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+
+	result := &signal.ScanResult{
+		Signals:  nil,
+		Results:  nil,
+		Duration: 5 * time.Millisecond,
+	}
+
+	// Single non-monorepo workspace (empty name) should omit workspaces field.
+	workspaces := []workspaceEntry{
+		{Name: "", Path: "/root", Rel: "."},
+	}
+
+	err := printDryRun(cmd, result, ExitOK, 0, workspaces)
+	require.NoError(t, err)
+
+	// The "workspaces" key should not appear in JSON output.
+	assert.NotContains(t, buf.String(), `"workspaces"`)
+}
+
+func TestPrintDryRun_TextModeWithWorkspaces(t *testing.T) {
+	resetScanFlags()
+	scanDryRun = true
+	scanJSON = false
+
+	cmd := &cobra.Command{}
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+
+	result := &signal.ScanResult{
+		Signals: []signal.RawSignal{{Title: "s1"}},
+		Results: []signal.CollectorResult{
+			{Collector: "todos", Signals: []signal.RawSignal{{Title: "s1"}}, Duration: 10 * time.Millisecond},
+		},
+		Duration: 15 * time.Millisecond,
+	}
+
+	workspaces := []workspaceEntry{
+		{Name: "frontend", Path: "/root/frontend", Rel: "frontend"},
+		{Name: "backend", Path: "/root/backend", Rel: "backend"},
+	}
+
+	err := printDryRun(cmd, result, ExitOK, 0, workspaces)
+	require.NoError(t, err)
+
+	out := buf.String()
+	assert.Contains(t, out, "workspaces:")
+	assert.Contains(t, out, "frontend (frontend)")
+	assert.Contains(t, out, "backend (backend)")
+}
+
+func TestPrintDryRun_TextModeNoNamedWorkspaces(t *testing.T) {
+	resetScanFlags()
+	scanDryRun = true
+	scanJSON = false
+
+	cmd := &cobra.Command{}
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+
+	result := &signal.ScanResult{
+		Signals:  nil,
+		Results:  nil,
+		Duration: 5 * time.Millisecond,
+	}
+
+	workspaces := []workspaceEntry{
+		{Name: "", Path: "/root", Rel: "."},
+	}
+
+	err := printDryRun(cmd, result, ExitOK, 0, workspaces)
+	require.NoError(t, err)
+
+	assert.NotContains(t, buf.String(), "workspaces:")
 }
 
 // -----------------------------------------------------------------------
