@@ -344,6 +344,17 @@ When you open a PR that implements an Accepted DR, flip its status in the same P
 5. Add tests in `internal/collectors/yourname_test.go`
 6. Update `README.md` collector list
 
+### Logging conventions
+
+Stringer uses the stdlib `log/slog` everywhere. Follow these rules so agents and CI consumers can parse logs reliably:
+
+- **Level:** `Info` for user-visible status (caps reached, collectors disabled). `Warn` for recoverable degradation (parse failure, skipping a file). `Debug` for per-item tracing. `Error` only for abort-worthy conditions that stop the scan.
+- **Message:** lowercase, no terminal punctuation, prefixed with the collector/component name: `"complexity: Go AST parse failed, skipping file"`.
+- **Error field:** name it exactly `"error"` and pass the raw error value (slog formats it). Always include at least one context field alongside (e.g. `"file"`, `"path"`, `"package"`).
+- **Never concatenate runtime values into the message.** Do not write `slog.Warn("vuln: reading "+name, …)`; use `slog.Warn("vuln: reading manifest", "file", name, …)` so structured consumers can index on `file`.
+- **Do not log-and-return the same error.** Either log it or wrap-and-return (with `fmt.Errorf("…: %w", err)`), not both — pick based on whether the caller can do anything with it.
+- **Field names:** `snake_case`, stable across releases. Common keys: `file`, `path`, `package`, `version`, `url`, `status`, `cap`, `attempt`.
+
 ### Adding a new formatter
 
 1. Create `internal/output/yourformat.go`
