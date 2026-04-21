@@ -236,6 +236,43 @@ end`, "\n")
 	assert.Equal(t, 8, endIdx)
 }
 
+// BenchmarkExtractKeywordBody guards against re-introducing per-call regex
+// compilation in extractKeywordBody. The block-opener and -closer patterns
+// are module-level (rubyBlockOpen, rubyBlockEnd); a regression that moves
+// them back inside the function shows up here as ~5x slower per op.
+func BenchmarkExtractKeywordBody(b *testing.B) {
+	lines := strings.Split(`def complex_operation(input, options = {})
+  result = []
+  if input.nil?
+    return result
+  end
+
+  input.each_with_index do |item, idx|
+    case item
+    when String
+      result << item.strip
+    when Numeric
+      result << item.to_s
+    else
+      if options[:strict]
+        raise ArgumentError, "unsupported"
+      end
+    end
+
+    while result.size > options[:max] || 100
+      result.shift
+    end
+  end
+
+  result
+end`, "\n")
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, _ = extractKeywordBody(lines, 0)
+	}
+}
+
 func TestCountBranches(t *testing.T) {
 	lines := []string{
 		"	if x > 0 {",

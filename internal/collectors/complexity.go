@@ -88,7 +88,21 @@ var logicalOpPattern = regexp.MustCompile(`&&|\|\|`)
 var commentLinePattern = regexp.MustCompile(
 	`^\s*(?://|#|/\*|\*\s|\*/|--)\s*`)
 
+// rubyBlockOpen matches Ruby's block-opening keywords used by
+// extractKeywordBody to balance `end` keywords.
+var rubyBlockOpen = regexp.MustCompile(
+	`\b(?:def|class|module|do|if|unless|while|until|for|case|begin)\b`)
+
+// rubyBlockEnd matches Ruby's `end` keyword.
+var rubyBlockEnd = regexp.MustCompile(`\bend\b`)
+
 // langSpecs defines function detection patterns per language.
+//
+// To add a new language, append a single entry here with the file
+// extensions it owns, a regex that matches a function declaration line
+// (capturing the name), and the endDetection mode appropriate for the
+// language's block structure. This is the single table referenced by
+// the L1 Language Support Expansion epic (stringer-043).
 var langSpecs = []langSpec{
 	{
 		extensions: []string{".go"},
@@ -505,13 +519,11 @@ func extractDedentBody(lines []string, startIdx int) ([]string, int) {
 }
 
 // extractKeywordBody extracts a Ruby function body using end keyword matching.
+// The block-open / block-end regexes are module-level (rubyBlockOpen,
+// rubyBlockEnd) so callers don't re-compile them per function.
 func extractKeywordBody(lines []string, startIdx int) ([]string, int) {
 	depth := 1 // the def itself opens a block
 	bodyStart := startIdx + 1
-
-	// Ruby block-opening keywords.
-	blockOpen := regexp.MustCompile(`\b(?:def|class|module|do|if|unless|while|until|for|case|begin)\b`)
-	blockEnd := regexp.MustCompile(`\bend\b`)
 
 	for i := bodyStart; i < len(lines); i++ {
 		trimmed := strings.TrimSpace(lines[i])
@@ -520,8 +532,8 @@ func extractKeywordBody(lines []string, startIdx int) ([]string, int) {
 		}
 
 		// Count block openers and closers on this line.
-		depth += len(blockOpen.FindAllString(lines[i], -1))
-		depth -= len(blockEnd.FindAllString(lines[i], -1))
+		depth += len(rubyBlockOpen.FindAllString(lines[i], -1))
+		depth -= len(rubyBlockEnd.FindAllString(lines[i], -1))
 
 		if depth <= 0 {
 			if bodyStart > i {
