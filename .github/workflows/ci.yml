@@ -96,6 +96,38 @@ jobs:
             echo "::error::Coverage ${total}% is below threshold ${threshold}%"
             exit 1
           fi
+      - name: Coverage by package (step summary)
+        if: always()
+        run: |
+          {
+            echo "## Coverage by package"
+            echo
+            echo '| Package | Coverage |'
+            echo '| --- | --- |'
+            go tool cover -func=coverage.out \
+              | awk '
+                /^total:/ { total=$3; next }
+                {
+                  # func-level rows look like: pkg/path/file.go:LINE: funcName  XX.X%
+                  # aggregate by package (strip ":LINE: funcName")
+                  split($1, parts, "/")
+                  n=length($1)
+                  i=index($1, ".go:")
+                  if (i>0) {
+                    pkg=substr($1, 1, i-1)
+                    sub(/\/[^/]+$/, "", pkg)
+                  } else { pkg=$1 }
+                  pct=$NF
+                  gsub("%","",pct)
+                  sum[pkg]+=pct
+                  cnt[pkg]++
+                }
+                END {
+                  for (p in sum) printf "| `%s` | %.1f%% |\n", p, sum[p]/cnt[p]
+                  if (total!="") printf "| **total** | **%s** |\n", total
+                }' \
+              | sort
+          } >> "$GITHUB_STEP_SUMMARY"
 
   vulncheck:
     name: Vulncheck
