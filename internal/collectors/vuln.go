@@ -287,13 +287,13 @@ func parseGradleQueries(repoPath string) (string, []PackageQuery) {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
-			slog.Warn("vuln: reading "+name, "error", err)
+			slog.Warn("vuln: reading manifest", "file", name, "error", err)
 			return "", nil
 		}
 
 		queries, err := parseGradleDeps(data)
 		if err != nil {
-			slog.Warn("vuln: parsing "+name, "error", err)
+			slog.Warn("vuln: parsing manifest", "file", name, "error", err)
 			return "", nil
 		}
 		return name, queries
@@ -364,13 +364,13 @@ func parseCsprojQueries(repoPath string) (string, []PackageQuery) {
 	for _, f := range csprojFiles {
 		data, err := FS.ReadFile(filepath.Join(repoPath, f))
 		if err != nil {
-			slog.Warn("vuln: reading "+f, "error", err)
+			slog.Warn("vuln: reading csproj", "file", f, "error", err)
 			continue
 		}
 
 		parsed, err := parseCsprojDeps(data)
 		if err != nil {
-			slog.Warn("vuln: parsing "+f, "error", err)
+			slog.Warn("vuln: parsing csproj", "file", f, "error", err)
 			continue
 		}
 

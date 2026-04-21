@@ -11,8 +11,29 @@ import (
 )
 
 // SignalID produces a deterministic ID from signal content.
-// It hashes Source + Kind + FilePath + Line + Title using SHA-256,
-// truncates to 8 hex characters, and prepends the given prefix.
+//
+// It hashes these fields, in this order, separated by NUL bytes:
+//
+//	Source | Kind | FilePath | Line | Title
+//
+// using SHA-256, takes the first 4 bytes, hex-encodes them (8 lowercase hex
+// chars), and prepends the given prefix.
+//
+// # Stability contract
+//
+// Signal IDs are the join key that links a scanned signal to the beads issue
+// tracking it. Changing any of the following breaks existing beads silently:
+//
+//   - the set or order of hashed fields
+//   - the separator (NUL byte)
+//   - the hash algorithm or truncation length
+//   - the hex encoding case or prefix format
+//
+// Treat the composition above as a fixed contract. If it ever needs to change,
+// ship both old and new IDs for a transition window and migrate callers that
+// persist IDs (the beads JSONL, baselines, report output). The regression
+// tests in signalid_test.go pin specific hash outputs — they will fail loudly
+// on any change here.
 func SignalID(sig signal.RawSignal, prefix string) string {
 	h := sha256.New()
 	// Write each field separated by null bytes to avoid collisions
