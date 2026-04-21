@@ -62,6 +62,26 @@ func TestRegister_DuplicatePanics(t *testing.T) {
 	})
 }
 
+func TestTryRegister_NoConflict(t *testing.T) {
+	resetForTesting()
+	defer restoreSections()
+
+	err := TryRegister(&stubSection{name: "unique"})
+	require.NoError(t, err)
+	require.NotNil(t, Get("unique"))
+}
+
+func TestTryRegister_Conflict(t *testing.T) {
+	resetForTesting()
+	defer restoreSections()
+
+	Register(&stubSection{name: "dup"})
+	err := TryRegister(&stubSection{name: "dup"})
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrAlreadyRegistered), "error should wrap ErrAlreadyRegistered")
+	assert.Contains(t, err.Error(), "dup", "error should include the offending name")
+}
+
 func TestGet_NotFound(t *testing.T) {
 	resetForTesting()
 	defer restoreSections()

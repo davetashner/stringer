@@ -7,6 +7,7 @@ package collector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -34,16 +35,34 @@ var (
 	registry = make(map[string]Collector)
 )
 
-// Register adds a collector to the global registry.
-// It panics if a collector with the same name is already registered.
-func Register(c Collector) {
+// ErrAlreadyRegistered is returned by TryRegister when a collector with the
+// same Name() is already in the registry. Wrapped with the offending name.
+var ErrAlreadyRegistered = errors.New("collector already registered")
+
+// TryRegister adds a collector to the global registry and returns an error
+// if a collector with the same Name() is already registered. Prefer this
+// over Register when the caller can handle the error (e.g. dynamic loaders,
+// tests).
+func TryRegister(c Collector) error {
 	mu.Lock()
 	defer mu.Unlock()
 	name := c.Name()
 	if _, exists := registry[name]; exists {
-		panic(fmt.Sprintf("collector already registered: %s", name))
+		return fmt.Errorf("%w: %s", ErrAlreadyRegistered, name)
 	}
 	registry[name] = c
+	return nil
+}
+
+// Register adds a collector to the global registry. It panics with a
+// descriptive message if registration fails — typically because a collector
+// with the same Name() was already registered (usually a duplicate blank
+// import). Intended for use from package init() where returning an error
+// isn't an option; runtime callers should use TryRegister.
+func Register(c Collector) {
+	if err := TryRegister(c); err != nil {
+		panic(err.Error())
+	}
 }
 
 // Get returns the collector with the given name, or nil if not found.
