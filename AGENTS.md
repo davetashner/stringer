@@ -138,7 +138,7 @@ stringer/
 │   ├── fixtures/           # Test fixture repos
 │   └── golden/             # Golden file outputs
 ├── docs/
-│   ├── decisions/          # Decision records (001-012)
+│   ├── decisions/          # Decision records (see docs/decisions/)
 │   ├── agent-integration.md    # MCP setup and tool reference
 │   ├── branch-protection.md    # Branch protection rules
 │   ├── competitive-analysis.md # Competitive landscape
@@ -314,6 +314,17 @@ conditions or caveats.]
 - Reference the relevant beads issue ID in the Context field.
 - Keep options concrete — include code snippets, interface sketches, or config examples where they clarify trade-offs.
 - If a decision is later reversed, set status to `Superseded by NNN` and create a new record explaining why.
+
+### Lifecycle
+
+Every DR moves through these states:
+
+- **Proposed** — authored but not reviewed. Do not implement.
+- **Accepted** — reviewed and approved. Implementation may proceed (or has).
+- **Superseded by NNN** — the decision has been reversed or replaced. Keep the original file; add a pointer line at the top to the replacement.
+- **Archived** — the decision no longer applies (feature removed, approach abandoned without replacement). Leave the file in place; prefix the title with `[Archived]` and add a one-line note under Status.
+
+When you open a PR that implements an Accepted DR, flip its status in the same PR. When you supersede a DR, do it in the PR that introduces the replacement. A DR should never linger in `Proposed` once the corresponding code ships — treat a mismatched status as a correctness bug on par with stale docs.
 
 ## Working on Stringer
 
