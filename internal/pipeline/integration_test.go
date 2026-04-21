@@ -432,7 +432,10 @@ type racyCollector struct {
 func (r *racyCollector) Name() string { return r.name }
 
 func (r *racyCollector) Collect(_ context.Context, _ string, _ signal.CollectorOpts) ([]signal.RawSignal, error) {
-	// Simulate work with optional delay.
+	// Intentional: induces real wall-clock work so concurrent collectors
+	// interleave under go test -race and expose data races on shared state.
+	// Random per-instance delay scrambles scheduling; this is a test
+	// scaffolding knob, not a sync primitive.
 	if r.delay > 0 {
 		time.Sleep(r.delay)
 	}
