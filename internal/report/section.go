@@ -41,17 +41,34 @@ var (
 	order    []string // insertion order for deterministic listing
 )
 
-// Register adds a section to the global registry.
-// It panics if a section with the same name is already registered.
-func Register(s Section) {
+// ErrAlreadyRegistered is returned by TryRegister when a section with the
+// same Name() is already in the registry. Wrapped with the offending name.
+var ErrAlreadyRegistered = errors.New("report section already registered")
+
+// TryRegister adds a section to the global registry and returns an error if
+// a section with the same Name() is already registered. Prefer this over
+// Register when the caller can handle the error.
+func TryRegister(s Section) error {
 	mu.Lock()
 	defer mu.Unlock()
 	name := s.Name()
 	if _, exists := registry[name]; exists {
-		panic(fmt.Sprintf("report section already registered: %s", name))
+		return fmt.Errorf("%w: %s", ErrAlreadyRegistered, name)
 	}
 	registry[name] = s
 	order = append(order, name)
+	return nil
+}
+
+// Register adds a section to the global registry. It panics with a
+// descriptive message if registration fails — typically because a section
+// with the same Name() was already registered (usually a duplicate blank
+// import). Intended for use from package init() where returning an error
+// isn't an option; runtime callers should use TryRegister.
+func Register(s Section) {
+	if err := TryRegister(s); err != nil {
+		panic(err.Error())
+	}
 }
 
 // Get returns the section with the given name, or nil if not found.
