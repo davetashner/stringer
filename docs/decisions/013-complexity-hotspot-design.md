@@ -1,6 +1,6 @@
 # 013: Complexity Hotspot Collector Design
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-02-21
 **Context:** stringer-b9u (C9: Complexity Hotspot Detector). Adding complexity detection as a new signal source to identify high-value refactoring targets.
 
