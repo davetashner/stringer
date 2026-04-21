@@ -112,16 +112,29 @@ type anthropicUsage struct {
 	OutputTokens int `json:"output_tokens"`
 }
 
+// capturedAnthropicRequest mirrors the fields of the outgoing request body
+// that tests need to assert on. Using a typed struct instead of
+// map[string]interface{} gets compiler-enforced field names and avoids the
+// float64 quirk JSON numbers have when decoded into a generic map.
+type capturedAnthropicRequest struct {
+	Model       string                 `json:"model"`
+	MaxTokens   int                    `json:"max_tokens"`
+	Temperature *float64               `json:"temperature,omitempty"`
+	System      []anthropicSystemBlock `json:"system,omitempty"`
+}
+
+type anthropicSystemBlock struct {
+	Type string `json:"type,omitempty"`
+	Text string `json:"text"`
+}
+
 // newTestServer returns an httptest server that responds with the given
-// anthropicResponse, and captures the request body for assertions.
-func newTestServer(t *testing.T, resp anthropicResponse, statusCode int, captured *map[string]interface{}) *httptest.Server {
+// anthropicResponse, and captures the outgoing request body for assertions.
+func newTestServer(t *testing.T, resp anthropicResponse, statusCode int, captured *capturedAnthropicRequest) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if captured != nil {
-			var body map[string]interface{}
-			if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
-				*captured = body
-			}
+			_ = json.NewDecoder(r.Body).Decode(captured)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(statusCode)
@@ -130,7 +143,7 @@ func newTestServer(t *testing.T, resp anthropicResponse, statusCode int, capture
 }
 
 func TestComplete_DefaultModelAndMaxTokens(t *testing.T) {
-	var captured map[string]interface{}
+	var captured capturedAnthropicRequest
 	srv := newTestServer(t, anthropicResponse{
 		ID:         "msg_test",
 		Type:       "message",
@@ -158,12 +171,12 @@ func TestComplete_DefaultModelAndMaxTokens(t *testing.T) {
 	assert.Equal(t, 5, resp.Usage.OutputTokens)
 
 	// Verify defaults sent to API.
-	assert.Equal(t, "claude-sonnet-4-5-20250929", captured["model"])
-	assert.Equal(t, float64(4096), captured["max_tokens"])
+	assert.Equal(t, "claude-sonnet-4-5-20250929", captured.Model)
+	assert.Equal(t, 4096, captured.MaxTokens)
 }
 
 func TestComplete_ModelOverride(t *testing.T) {
-	var captured map[string]interface{}
+	var captured capturedAnthropicRequest
 	srv := newTestServer(t, anthropicResponse{
 		ID:      "msg_test",
 		Type:    "message",
@@ -188,11 +201,11 @@ func TestComplete_ModelOverride(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "claude-haiku-3-5-20241022", resp.Model)
-	assert.Equal(t, "claude-haiku-3-5-20241022", captured["model"])
+	assert.Equal(t, "claude-haiku-3-5-20241022", captured.Model)
 }
 
 func TestComplete_MaxTokensOverride(t *testing.T) {
-	var captured map[string]interface{}
+	var captured capturedAnthropicRequest
 	srv := newTestServer(t, anthropicResponse{
 		ID:      "msg_test",
 		Type:    "message",
@@ -216,11 +229,11 @@ func TestComplete_MaxTokensOverride(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, float64(1024), captured["max_tokens"])
+	assert.Equal(t, 1024, captured.MaxTokens)
 }
 
 func TestComplete_SystemPrompt(t *testing.T) {
-	var captured map[string]interface{}
+	var captured capturedAnthropicRequest
 	srv := newTestServer(t, anthropicResponse{
 		ID:      "msg_test",
 		Type:    "message",
@@ -244,17 +257,12 @@ func TestComplete_SystemPrompt(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	system, ok := captured["system"]
-	require.True(t, ok, "system field should be present in request")
-	systemArr, ok := system.([]interface{})
-	require.True(t, ok, "system should be an array")
-	require.Len(t, systemArr, 1)
-	block := systemArr[0].(map[string]interface{})
-	assert.Equal(t, "You are a helpful assistant.", block["text"])
+	require.Len(t, captured.System, 1, "system field should be present with one block")
+	assert.Equal(t, "You are a helpful assistant.", captured.System[0].Text)
 }
 
 func TestComplete_Temperature(t *testing.T) {
-	var captured map[string]interface{}
+	var captured capturedAnthropicRequest
 	srv := newTestServer(t, anthropicResponse{
 		ID:      "msg_test",
 		Type:    "message",
@@ -279,7 +287,8 @@ func TestComplete_Temperature(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	assert.Equal(t, 0.7, captured["temperature"])
+	require.NotNil(t, captured.Temperature, "temperature should be present when set")
+	assert.Equal(t, 0.7, *captured.Temperature)
 }
 
 func TestComplete_APIError(t *testing.T) {

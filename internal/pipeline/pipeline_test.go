@@ -32,6 +32,10 @@ func (s *stubCollector) Name() string { return s.name }
 
 func (s *stubCollector) Collect(_ context.Context, _ string, _ signal.CollectorOpts) ([]signal.RawSignal, error) {
 	if s.delay > 0 {
+		// Intentional: simulates a collector with measurable wall-clock duration
+		// so TestPipeline_TimingTracked can assert a >= lower bound on
+		// pipeline.Result.Duration. Bounded-below timing assertions are not
+		// flaky under slow CI — this sleep is a setup knob, not a sync point.
 		time.Sleep(s.delay)
 	}
 	return s.signals, s.err
