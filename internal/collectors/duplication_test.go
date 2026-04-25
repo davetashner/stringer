@@ -131,7 +131,10 @@ func TestHashWindowShortFile(t *testing.T) {
 	lines := []normalizedLine{
 		{text: "a"}, {text: "b"},
 	}
-	entries := buildWindowHashes(lines, "short.go", defaultWindowSize)
+	entries, err := buildWindowHashes(context.Background(), lines, "short.go", defaultWindowSize)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(entries) != 0 {
 		t.Errorf("expected 0 entries for short file, got %d", len(entries))
 	}
@@ -146,10 +149,21 @@ func TestGroupClones(t *testing.T) {
 	}
 
 	var entries []windowEntry
-	entries = append(entries, buildWindowHashes(lines, "file1.go", defaultWindowSize)...)
-	entries = append(entries, buildWindowHashes(lines, "file2.go", defaultWindowSize)...)
+	e1, err := buildWindowHashes(context.Background(), lines, "file1.go", defaultWindowSize)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries = append(entries, e1...)
+	e2, err := buildWindowHashes(context.Background(), lines, "file2.go", defaultWindowSize)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries = append(entries, e2...)
 
-	groups := groupClones(entries, defaultWindowSize)
+	groups, err := groupClones(context.Background(), entries, defaultWindowSize)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(groups) == 0 {
 		t.Fatal("expected at least 1 clone group")
@@ -922,6 +936,44 @@ func TestCollect_ConfigurableMaxFiles(t *testing.T) {
 	m := c.Metrics().(*DuplicationMetrics)
 	if m.FilesScanned > 2 {
 		t.Errorf("expected at most 2 files scanned with cap=2, got %d", m.FilesScanned)
+	}
+}
+
+// TestBuildWindowHashesCancellation verifies that buildWindowHashes respects context cancellation.
+func TestBuildWindowHashesCancellation(t *testing.T) {
+	// Build a large enough input to trigger the periodic check.
+	lines := make([]normalizedLine, 2000)
+	for i := range lines {
+		lines[i] = normalizedLine{text: fmt.Sprintf("line %d", i), origLine: i + 1}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := buildWindowHashes(ctx, lines, "big.go", defaultWindowSize)
+	if err == nil {
+		t.Error("expected error from cancelled context")
+	}
+}
+
+// TestGroupClonesCancellation verifies that groupClones respects context cancellation.
+func TestGroupClonesCancellation(t *testing.T) {
+	// Build enough entries to trigger the periodic check (>1000 unique hashes).
+	var entries []windowEntry
+	for i := 0; i < 2000; i++ {
+		entries = append(entries, windowEntry{
+			hash:      uint64(i),
+			path:      "a.go",
+			startLine: i + 1,
+		})
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := groupClones(ctx, entries, defaultWindowSize)
+	if err == nil {
+		t.Error("expected error from cancelled context")
 	}
 }
 

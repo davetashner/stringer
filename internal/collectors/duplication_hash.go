@@ -4,6 +4,7 @@
 package collectors
 
 import (
+	"context"
 	"hash/fnv"
 	"regexp"
 	"strings"
@@ -129,12 +130,18 @@ type windowEntry struct {
 }
 
 // buildWindowHashes creates hash entries for all sliding windows in a file.
-func buildWindowHashes(normalized []normalizedLine, path string, winSize int) []windowEntry {
+// It checks for context cancellation every 1000 windows.
+func buildWindowHashes(ctx context.Context, normalized []normalizedLine, path string, winSize int) ([]windowEntry, error) {
 	if len(normalized) < winSize {
-		return nil
+		return nil, nil
 	}
 	entries := make([]windowEntry, 0, len(normalized)-winSize+1)
 	for i := 0; i <= len(normalized)-winSize; i++ {
+		if i%1000 == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
 		entries = append(entries, windowEntry{
 			hash:      hashWindow(normalized, i, winSize),
 			path:      path,
@@ -142,12 +149,13 @@ func buildWindowHashes(normalized []normalizedLine, path string, winSize int) []
 			normIdx:   i,
 		})
 	}
-	return entries
+	return entries, nil
 }
 
 // groupClones groups window entries by hash, then extends adjacent matching
 // windows into larger blocks. Returns clone groups with 2+ locations.
-func groupClones(entries []windowEntry, winSize int) []cloneGroup {
+// It checks for context cancellation every 1000 hash buckets.
+func groupClones(ctx context.Context, entries []windowEntry, winSize int) ([]cloneGroup, error) {
 	// Group by hash.
 	byHash := make(map[uint64][]windowEntry)
 	for _, e := range entries {
@@ -155,7 +163,15 @@ func groupClones(entries []windowEntry, winSize int) []cloneGroup {
 	}
 
 	var groups []cloneGroup
+	checked := 0
 	for _, matches := range byHash {
+		checked++
+		if checked%1000 == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
+
 		if len(matches) < 2 {
 			continue
 		}
@@ -188,7 +204,7 @@ func groupClones(entries []windowEntry, winSize int) []cloneGroup {
 		})
 	}
 
-	return mergeAdjacentGroups(groups, winSize)
+	return mergeAdjacentGroups(groups, winSize), nil
 }
 
 // mergeAdjacentGroups merges clone groups whose locations are adjacent

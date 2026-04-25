@@ -192,10 +192,16 @@ func (c *CouplingCollector) Collect(ctx context.Context, repoPath string, opts s
 	}
 
 	// Phase 3: Detect cycles via Tarjan's SCC.
-	sccs := tarjanSCC(graph)
+	sccs, err := tarjanSCC(ctx, graph)
+	if err != nil {
+		return nil, err
+	}
 
 	// Phase 4: Compute fan-out.
-	highFanOut := fanOutModules(graph, fanOutThreshold)
+	highFanOut, err := fanOutModules(ctx, graph, fanOutThreshold)
+	if err != nil {
+		return nil, err
+	}
 
 	// Phase 5: Generate signals.
 	var signals []signal.RawSignal

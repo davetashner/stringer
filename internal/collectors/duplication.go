@@ -156,10 +156,17 @@ func (c *DuplicationCollector) Collect(ctx context.Context, repoPath string, opt
 			return nil, err
 		}
 		normalized := normalizeType1(f.lines)
-		type1Entries = append(type1Entries, buildWindowHashes(normalized, f.relPath, winSize)...)
+		entries, hashErr := buildWindowHashes(ctx, normalized, f.relPath, winSize)
+		if hashErr != nil {
+			return nil, hashErr
+		}
+		type1Entries = append(type1Entries, entries...)
 	}
 
-	type1Groups := groupClones(type1Entries, winSize)
+	type1Groups, err := groupClones(ctx, type1Entries, winSize)
+	if err != nil {
+		return nil, err
+	}
 
 	// Phase 3: Build Type 2 (near-clone) hash windows.
 	var type2Entries []windowEntry
@@ -168,10 +175,17 @@ func (c *DuplicationCollector) Collect(ctx context.Context, repoPath string, opt
 			return nil, err
 		}
 		normalized := normalizeType2(f.lines)
-		type2Entries = append(type2Entries, buildWindowHashes(normalized, f.relPath, winSize)...)
+		entries, hashErr := buildWindowHashes(ctx, normalized, f.relPath, winSize)
+		if hashErr != nil {
+			return nil, hashErr
+		}
+		type2Entries = append(type2Entries, entries...)
 	}
 
-	type2Groups := groupClones(type2Entries, winSize)
+	type2Groups, err := groupClones(ctx, type2Entries, winSize)
+	if err != nil {
+		return nil, err
+	}
 	for i := range type2Groups {
 		type2Groups[i].NearClone = true
 	}
