@@ -44,8 +44,8 @@ stringer/
 │   │   ├── patterns.go         # Large files, missing tests, low test coverage ratios (Go, JS/TS, Python, Ruby, Java, Kotlin, Rust, C#, PHP, Swift)
 │   │   ├── lotteryrisk*.go     # Lottery risk: core, ownership math, review analysis
 │   │   ├── github.go           # GitHub issues, PRs, and review comments
-│   │   ├── dephealth.go        # Dependency health (archived, stale, deprecated)
-│   │   ├── vuln*.go            # Vuln scanner: core (OSV.dev), ecosystem parsers
+│   │   ├── dephealth*.go       # Dependency health: 10 ecosystems (Go, npm, Cargo, Maven, NuGet, PyPI, Packagist, SwiftPM, sbt, Hex)
+│   │   ├── vuln*.go            # Vuln scanner: 11 ecosystems via OSV.dev (+ PHP, Swift, Scala, Elixir parsers)
 │   │   ├── configdrift.go       # Config drift: env var drift, dead keys, inconsistent defaults
 │   │   ├── apidrift.go         # API drift: undocumented routes, unimplemented spec paths, stale versions
 │   │   ├── docstale.go         # Doc staleness: stale docs, co-change drift, broken links

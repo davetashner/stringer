@@ -1,6 +1,6 @@
 # 021: Collector Context Cancellation in Long-Running Loops
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-04-21
 **Context:** stringer-td9. Several collectors process large per-repo data sets in tight inner loops. `internal/collectors/duplication.go` (FNV-64a sliding window over every source file) and `internal/collectors/coupling_graph.go` (Tarjan SCC over the file-dependency graph) do not check `ctx.Done()` inside those loops. On a large repository (say 50K+ files), Ctrl+C hangs for several seconds before the collector surfaces the cancellation — bad UX on the CLI and actively harmful under CI timeouts.
 
@@ -71,4 +71,4 @@ Spawn a background goroutine that sets a sync/atomic flag when `ctx.Done()` fire
 
 ## Decision
 
-[To be filled in by a developer after review.]
+**Option A accepted.** Implemented in PR #309 (`fix/context-cancellation-hot-loops`). Periodic `ctx.Err()` checks added every 1,000 iterations in `buildWindowHashes`, `groupClones`, `tarjanSCC`, and `fanOutModules`. Four cancellation tests verify the behavior. No measurable overhead on the happy path.
