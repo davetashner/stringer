@@ -398,6 +398,11 @@ jobs:
     name: Doc Staleness
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    # TEMP: surfaced as non-blocking until the gh pr comment step is reworked
+    # to handle fork PRs (workflow token lacks write access on forks).
+    # Revert this once the comment-posting path is fixed. Tracked in stringer-td9
+    # follow-up — see PR #309 review.
+    continue-on-error: true
     permissions:
       contents: read
       pull-requests: write
