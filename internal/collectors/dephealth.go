@@ -61,18 +61,21 @@ type ModuleRetract struct {
 }
 
 // DepHealthCollector parses dependency manifests (go.mod, package.json,
-// Cargo.toml, pom.xml, *.csproj, requirements.txt, pyproject.toml) to extract
-// dependency information and emits signals for deprecated, yanked, archived,
-// and stale dependencies across multiple ecosystems.
+// Cargo.toml, pom.xml, *.csproj, requirements.txt, pyproject.toml,
+// composer.json, Package.swift, build.sbt, mix.exs) to extract dependency
+// information and emits signals for deprecated, yanked, archived, and stale
+// dependencies across multiple ecosystems.
 type DepHealthCollector struct {
-	metrics      *DepHealthMetrics
-	ghAPI        dephealthGitHubAPI
-	proxyClient  moduleProxyClient
-	npmClient    npmRegistryClient
-	cratesClient cratesRegistryClient
-	mavenClient  mavenRegistryClient
-	nugetClient  nugetRegistryClient
-	pypiClient   pypiRegistryClient
+	metrics          *DepHealthMetrics
+	ghAPI            dephealthGitHubAPI
+	proxyClient      moduleProxyClient
+	npmClient        npmRegistryClient
+	cratesClient     cratesRegistryClient
+	mavenClient      mavenRegistryClient
+	nugetClient      nugetRegistryClient
+	pypiClient       pypiRegistryClient
+	packagistClient  packagistRegistryClient
+	hexClient        hexRegistryClient
 }
 
 // Name returns the collector name used for registration and filtering.
@@ -112,6 +115,22 @@ func (c *DepHealthCollector) Collect(ctx context.Context, repoPath string, opts 
 	// --- Python/PyPI ecosystem (requirements.txt, pyproject.toml) ---
 	pypiSignals := c.collectPyPIHealth(ctx, repoPath, metrics)
 	signals = append(signals, pypiSignals...)
+
+	// --- PHP/Packagist ecosystem (composer.json) ---
+	packagistSignals := c.collectPackagistHealth(ctx, repoPath, metrics)
+	signals = append(signals, packagistSignals...)
+
+	// --- Swift/SwiftPM ecosystem (Package.swift) ---
+	swiftSignals := c.collectSwiftHealth(ctx, repoPath, metrics)
+	signals = append(signals, swiftSignals...)
+
+	// --- Scala/sbt ecosystem (build.sbt) ---
+	sbtSignals := c.collectSbtHealth(ctx, repoPath, metrics)
+	signals = append(signals, sbtSignals...)
+
+	// --- Elixir/Hex ecosystem (mix.exs) ---
+	hexSignals := c.collectHexHealth(ctx, repoPath, metrics)
+	signals = append(signals, hexSignals...)
 
 	// If no ecosystems found at all, return nil.
 	if len(metrics.Ecosystems) == 0 {
@@ -411,6 +430,175 @@ func (c *DepHealthCollector) collectPyPIHealth(ctx context.Context, repoPath str
 		metrics.Deprecated = append(metrics.Deprecated, s.Title)
 	}
 	return pypiSignals
+}
+
+// collectPackagistHealth parses composer.json and checks Packagist for abandoned packages.
+func (c *DepHealthCollector) collectPackagistHealth(ctx context.Context, repoPath string, metrics *DepHealthMetrics) []signal.RawSignal {
+	data, err := FS.ReadFile(filepath.Join(repoPath, "composer.json"))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("dephealth: reading composer.json", "error", err)
+		}
+		return nil
+	}
+
+	deps, err := parseComposerDeps(data)
+	if err != nil {
+		slog.Warn("dephealth: parsing composer.json", "error", err)
+		return nil
+	}
+	if len(deps) == 0 {
+		return nil
+	}
+
+	metrics.Ecosystems = append(metrics.Ecosystems, "packagist")
+
+	client := c.packagistClient
+	if client == nil {
+		client = &realPackagistRegistryClient{}
+	}
+
+	packagistSignals := checkPackagistDeps(ctx, client, deps, "composer.json")
+	for _, s := range packagistSignals {
+		metrics.Deprecated = append(metrics.Deprecated, s.Title)
+	}
+	return packagistSignals
+}
+
+// collectSwiftHealth parses Package.swift and checks GitHub for archived/stale dependency repos.
+func (c *DepHealthCollector) collectSwiftHealth(ctx context.Context, repoPath string, metrics *DepHealthMetrics) []signal.RawSignal {
+	data, err := FS.ReadFile(filepath.Join(repoPath, "Package.swift"))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("dephealth: reading Package.swift", "error", err)
+		}
+		return nil
+	}
+
+	deps := parseSwiftPackageDeps(data)
+	if len(deps) == 0 {
+		return nil
+	}
+
+	metrics.Ecosystems = append(metrics.Ecosystems, "swiftpm")
+
+	// Swift packages are GitHub repos — check archived/stale status via GitHub API.
+	ghAPI := c.ghAPI
+	if ghAPI == nil {
+		token := os.Getenv("GITHUB_TOKEN")
+		if token != "" {
+			ghClient := github.NewClient(nil).WithAuthToken(token)
+			ghAPI = &realGitHubAPI{client: ghClient}
+		} else {
+			slog.Info("GITHUB_TOKEN not set, skipping Swift GitHub checks")
+			return nil
+		}
+	}
+
+	// Convert SwiftPM deps to ModuleDep format for the GitHub checker.
+	var moduleDeps []ModuleDep
+	for _, dep := range deps {
+		// Extract github.com/owner/repo from the URL.
+		if path := extractGitHubPath(dep.Name); path != "" {
+			moduleDeps = append(moduleDeps, ModuleDep{
+				Path:    path,
+				Version: dep.Version,
+			})
+		}
+	}
+
+	if len(moduleDeps) == 0 {
+		return nil
+	}
+
+	ghSignals := checkGitHubDeps(ctx, ghAPI, moduleDeps, defaultStalenessThreshold)
+	for _, s := range ghSignals {
+		// Re-tag signals for Swift.
+		s.Tags = append(s.Tags, "swift")
+		switch s.Kind {
+		case "archived-dependency":
+			metrics.Archived = append(metrics.Archived, s.Title)
+		case "stale-dependency":
+			metrics.Stale = append(metrics.Stale, s.Title)
+		}
+	}
+	return ghSignals
+}
+
+// extractGitHubPath extracts a "github.com/owner/repo" path from a URL.
+// Returns "" if the URL is not a GitHub URL.
+func extractGitHubPath(url string) string {
+	for _, prefix := range []string{"https://github.com/", "http://github.com/"} {
+		if strings.HasPrefix(url, prefix) {
+			path := strings.TrimPrefix(url, prefix)
+			path = strings.TrimSuffix(path, ".git")
+			// Ensure it's owner/repo format.
+			parts := strings.SplitN(path, "/", 3)
+			if len(parts) >= 2 && parts[0] != "" && parts[1] != "" {
+				return "github.com/" + parts[0] + "/" + parts[1]
+			}
+		}
+	}
+	return ""
+}
+
+// collectSbtHealth parses build.sbt and checks Maven Central for stale artifacts.
+func (c *DepHealthCollector) collectSbtHealth(ctx context.Context, repoPath string, metrics *DepHealthMetrics) []signal.RawSignal {
+	data, err := FS.ReadFile(filepath.Join(repoPath, "build.sbt"))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("dephealth: reading build.sbt", "error", err)
+		}
+		return nil
+	}
+
+	deps := parseSbtDeps(data)
+	if len(deps) == 0 {
+		return nil
+	}
+
+	metrics.Ecosystems = append(metrics.Ecosystems, "sbt")
+
+	// Scala artifacts are published to Maven Central — reuse the Maven client.
+	client := c.mavenClient
+	if client == nil {
+		client = &realMavenRegistryClient{}
+	}
+
+	sbtSignals := checkMavenDeps(ctx, client, deps, "build.sbt")
+	for _, s := range sbtSignals {
+		metrics.Stale = append(metrics.Stale, s.Title)
+	}
+	return sbtSignals
+}
+
+// collectHexHealth parses mix.exs and checks Hex.pm for retired packages.
+func (c *DepHealthCollector) collectHexHealth(ctx context.Context, repoPath string, metrics *DepHealthMetrics) []signal.RawSignal {
+	data, err := FS.ReadFile(filepath.Join(repoPath, "mix.exs"))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("dephealth: reading mix.exs", "error", err)
+		}
+		return nil
+	}
+
+	deps := parseMixDeps(data)
+	if len(deps) == 0 {
+		return nil
+	}
+
+	metrics.Ecosystems = append(metrics.Ecosystems, "hex")
+
+	client := c.hexClient
+	if client == nil {
+		client = &realHexRegistryClient{}
+	}
+
+	hexSignals := checkHexDeps(ctx, client, deps, "mix.exs")
+	for _, s := range hexSignals {
+		metrics.Deprecated = append(metrics.Deprecated, s.Title)
+	}
+	return hexSignals
 }
 
 // Metrics returns structured dependency data from the last Collect call.
