@@ -4,6 +4,7 @@
 package collectors
 
 import (
+	"context"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -345,7 +346,8 @@ func moduleForFile(relPath string, ext string) string {
 
 // tarjanSCC finds all strongly connected components in the graph.
 // Returns only components with 2+ nodes (actual cycles).
-func tarjanSCC(graph importGraph) [][]string {
+// It checks for context cancellation at each top-level node visit.
+func tarjanSCC(ctx context.Context, graph importGraph) ([][]string, error) {
 	index := 0
 	stack := []string{}
 	onStack := map[string]bool{}
@@ -395,12 +397,15 @@ func tarjanSCC(graph importGraph) [][]string {
 
 	// Visit all nodes, including those with no outgoing edges.
 	for v := range graph {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if _, visited := indices[v]; !visited {
 			strongConnect(v)
 		}
 	}
 
-	return sccs
+	return sccs, nil
 }
 
 // --- Fan-out analysis ---
@@ -409,9 +414,17 @@ const defaultFanOutThreshold = 10
 
 // fanOutModules returns modules whose direct import count meets or exceeds
 // the threshold, along with their counts.
-func fanOutModules(graph importGraph, threshold int) map[string]int {
+// It checks for context cancellation every 1000 modules.
+func fanOutModules(ctx context.Context, graph importGraph, threshold int) (map[string]int, error) {
 	results := make(map[string]int)
+	checked := 0
 	for mod, deps := range graph {
+		checked++
+		if checked%1000 == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
 		// Deduplicate imports.
 		unique := make(map[string]bool)
 		for _, d := range deps {
@@ -422,7 +435,7 @@ func fanOutModules(graph importGraph, threshold int) map[string]int {
 			results[mod] = count
 		}
 	}
-	return results
+	return results, nil
 }
 
 // readGoModulePath reads the module path from a go.mod file.
