@@ -27,8 +27,8 @@ type hexRegistryClient interface {
 
 // hexPackageInfo represents the subset of Hex.pm API response we need.
 type hexPackageInfo struct {
-	Name     string       `json:"name"`
-	Releases []hexRelease `json:"releases"`
+	Name        string                   `json:"name"`
+	Releases    []hexRelease             `json:"releases"`
 	Retirements map[string]hexRetirement `json:"retirements"`
 }
 

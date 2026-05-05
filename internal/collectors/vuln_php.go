@@ -94,7 +94,7 @@ func extractComposerVersion(version string) string {
 	}
 
 	// Strip semver constraint prefixes.
-	version = strings.TrimLeft(version, "^~>=<!=v")
+	version = strings.TrimLeft(version, "^~>=<!v")
 	version = strings.TrimSpace(version)
 
 	// Skip if nothing left or starts with non-digit.

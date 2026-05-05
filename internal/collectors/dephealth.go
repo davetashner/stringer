@@ -66,16 +66,16 @@ type ModuleRetract struct {
 // information and emits signals for deprecated, yanked, archived, and stale
 // dependencies across multiple ecosystems.
 type DepHealthCollector struct {
-	metrics          *DepHealthMetrics
-	ghAPI            dephealthGitHubAPI
-	proxyClient      moduleProxyClient
-	npmClient        npmRegistryClient
-	cratesClient     cratesRegistryClient
-	mavenClient      mavenRegistryClient
-	nugetClient      nugetRegistryClient
-	pypiClient       pypiRegistryClient
-	packagistClient  packagistRegistryClient
-	hexClient        hexRegistryClient
+	metrics         *DepHealthMetrics
+	ghAPI           dephealthGitHubAPI
+	proxyClient     moduleProxyClient
+	npmClient       npmRegistryClient
+	cratesClient    cratesRegistryClient
+	mavenClient     mavenRegistryClient
+	nugetClient     nugetRegistryClient
+	pypiClient      pypiRegistryClient
+	packagistClient packagistRegistryClient
+	hexClient       hexRegistryClient
 }
 
 // Name returns the collector name used for registration and filtering.
