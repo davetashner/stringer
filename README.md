@@ -14,7 +14,7 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11942/badge?v=2)](https://www.bestpractices.dev/projects/11942)
 
-> **v1.7.0.** SARIF formatter no longer panics on marshal failures. Path traversal validation hardened. Deadcode collector regex memoization for faster scans. Symlink safety checks deduplicated across 7 collectors. Dry-run output now includes workspace metadata for monorepo debugging.
+> **v1.8.0.** L1 Language Support Expansion is complete: PHP, Swift, Scala, and Elixir manifests are now scanned by both the `dephealth` and `vuln` collectors (10 dep-health ecosystems, 11 vuln ecosystems). Hot loops in clone detection, coupling SCC, and module fan-out now check `ctx.Err()` so Ctrl+C and CI timeouts cancel within ~1000 iterations. Signal-ID stability is pinned by a regression test, the complexity collector hoists its Ruby regexes (~5x faster per function), and registries expose `TryRegister` for runtime callers. Doc Staleness CI is now advisory so fork PRs are no longer blocked.
 
 **Codebase archaeology for developers and AI agents.** Scan any repo for hidden tech debt — TODOs, vulnerabilities, lottery risk, stale branches, unhealthy dependencies — and get structured results you can act on immediately.
 
