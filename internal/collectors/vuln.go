@@ -79,6 +79,18 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 	// Gather queries from Node.js manifest (non-fatal on parse error).
 	npmFile, npmQueries := parseNpmQueries(repoPath)
 
+	// Gather queries from PHP manifest (non-fatal on parse error).
+	composerFile, composerQueries := parseComposerQueries(repoPath)
+
+	// Gather queries from Swift manifest (non-fatal on parse error).
+	swiftFile, swiftQueries := parseSwiftQueries(repoPath)
+
+	// Gather queries from Scala manifest (non-fatal on parse error).
+	sbtFile, sbtQueries := parseSbtQueries(repoPath)
+
+	// Gather queries from Elixir manifest (non-fatal on parse error).
+	mixFile, mixQueries := parseMixQueries(repoPath)
+
 	// Build combined query list with file/ecosystem tracking.
 	// fileMap tracks which manifest a query came from; used for dedup and signal emission.
 	type queryMeta struct {
@@ -134,6 +146,34 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
 		if _, exists := fileMap[key]; !exists {
 			fileMap[key] = queryMeta{filePath: npmFile, ecosystem: "npm"}
+			queries = append(queries, q)
+		}
+	}
+	for _, q := range composerQueries {
+		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
+		if _, exists := fileMap[key]; !exists {
+			fileMap[key] = queryMeta{filePath: composerFile, ecosystem: "Packagist"}
+			queries = append(queries, q)
+		}
+	}
+	for _, q := range swiftQueries {
+		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
+		if _, exists := fileMap[key]; !exists {
+			fileMap[key] = queryMeta{filePath: swiftFile, ecosystem: "SwiftURL"}
+			queries = append(queries, q)
+		}
+	}
+	for _, q := range sbtQueries {
+		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
+		if _, exists := fileMap[key]; !exists {
+			fileMap[key] = queryMeta{filePath: sbtFile, ecosystem: "Maven"}
+			queries = append(queries, q)
+		}
+	}
+	for _, q := range mixQueries {
+		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
+		if _, exists := fileMap[key]; !exists {
+			fileMap[key] = queryMeta{filePath: mixFile, ecosystem: "Hex"}
 			queries = append(queries, q)
 		}
 	}
@@ -193,6 +233,15 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 		}
 		if meta.ecosystem == "npm" {
 			tags = append(tags, "nodejs")
+		}
+		if meta.ecosystem == "Packagist" {
+			tags = append(tags, "php")
+		}
+		if meta.ecosystem == "SwiftURL" {
+			tags = append(tags, "swift")
+		}
+		if meta.ecosystem == "Hex" {
+			tags = append(tags, "elixir")
 		}
 		if cve != "" {
 			tags = append(tags, cve)
@@ -549,6 +598,82 @@ func confidenceForSeverity(severity string) float64 {
 	default:
 		return 0.80 // no severity data → default to medium
 	}
+}
+
+// parseComposerQueries reads composer.json and returns the filename and PackageQuery
+// entries for OSV lookup. Returns "", nil if no composer.json exists or on parse error.
+func parseComposerQueries(repoPath string) (string, []PackageQuery) {
+	data, err := FS.ReadFile(filepath.Join(repoPath, "composer.json"))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("vuln: reading composer.json", "error", err)
+		}
+		return "", nil
+	}
+
+	queries, err := parseComposerDeps(data)
+	if err != nil {
+		slog.Warn("vuln: parsing composer.json", "error", err)
+		return "", nil
+	}
+	if len(queries) > 0 {
+		return "composer.json", queries
+	}
+	return "", nil
+}
+
+// parseSwiftQueries reads Package.swift and returns the filename and PackageQuery
+// entries for OSV lookup. Returns "", nil if no Package.swift exists.
+func parseSwiftQueries(repoPath string) (string, []PackageQuery) {
+	data, err := FS.ReadFile(filepath.Join(repoPath, "Package.swift"))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("vuln: reading Package.swift", "error", err)
+		}
+		return "", nil
+	}
+
+	queries := parseSwiftPackageDeps(data)
+	if len(queries) > 0 {
+		return "Package.swift", queries
+	}
+	return "", nil
+}
+
+// parseSbtQueries reads build.sbt and returns the filename and PackageQuery
+// entries for OSV lookup. Returns "", nil if no build.sbt exists.
+func parseSbtQueries(repoPath string) (string, []PackageQuery) {
+	data, err := FS.ReadFile(filepath.Join(repoPath, "build.sbt"))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("vuln: reading build.sbt", "error", err)
+		}
+		return "", nil
+	}
+
+	queries := parseSbtDeps(data)
+	if len(queries) > 0 {
+		return "build.sbt", queries
+	}
+	return "", nil
+}
+
+// parseMixQueries reads mix.exs and returns the filename and PackageQuery
+// entries for OSV lookup. Returns "", nil if no mix.exs exists.
+func parseMixQueries(repoPath string) (string, []PackageQuery) {
+	data, err := FS.ReadFile(filepath.Join(repoPath, "mix.exs"))
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("vuln: reading mix.exs", "error", err)
+		}
+		return "", nil
+	}
+
+	queries := parseMixDeps(data)
+	if len(queries) > 0 {
+		return "mix.exs", queries
+	}
+	return "", nil
 }
 
 // Compile-time interface checks.
