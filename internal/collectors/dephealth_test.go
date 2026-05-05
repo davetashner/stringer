@@ -1446,3 +1446,497 @@ go 1.22
 	assert.Contains(t, metrics.Ecosystems, "go")
 	assert.Len(t, metrics.Ecosystems, 1, "only go ecosystem should be tracked")
 }
+
+// --- Packagist registry tests ---
+
+// mockPackagistRegistryClient implements packagistRegistryClient for testing.
+type mockPackagistRegistryClient struct {
+	results map[string]*packagistPackageInfo
+	err     error
+}
+
+func (m *mockPackagistRegistryClient) FetchPackage(_ context.Context, name string) (*packagistPackageInfo, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	info, ok := m.results[name]
+	if !ok {
+		return nil, fmt.Errorf("package %s not found", name)
+	}
+	return info, nil
+}
+
+func TestCheckPackagistDeps_Abandoned(t *testing.T) {
+	client := &mockPackagistRegistryClient{
+		results: map[string]*packagistPackageInfo{
+			"vendor/old-pkg": {
+				Packages: map[string][]packagistVersion{
+					"vendor/old-pkg": {{Version: "1.0.0", Abandoned: "vendor/new-pkg"}},
+				},
+			},
+		},
+	}
+	deps := []PackageQuery{{Ecosystem: "Packagist", Name: "vendor/old-pkg", Version: "1.0.0"}}
+
+	signals := checkPackagistDeps(context.Background(), client, deps, "composer.json")
+	require.Len(t, signals, 1)
+	assert.Equal(t, "deprecated-dependency", signals[0].Kind)
+	assert.Equal(t, 0.8, signals[0].Confidence)
+	assert.Contains(t, signals[0].Title, "vendor/old-pkg")
+	assert.Contains(t, signals[0].Description, "vendor/new-pkg")
+	assert.Contains(t, signals[0].Tags, "php")
+	assert.Equal(t, "composer.json", signals[0].FilePath)
+}
+
+func TestCheckPackagistDeps_NotAbandoned(t *testing.T) {
+	client := &mockPackagistRegistryClient{
+		results: map[string]*packagistPackageInfo{
+			"vendor/good-pkg": {
+				Packages: map[string][]packagistVersion{
+					"vendor/good-pkg": {{Version: "2.0.0", Abandoned: false}},
+				},
+			},
+		},
+	}
+	deps := []PackageQuery{{Ecosystem: "Packagist", Name: "vendor/good-pkg", Version: "2.0.0"}}
+
+	signals := checkPackagistDeps(context.Background(), client, deps, "composer.json")
+	assert.Empty(t, signals)
+}
+
+func TestCheckPackagistDeps_Error(t *testing.T) {
+	client := &mockPackagistRegistryClient{
+		err: fmt.Errorf("network error"),
+	}
+	deps := []PackageQuery{{Ecosystem: "Packagist", Name: "vendor/pkg", Version: "1.0.0"}}
+
+	signals := checkPackagistDeps(context.Background(), client, deps, "composer.json")
+	assert.Empty(t, signals, "errors should be silently skipped")
+}
+
+func TestCheckPackagistDeps_AbandonedBool(t *testing.T) {
+	client := &mockPackagistRegistryClient{
+		results: map[string]*packagistPackageInfo{
+			"vendor/dead-pkg": {
+				Packages: map[string][]packagistVersion{
+					"vendor/dead-pkg": {{Version: "1.0.0", Abandoned: true}},
+				},
+			},
+		},
+	}
+	deps := []PackageQuery{{Ecosystem: "Packagist", Name: "vendor/dead-pkg", Version: "1.0.0"}}
+
+	signals := checkPackagistDeps(context.Background(), client, deps, "composer.json")
+	require.Len(t, signals, 1)
+	assert.Contains(t, signals[0].Description, "alternative")
+}
+
+func TestDepHealthCollector_PackagistOnly(t *testing.T) {
+	dir := t.TempDir()
+	composerJSON := `{
+  "require": {
+    "vendor/old-pkg": "^1.0",
+    "vendor/good-pkg": "^2.0"
+  }
+}`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "composer.json"), []byte(composerJSON), 0o600))
+
+	client := &mockPackagistRegistryClient{
+		results: map[string]*packagistPackageInfo{
+			"vendor/old-pkg": {
+				Packages: map[string][]packagistVersion{
+					"vendor/old-pkg": {{Version: "1.0.0", Abandoned: "vendor/new-pkg"}},
+				},
+			},
+			"vendor/good-pkg": {
+				Packages: map[string][]packagistVersion{
+					"vendor/good-pkg": {{Version: "2.0.0", Abandoned: false}},
+				},
+			},
+		},
+	}
+
+	c := &DepHealthCollector{packagistClient: client}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "deprecated-dependency", signals[0].Kind)
+	assert.Contains(t, signals[0].Title, "vendor/old-pkg")
+
+	metrics := c.Metrics().(*DepHealthMetrics)
+	assert.Contains(t, metrics.Ecosystems, "packagist")
+	assert.Len(t, metrics.Deprecated, 1)
+}
+
+// --- Hex.pm registry tests ---
+
+// mockHexRegistryClient implements hexRegistryClient for testing.
+type mockHexRegistryClient struct {
+	results map[string]*hexPackageInfo
+	err     error
+}
+
+func (m *mockHexRegistryClient) FetchPackage(_ context.Context, name string) (*hexPackageInfo, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	info, ok := m.results[name]
+	if !ok {
+		return nil, fmt.Errorf("package %s not found", name)
+	}
+	return info, nil
+}
+
+func TestCheckHexDeps_Retired(t *testing.T) {
+	client := &mockHexRegistryClient{
+		results: map[string]*hexPackageInfo{
+			"old_lib": {
+				Name: "old_lib",
+				Retirements: map[string]hexRetirement{
+					"1.0.0": {Reason: "security", Message: "critical vulnerability found"},
+				},
+			},
+		},
+	}
+	deps := []PackageQuery{{Ecosystem: "Hex", Name: "old_lib", Version: "1.0.0"}}
+
+	signals := checkHexDeps(context.Background(), client, deps, "mix.exs")
+	require.Len(t, signals, 1)
+	assert.Equal(t, "deprecated-dependency", signals[0].Kind)
+	assert.Equal(t, 0.8, signals[0].Confidence)
+	assert.Contains(t, signals[0].Title, "old_lib@1.0.0")
+	assert.Contains(t, signals[0].Description, "security")
+	assert.Contains(t, signals[0].Description, "critical vulnerability found")
+	assert.Contains(t, signals[0].Tags, "elixir")
+	assert.Equal(t, "mix.exs", signals[0].FilePath)
+}
+
+func TestCheckHexDeps_NotRetired(t *testing.T) {
+	client := &mockHexRegistryClient{
+		results: map[string]*hexPackageInfo{
+			"good_lib": {
+				Name:        "good_lib",
+				Retirements: map[string]hexRetirement{},
+			},
+		},
+	}
+	deps := []PackageQuery{{Ecosystem: "Hex", Name: "good_lib", Version: "1.0.0"}}
+
+	signals := checkHexDeps(context.Background(), client, deps, "mix.exs")
+	assert.Empty(t, signals)
+}
+
+func TestCheckHexDeps_Error(t *testing.T) {
+	client := &mockHexRegistryClient{
+		err: fmt.Errorf("network error"),
+	}
+	deps := []PackageQuery{{Ecosystem: "Hex", Name: "some_lib", Version: "1.0.0"}}
+
+	signals := checkHexDeps(context.Background(), client, deps, "mix.exs")
+	assert.Empty(t, signals, "errors should be silently skipped")
+}
+
+func TestCheckHexDeps_DifferentVersionRetired(t *testing.T) {
+	client := &mockHexRegistryClient{
+		results: map[string]*hexPackageInfo{
+			"my_lib": {
+				Name: "my_lib",
+				Retirements: map[string]hexRetirement{
+					"0.9.0": {Reason: "deprecated"},
+				},
+			},
+		},
+	}
+	deps := []PackageQuery{{Ecosystem: "Hex", Name: "my_lib", Version: "1.0.0"}}
+
+	signals := checkHexDeps(context.Background(), client, deps, "mix.exs")
+	assert.Empty(t, signals, "only the exact version should trigger retirement signal")
+}
+
+func TestDepHealthCollector_HexOnly(t *testing.T) {
+	dir := t.TempDir()
+	mixExs := `defmodule MyApp.MixProject do
+  use Mix.Project
+
+  defp deps do
+    [
+      {:phoenix, "~> 1.7.0"},
+      {:retired_lib, "~> 1.0.0"},
+    ]
+  end
+end`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "mix.exs"), []byte(mixExs), 0o600))
+
+	hexClient := &mockHexRegistryClient{
+		results: map[string]*hexPackageInfo{
+			"phoenix": {
+				Name:        "phoenix",
+				Retirements: map[string]hexRetirement{},
+			},
+			"retired_lib": {
+				Name: "retired_lib",
+				Retirements: map[string]hexRetirement{
+					"1.0.0": {Reason: "renamed", Message: "use new_lib instead"},
+				},
+			},
+		},
+	}
+
+	c := &DepHealthCollector{hexClient: hexClient}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "deprecated-dependency", signals[0].Kind)
+	assert.Contains(t, signals[0].Title, "retired_lib")
+
+	metrics := c.Metrics().(*DepHealthMetrics)
+	assert.Contains(t, metrics.Ecosystems, "hex")
+	assert.Len(t, metrics.Deprecated, 1)
+}
+
+// --- Scala/sbt tests ---
+
+func TestDepHealthCollector_SbtOnly(t *testing.T) {
+	dir := t.TempDir()
+	buildSbt := `name := "my-project"
+version := "0.1.0"
+scalaVersion := "2.13.12"
+
+libraryDependencies += "org.typelevel" %% "cats-core" % "2.9.0"
+libraryDependencies += "com.old" % "stale-lib" % "1.0.0"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "build.sbt"), []byte(buildSbt), 0o600))
+
+	staleTimestamp := time.Now().Add(-5 * 365 * 24 * time.Hour).UnixMilli()
+	mavenClient := &mockMavenRegistryClient{
+		results: map[string]*mavenArtifactInfo{
+			"com.old:stale-lib": {
+				Response: struct {
+					NumFound int             `json:"numFound"`
+					Docs     []mavenArtifact `json:"docs"`
+				}{
+					NumFound: 1,
+					Docs: []mavenArtifact{
+						{GroupID: "com.old", ArtifactID: "stale-lib", Version: "1.0.0", Timestamp: staleTimestamp},
+					},
+				},
+			},
+		},
+	}
+
+	c := &DepHealthCollector{mavenClient: mavenClient}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "stale-dependency", signals[0].Kind)
+	assert.Contains(t, signals[0].Title, "com.old:stale-lib")
+
+	metrics := c.Metrics().(*DepHealthMetrics)
+	assert.Contains(t, metrics.Ecosystems, "sbt")
+	assert.Len(t, metrics.Stale, 1)
+}
+
+// --- Parser unit tests ---
+
+func TestParseComposerDeps(t *testing.T) {
+	data := []byte(`{
+  "require": {
+    "php": ">=8.0",
+    "vendor/pkg-a": "^1.0",
+    "vendor/pkg-b": "~2.3.0",
+    "ext-json": "*"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^10.0"
+  }
+}`)
+	queries, err := parseComposerDeps(data)
+	require.NoError(t, err)
+
+	names := make(map[string]string)
+	for _, q := range queries {
+		names[q.Name] = q.Version
+		assert.Equal(t, "Packagist", q.Ecosystem)
+	}
+
+	assert.Contains(t, names, "vendor/pkg-a")
+	assert.Contains(t, names, "vendor/pkg-b")
+	assert.Contains(t, names, "phpunit/phpunit")
+	assert.NotContains(t, names, "php", "platform req should be skipped")
+	assert.NotContains(t, names, "ext-json", "extension req should be skipped")
+}
+
+func TestParseComposerDeps_Empty(t *testing.T) {
+	data := []byte(`{}`)
+	queries, err := parseComposerDeps(data)
+	require.NoError(t, err)
+	assert.Empty(t, queries)
+}
+
+func TestParseComposerDeps_Invalid(t *testing.T) {
+	_, err := parseComposerDeps([]byte(`not json`))
+	assert.Error(t, err)
+}
+
+func TestExtractComposerVersion(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"^1.0", "1.0"},
+		{"~2.3.0", "2.3.0"},
+		{">=1.0,<2.0", "1.0"},
+		{"1.0.0", "1.0.0"},
+		{"*", ""},
+		{"dev-main", ""},
+		{"", ""},
+		{"v1.2.3", "1.2.3"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.want, extractComposerVersion(tt.input))
+		})
+	}
+}
+
+func TestParseSwiftPackageDeps(t *testing.T) {
+	data := []byte(`
+// swift-tools-version:5.9
+import PackageDescription
+
+let package = Package(
+    name: "MyApp",
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.0"),
+        .package(url: "https://github.com/vapor/vapor.git", .upToNextMajor(from: "4.0.0")),
+        .package(url: "https://github.com/swift-server/async-http-client.git", exact: "1.19.0"),
+    ],
+    targets: []
+)`)
+	queries := parseSwiftPackageDeps(data)
+	require.Len(t, queries, 3)
+
+	names := make(map[string]string)
+	for _, q := range queries {
+		names[q.Name] = q.Version
+		assert.Equal(t, "SwiftURL", q.Ecosystem)
+	}
+
+	assert.Equal(t, "1.2.0", names["https://github.com/apple/swift-argument-parser"])
+	assert.Equal(t, "4.0.0", names["https://github.com/vapor/vapor"])
+	assert.Equal(t, "1.19.0", names["https://github.com/swift-server/async-http-client"])
+}
+
+func TestParseSwiftPackageDeps_Empty(t *testing.T) {
+	data := []byte(`let package = Package(name: "Empty", targets: [])`)
+	queries := parseSwiftPackageDeps(data)
+	assert.Empty(t, queries)
+}
+
+func TestParseSbtDeps(t *testing.T) {
+	data := []byte(`
+name := "my-project"
+version := "0.1.0"
+scalaVersion := "2.13.12"
+
+libraryDependencies += "org.typelevel" %% "cats-core" % "2.9.0"
+libraryDependencies += "com.google.guava" % "guava" % "31.1-jre"
+libraryDependencies ++= Seq(
+  "com.typesafe.akka" %% "akka-actor" % "2.8.0",
+  "org.scalatest" %% "scalatest" % "3.2.15" % Test
+)
+`)
+	queries := parseSbtDeps(data)
+	require.NotEmpty(t, queries)
+
+	names := make(map[string]string)
+	for _, q := range queries {
+		names[q.Name] = q.Version
+		assert.Equal(t, "Maven", q.Ecosystem)
+	}
+
+	// %% deps get _2.13 suffix
+	assert.Contains(t, names, "org.typelevel:cats-core_2.13")
+	assert.Equal(t, "2.9.0", names["org.typelevel:cats-core_2.13"])
+
+	// % deps (Java) don't get suffix
+	assert.Contains(t, names, "com.google.guava:guava")
+	assert.Equal(t, "31.1-jre", names["com.google.guava:guava"])
+}
+
+func TestParseSbtDeps_Empty(t *testing.T) {
+	data := []byte(`name := "empty-project"`)
+	queries := parseSbtDeps(data)
+	assert.Empty(t, queries)
+}
+
+func TestParseMixDeps(t *testing.T) {
+	data := []byte(`
+defmodule MyApp.MixProject do
+  use Mix.Project
+
+  defp deps do
+    [
+      {:phoenix, "~> 1.7.0"},
+      {:ecto, "~> 3.10"},
+      {:jason, "~> 1.4"},
+      {:local_dep, path: "../local_dep"},
+    ]
+  end
+end`)
+	queries := parseMixDeps(data)
+
+	names := make(map[string]string)
+	for _, q := range queries {
+		names[q.Name] = q.Version
+		assert.Equal(t, "Hex", q.Ecosystem)
+	}
+
+	assert.Contains(t, names, "phoenix")
+	assert.Equal(t, "1.7.0", names["phoenix"])
+	assert.Contains(t, names, "ecto")
+	assert.Contains(t, names, "jason")
+	assert.NotContains(t, names, "local_dep", "path deps should be skipped")
+}
+
+func TestParseMixDeps_Empty(t *testing.T) {
+	data := []byte(`defmodule Empty.MixProject do end`)
+	queries := parseMixDeps(data)
+	assert.Empty(t, queries)
+}
+
+func TestExtractMixVersion(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"~> 1.7.0", "1.7.0"},
+		{">= 1.0.0", "1.0.0"},
+		{"== 2.0.0", "2.0.0"},
+		{"1.0.0", "1.0.0"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.want, extractMixVersion(tt.input))
+		})
+	}
+}
+
+func TestExtractGitHubPath(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"https://github.com/apple/swift-argument-parser", "github.com/apple/swift-argument-parser"},
+		{"https://github.com/vapor/vapor.git", "github.com/vapor/vapor"},
+		{"https://github.com/owner/repo/tree/main", "github.com/owner/repo"},
+		{"https://gitlab.com/owner/repo", ""},
+		{"not-a-url", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			assert.Equal(t, tt.want, extractGitHubPath(tt.input))
+		})
+	}
+}

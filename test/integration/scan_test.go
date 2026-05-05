@@ -352,7 +352,7 @@ func TestScan_BdImportRoundTrip(t *testing.T) {
 	require.NoError(t, err, "bd init failed:\n%s", initOut)
 
 	// Import the JSONL.
-	importCmd := exec.Command(bdPath, "import", "-i", outFile) //nolint:gosec // test helper
+	importCmd := exec.Command(bdPath, "import", outFile) //nolint:gosec // test helper
 	importCmd.Dir = bdDir
 	importOut, err := importCmd.CombinedOutput()
 	require.NoError(t, err, "bd import failed:\n%s", importOut)

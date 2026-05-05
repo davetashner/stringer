@@ -289,7 +289,10 @@ func TestTarjanSCC_SimpleCycle(t *testing.T) {
 		"A": {"B"},
 		"B": {"A"},
 	}
-	sccs := tarjanSCC(graph)
+	sccs, err := tarjanSCC(context.Background(), graph)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(sccs) != 1 {
 		t.Fatalf("expected 1 SCC, got %d", len(sccs))
@@ -305,7 +308,10 @@ func TestTarjanSCC_ThreeNodeCycle(t *testing.T) {
 		"B": {"C"},
 		"C": {"A"},
 	}
-	sccs := tarjanSCC(graph)
+	sccs, err := tarjanSCC(context.Background(), graph)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(sccs) != 1 {
 		t.Fatalf("expected 1 SCC, got %d", len(sccs))
@@ -321,7 +327,10 @@ func TestTarjanSCC_NoCycle(t *testing.T) {
 		"B": {"C"},
 		"C": nil,
 	}
-	sccs := tarjanSCC(graph)
+	sccs, err := tarjanSCC(context.Background(), graph)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(sccs) != 0 {
 		t.Errorf("expected 0 SCCs for acyclic graph, got %d", len(sccs))
@@ -334,7 +343,10 @@ func TestTarjanSCC_SelfLoop(t *testing.T) {
 		"A": {"A"},
 		"B": nil,
 	}
-	sccs := tarjanSCC(graph)
+	sccs, err := tarjanSCC(context.Background(), graph)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(sccs) != 0 {
 		t.Errorf("expected 0 SCCs (self-loops filtered), got %d", len(sccs))
@@ -349,7 +361,10 @@ func TestTarjanSCC_DisconnectedComponents(t *testing.T) {
 		"D": {"C"},
 		"E": nil, // isolated node
 	}
-	sccs := tarjanSCC(graph)
+	sccs, err := tarjanSCC(context.Background(), graph)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(sccs) != 2 {
 		t.Fatalf("expected 2 SCCs, got %d", len(sccs))
@@ -363,7 +378,10 @@ func TestTarjanSCC_MultipleCyclesSharedNode(t *testing.T) {
 		"B": {"A", "C"},
 		"C": {"B"},
 	}
-	sccs := tarjanSCC(graph)
+	sccs, err := tarjanSCC(context.Background(), graph)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(sccs) != 1 {
 		t.Fatalf("expected 1 SCC (overlapping cycles merge), got %d", len(sccs))
@@ -381,7 +399,10 @@ func TestFanOutModules(t *testing.T) {
 		"a":   {"b"},
 		"b":   nil,
 	}
-	result := fanOutModules(graph, 10)
+	result, err := fanOutModules(context.Background(), graph, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 high-fan-out module, got %d", len(result))
@@ -396,7 +417,10 @@ func TestFanOutModules_BelowThreshold(t *testing.T) {
 		"a": {"b", "c"},
 		"b": {"c"},
 	}
-	result := fanOutModules(graph, 10)
+	result, err := fanOutModules(context.Background(), graph, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(result) != 0 {
 		t.Errorf("expected 0 results below threshold, got %d", len(result))
@@ -407,7 +431,10 @@ func TestFanOutModules_DeduplicatesImports(t *testing.T) {
 	graph := importGraph{
 		"a": {"b", "b", "b", "c"}, // b listed 3 times, only counts once
 	}
-	result := fanOutModules(graph, 3)
+	result, err := fanOutModules(context.Background(), graph, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(result) != 0 {
 		t.Errorf("expected 0 results (deduplicated count is 2), got %d", len(result))
@@ -984,4 +1011,35 @@ func Hub() { a.A(); b.B(); c.C(); d.D(); e.E() }
 		}
 	}
 	assert.Greater(t, fanOutCount2, 0, "should trigger with threshold 3")
+}
+
+func TestTarjanSCC_ContextCancellation(t *testing.T) {
+	// Build a graph large enough to have multiple top-level visits.
+	graph := make(importGraph)
+	for i := 0; i < 100; i++ {
+		graph[fmt.Sprintf("mod%d", i)] = nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := tarjanSCC(ctx, graph)
+	if err == nil {
+		t.Error("expected error from cancelled context")
+	}
+}
+
+func TestFanOutModules_ContextCancellation(t *testing.T) {
+	graph := make(importGraph)
+	for i := 0; i < 2000; i++ {
+		graph[fmt.Sprintf("mod%d", i)] = []string{"dep"}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := fanOutModules(ctx, graph, 10)
+	if err == nil {
+		t.Error("expected error from cancelled context")
+	}
 }
