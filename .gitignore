@@ -51,3 +51,13 @@ Thumbs.db
 
 # Beads lock
 .beads/.jsonl.lock
+
+# Beads local runtime (embedded Dolt, backups, export scratch — not for git)
+.beads/backup/
+.beads/embeddeddolt/
+.beads/export-state.json
+
+# Local agent / IDE scratch (per-machine; never upstream)
+.claude/
+.cursor/
+.review/
