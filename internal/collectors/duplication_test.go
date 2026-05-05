@@ -960,11 +960,11 @@ func TestBuildWindowHashesCancellation(t *testing.T) {
 func TestGroupClonesCancellation(t *testing.T) {
 	// Build enough entries to trigger the periodic check (>1000 unique hashes).
 	var entries []windowEntry
-	for i := 0; i < 2000; i++ {
+	for i := uint64(0); i < 2000; i++ {
 		entries = append(entries, windowEntry{
-			hash:      uint64(i),
+			hash:      i,
 			path:      "a.go",
-			startLine: i + 1,
+			startLine: int(i) + 1, //nolint:gosec // G115: bounded loop counter (i < 2000), safe.
 		})
 	}
 
