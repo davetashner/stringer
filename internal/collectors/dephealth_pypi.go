@@ -5,7 +5,6 @@ package collectors
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -71,7 +70,7 @@ func (c *realPyPIRegistryClient) FetchPackage(ctx context.Context, name string) 
 	}
 
 	var info pypiPackageInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := decodeJSONLimited(resp.Body, &info); err != nil {
 		return nil, fmt.Errorf("decoding pypi response for %s: %w", name, err)
 	}
 
@@ -85,6 +84,9 @@ func checkPyPIDeps(ctx context.Context, client pypiRegistryClient, deps []Packag
 	checked := 0
 
 	for _, dep := range deps {
+		if ctx.Err() != nil {
+			break
+		}
 		if checked >= maxPyPIChecks {
 			slog.Info("dephealth: reached PyPI check cap", "cap", maxPyPIChecks)
 			break

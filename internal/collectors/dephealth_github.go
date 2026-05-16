@@ -60,6 +60,9 @@ func checkGitHubDeps(ctx context.Context, api dephealthGitHubAPI, deps []ModuleD
 	checked := 0
 
 	for _, dep := range deps {
+		if ctx.Err() != nil {
+			break
+		}
 		owner, repo, ok := extractGitHubOwnerRepo(dep.Path)
 		if !ok {
 			continue

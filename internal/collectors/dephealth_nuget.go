@@ -5,7 +5,6 @@ package collectors
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -91,7 +90,7 @@ func (c *realNuGetRegistryClient) FetchRegistration(ctx context.Context, id stri
 	}
 
 	var info nugetRegistrationInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := decodeJSONLimited(resp.Body, &info); err != nil {
 		return nil, fmt.Errorf("decoding nuget response for %s: %w", id, err)
 	}
 
@@ -105,6 +104,9 @@ func checkNuGetDeps(ctx context.Context, client nugetRegistryClient, deps []Pack
 	checked := 0
 
 	for _, dep := range deps {
+		if ctx.Err() != nil {
+			break
+		}
 		if checked >= maxNuGetChecks {
 			slog.Info("dephealth: reached NuGet check cap", "cap", maxNuGetChecks)
 			break

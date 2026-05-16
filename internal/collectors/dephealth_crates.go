@@ -5,7 +5,6 @@ package collectors
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -77,7 +76,7 @@ func (c *realCratesRegistryClient) FetchCrate(ctx context.Context, name string) 
 	}
 
 	var info crateInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := decodeJSONLimited(resp.Body, &info); err != nil {
 		return nil, fmt.Errorf("decoding crates.io response for %s: %w", name, err)
 	}
 
@@ -91,6 +90,9 @@ func checkCratesDeps(ctx context.Context, client cratesRegistryClient, deps []Pa
 	checked := 0
 
 	for _, dep := range deps {
+		if ctx.Err() != nil {
+			break
+		}
 		if checked >= maxCratesChecks {
 			slog.Info("dephealth: reached crates.io check cap", "cap", maxCratesChecks)
 			break

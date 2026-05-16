@@ -5,7 +5,6 @@ package collectors
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -68,7 +67,7 @@ func (c *realNpmRegistryClient) FetchPackage(ctx context.Context, name string) (
 	}
 
 	var info npmPackageInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := decodeJSONLimited(resp.Body, &info); err != nil {
 		return nil, fmt.Errorf("decoding npm response for %s: %w", name, err)
 	}
 
@@ -82,6 +81,9 @@ func checkNpmDeps(ctx context.Context, client npmRegistryClient, deps []PackageQ
 	checked := 0
 
 	for _, dep := range deps {
+		if ctx.Err() != nil {
+			break
+		}
 		if checked >= maxNpmChecks {
 			slog.Info("dephealth: reached npm registry check cap", "cap", maxNpmChecks)
 			break

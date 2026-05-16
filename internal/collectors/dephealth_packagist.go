@@ -5,7 +5,6 @@ package collectors
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -71,7 +70,7 @@ func (c *realPackagistRegistryClient) FetchPackage(ctx context.Context, name str
 	}
 
 	var info packagistPackageInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := decodeJSONLimited(resp.Body, &info); err != nil {
 		return nil, fmt.Errorf("decoding packagist response for %s: %w", name, err)
 	}
 
@@ -85,6 +84,9 @@ func checkPackagistDeps(ctx context.Context, client packagistRegistryClient, dep
 	checked := 0
 
 	for _, dep := range deps {
+		if ctx.Err() != nil {
+			break
+		}
 		if checked >= maxPackagistChecks {
 			slog.Info("dephealth: reached packagist check cap", "cap", maxPackagistChecks)
 			break
