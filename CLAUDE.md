@@ -38,8 +38,9 @@ golangci-lint run ./...
 ```
 
 ## Current Focus
-1. **Active epic**: L1 Language Support Expansion (`stringer-043`) — PHP, Swift, Scala, Elixir
-2. **Quick wins**: P3/P4 unblocked tasks — run `bd ready`
+1. **L1 Language Support Expansion (`stringer-043`)** — complete; PHP, Swift, Scala, Elixir landed in PR #310.
+2. **Deep-scan follow-ups**: `stringer-ds1`..`ds5` — dephealth registry hardening and test coverage.
+3. **Quick wins**: P3/P4 unblocked tasks — run `bd ready`
 
 ## Post-Release Checklist
 After tagging a release:
