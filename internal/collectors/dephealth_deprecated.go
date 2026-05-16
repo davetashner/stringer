@@ -88,6 +88,9 @@ func checkDeprecatedDeps(ctx context.Context, client moduleProxyClient, deps []M
 	checked := 0
 
 	for _, dep := range deps {
+		if ctx.Err() != nil {
+			break
+		}
 		if checked >= maxProxyChecks {
 			slog.Info("dephealth: reached module proxy check cap", "cap", maxProxyChecks)
 			break

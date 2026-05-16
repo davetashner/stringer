@@ -5,7 +5,6 @@ package collectors
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -77,7 +76,7 @@ func (c *realMavenRegistryClient) FetchArtifact(ctx context.Context, groupID, ar
 	}
 
 	var info mavenArtifactInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := decodeJSONLimited(resp.Body, &info); err != nil {
 		return nil, fmt.Errorf("decoding maven response for %s:%s: %w", groupID, artifactID, err)
 	}
 
@@ -95,6 +94,9 @@ func checkMavenDeps(ctx context.Context, client mavenRegistryClient, deps []Pack
 	checked := 0
 
 	for _, dep := range deps {
+		if ctx.Err() != nil {
+			break
+		}
 		if checked >= maxMavenChecks {
 			slog.Info("dephealth: reached Maven Central check cap", "cap", maxMavenChecks)
 			break
