@@ -39,7 +39,7 @@ golangci-lint run ./...
 
 ## Current Focus
 1. **L1 Language Support Expansion (`stringer-043`)** — complete; PHP, Swift, Scala, Elixir landed in PR #310.
-2. **Deep-scan follow-ups**: `stringer-ds1`..`ds5` — dephealth registry hardening and test coverage.
+2. **Deep-scan follow-ups**: `ds1`/`ds2`/`ds3` closed in PR #326 (bounded registry reads, ctx cancellation in dephealth check loops, L1 registry test coverage). `ds4` (configurable registry timeout) deliberately deferred as low-value; `ds5` open if applicable — check `bd ready`.
 3. **Quick wins**: P3/P4 unblocked tasks — run `bd ready`
 
 ## Post-Release Checklist
