@@ -19,13 +19,13 @@ jobs:
         # Display label (go-line) stays at major.minor so branch protection's
         # required-check names ("Test (Go 1.25)" / "Test (Go 1.26)") don't
         # break when we bump the security floor. Installed version (go-version)
-        # is pinned to the exact patch — currently the GO-2026-4918 /
-        # CVE-2026-33814 fixes (1.25.10 / 1.26.3).
+        # is pinned to the exact patch — currently the GO-2026-5037 /
+        # GO-2026-5039 (net/textproto + crypto/x509) fixes (1.25.11 / 1.26.4).
         include:
           - go-line: "1.25"
-            go-version: "1.25.10"
+            go-version: "1.25.11"
           - go-line: "1.26"
-            go-version: "1.26.3"
+            go-version: "1.26.4"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
