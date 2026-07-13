@@ -19,13 +19,14 @@ jobs:
         # Display label (go-line) stays at major.minor so branch protection's
         # required-check names ("Test (Go 1.25)" / "Test (Go 1.26)") don't
         # break when we bump the security floor. Installed version (go-version)
-        # is pinned to the exact patch — currently the GO-2026-5037 /
-        # GO-2026-5039 (net/textproto + crypto/x509) fixes (1.25.11 / 1.26.4).
+        # is pinned to the exact patch. The 1.26 line carries the
+        # GO-2026-5856 (crypto/tls Encrypted Client Hello) fix (1.26.5);
+        # the 1.25 line stays on the current floor (1.25.11).
         include:
           - go-line: "1.25"
             go-version: "1.25.11"
           - go-line: "1.26"
-            go-version: "1.26.4"
+            go-version: "1.26.5"
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -145,15 +146,15 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          # Pin to the exact patch carrying the latest stdlib advisory fixes
-          # (GO-2026-5037 / 5039 -> 1.26.4). The unpinned "1.26" resolves to
-          # whatever's in the runner's tool cache, which can lag, causing
-          # govulncheck to flag stdlib vulns that go.mod's directive already
-          # gates against.
-          go-version: "1.26.4"
+          # Pin to the exact patch carrying the latest stdlib advisory fix
+          # (GO-2026-5856, crypto/tls Encrypted Client Hello -> 1.26.5). The
+          # unpinned "1.26" resolves to whatever's in the runner's tool cache,
+          # which can lag, causing govulncheck to flag stdlib vulns that
+          # go.mod's directive already gates against.
+          go-version: "1.26.5"
       - uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # v1.0.4
         with:
-          go-version-input: "1.26.4"
+          go-version-input: "1.26.5"
           repo-checkout: false
 
   binary-size:
