@@ -13,7 +13,7 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11942/badge?v=2)](https://www.bestpractices.dev/projects/11942)
 
-> **v1.8.2.** L1 Language Support Expansion is complete: PHP, Swift, Scala, and Elixir manifests are now scanned by both the `dephealth` and `vuln` collectors (10 dep-health ecosystems, 11 vuln ecosystems). Hot loops in clone detection, coupling SCC, module fan-out, and the dephealth ecosystem checks now honor `ctx.Err()` so Ctrl+C and CI timeouts cancel within ~1000 iterations. Dep-health registry HTTP responses are now bounded to 10 MiB so a hostile or misconfigured registry can't exhaust memory, and the L1 (Packagist / Hex) registry clients have direct test coverage. Patched `golang.org/x/net` to v0.53.0 (Go 1.25.10) for GO-2026-4918.
+> **v1.8.4.** Dependency maintenance release: `anthropics/anthropic-sdk-go` v1.50.2 → v1.61.0, `golang.org/x/mod` v0.38.0, `golang.org/x/sync` v0.22.0, plus CI workflow action updates (checkout v7.0.1, setup-go v7, CodeQL 4.37.3, golangci-lint-action 9.3.0, govulncheck-action 1.1.0, Scorecard 2.4.4). No functional changes since v1.8.3.
 
 **Codebase archaeology for developers and AI agents.** Scan any repo for hidden tech debt — TODOs, vulnerabilities, lottery risk, stale branches, unhealthy dependencies — and get structured results you can act on immediately.
 
