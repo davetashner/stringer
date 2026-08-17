@@ -20,13 +20,14 @@ jobs:
         # required-check names ("Test (Go 1.25)" / "Test (Go 1.26)") don't
         # break when we bump the security floor. Installed version (go-version)
         # is pinned to the exact patch. The 1.26 line carries the
-        # GO-2026-5856 (crypto/tls Encrypted Client Hello) fix (1.26.5);
-        # the 1.25 line stays on the current floor (1.25.11).
+        # GO-2026-5972/6088/5026 stdlib advisory fixes (asn1/xml recursion
+        # depth, idna Punycode) -> 1.26.6; the 1.25 line stays on the current
+        # floor (1.25.11).
         include:
           - go-line: "1.25"
             go-version: "1.25.11"
           - go-line: "1.26"
-            go-version: "1.26.5"
+            go-version: "1.26.6"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -147,14 +148,14 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           # Pin to the exact patch carrying the latest stdlib advisory fix
-          # (GO-2026-5856, crypto/tls Encrypted Client Hello -> 1.26.5). The
-          # unpinned "1.26" resolves to whatever's in the runner's tool cache,
-          # which can lag, causing govulncheck to flag stdlib vulns that
-          # go.mod's directive already gates against.
-          go-version: "1.26.5"
+          # (GO-2026-5972/6088/5026, asn1/xml recursion depth + idna Punycode
+          # -> 1.26.6). The unpinned "1.26" resolves to whatever's in the
+          # runner's tool cache, which can lag, causing govulncheck to flag
+          # stdlib vulns that go.mod's directive already gates against.
+          go-version: "1.26.6"
       - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
         with:
-          go-version-input: "1.26.5"
+          go-version-input: "1.26.6"
           repo-checkout: false
 
   binary-size:
