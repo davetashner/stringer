@@ -13,7 +13,7 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11942/badge?v=2)](https://www.bestpractices.dev/projects/11942)
 
-> **v1.8.4.** Dependency maintenance release: `anthropics/anthropic-sdk-go` v1.50.2 → v1.61.0, `golang.org/x/mod` v0.38.0, `golang.org/x/sync` v0.22.0, plus CI workflow action updates (checkout v7.0.1, setup-go v7, CodeQL 4.37.3, golangci-lint-action 9.3.0, govulncheck-action 1.1.0, Scorecard 2.4.4). No functional changes since v1.8.3.
+> **v1.8.5.** Security & dependency maintenance release: CI vulncheck Go floor bumped to 1.26.6 (GO-2026-5972, GO-2026-6088, GO-2026-5026 stdlib advisories), `anthropics/anthropic-sdk-go` v1.61.0 → v1.63.1, `modelcontextprotocol/go-sdk` v1.6.1 → v1.7.0, `go-git` v5.19.1 → v5.19.2, `stretchr/testify` v1.11.1 → v1.12.0, `golang.org/x/mod` v0.38.0 → v0.40.0, plus CodeQL action updates (4.37.3 → 4.37.7). No functional changes since v1.8.4.
 
 **Codebase archaeology for developers and AI agents.** Scan any repo for hidden tech debt — TODOs, vulnerabilities, lottery risk, stale branches, unhealthy dependencies — and get structured results you can act on immediately.
 
