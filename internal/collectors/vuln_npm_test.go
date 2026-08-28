@@ -309,9 +309,16 @@ func TestParseNpmLockDeps_NestedNodeModules(t *testing.T) {
 	}`)
 	queries, err := parseNpmLockDeps(data)
 	require.NoError(t, err)
-	// First occurrence wins — "debug" is deduped.
-	require.Len(t, queries, 1)
-	assert.Equal(t, "debug", queries[0].Name)
+	// Distinct versions of the same package are distinct queries: collapsing
+	// them once dropped a production-reachable vulnerable version (stringer-kgr).
+	require.Len(t, queries, 2)
+	versions := map[string]bool{}
+	for _, q := range queries {
+		assert.Equal(t, "debug", q.Name)
+		versions[q.Version] = true
+	}
+	assert.True(t, versions["4.3.4"])
+	assert.True(t, versions["2.6.9"])
 }
 
 func TestParseNpmLockDeps_SkipsRootEntry(t *testing.T) {
@@ -401,4 +408,62 @@ func TestExtractNpmVersion(t *testing.T) {
 			assert.Equal(t, tt.want, extractNpmVersion(tt.input))
 		})
 	}
+}
+
+// TestParseNpmLockDeps_DevFlag verifies the lockfile's dev flag survives
+// parsing instead of being discarded (stringer-bqg).
+func TestParseNpmLockDeps_DevFlag(t *testing.T) {
+	data := []byte(`{
+		"packages": {
+			"": {"version": "1.0.0"},
+			"node_modules/prod-pkg": {"version": "1.0.0"},
+			"node_modules/dev-pkg": {"version": "2.0.0", "dev": true}
+		}
+	}`)
+	queries, err := parseNpmLockDeps(data)
+	require.NoError(t, err)
+	require.Len(t, queries, 2)
+	byName := map[string]PackageQuery{}
+	for _, q := range queries {
+		byName[q.Name] = q
+	}
+	assert.False(t, byName["prod-pkg"].Dev)
+	assert.True(t, byName["dev-pkg"].Dev)
+}
+
+// TestParseNpmLockDeps_ProdWinsOverDev verifies that when the same
+// name+version appears both dev and production, production reachability wins.
+func TestParseNpmLockDeps_ProdWinsOverDev(t *testing.T) {
+	// Same package+version at two paths: dev at top level, production nested.
+	// Whichever map order surfaces first, the result must be Dev=false.
+	data := []byte(`{
+		"packages": {
+			"": {"version": "1.0.0"},
+			"node_modules/shared": {"version": "3.1.4", "dev": true},
+			"node_modules/app-lib/node_modules/shared": {"version": "3.1.4"}
+		}
+	}`)
+	queries, err := parseNpmLockDeps(data)
+	require.NoError(t, err)
+	require.Len(t, queries, 1)
+	assert.Equal(t, "shared", queries[0].Name)
+	assert.False(t, queries[0].Dev, "production occurrence must clear the dev flag")
+}
+
+// TestParseNpmDeps_DevFlag verifies devDependencies are marked dev in the
+// package.json fallback path.
+func TestParseNpmDeps_DevFlag(t *testing.T) {
+	data := []byte(`{
+		"dependencies": {"express": "^4.18.2"},
+		"devDependencies": {"vitest": "^1.2.0"}
+	}`)
+	queries, err := parseNpmDeps(data)
+	require.NoError(t, err)
+	require.Len(t, queries, 2)
+	byName := map[string]PackageQuery{}
+	for _, q := range queries {
+		byName[q.Name] = q
+	}
+	assert.False(t, byName["express"].Dev)
+	assert.True(t, byName["vitest"].Dev)
 }

@@ -26,8 +26,11 @@ func init() {
 
 // VulnMetrics holds structured vulnerability data from the last scan.
 type VulnMetrics struct {
-	TotalVulns int
-	Vulns      []VulnEntry
+	TotalVulns    int
+	Vulns         []VulnEntry
+	FailedFetches int  // vuln detail fetches that errored (results incomplete)
+	Truncated     int  // queries whose paginated results were cut short
+	Unavailable   bool // true when the OSV service could not be reached at all
 }
 
 // VulnEntry represents a single vulnerability finding.
@@ -41,6 +44,7 @@ type VulnEntry struct {
 	Severity     string
 	Ecosystem    string
 	FilePath     string
+	Dev          bool
 }
 
 // VulnCollector detects known vulnerabilities in Go module dependencies
@@ -187,16 +191,27 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 		client = newOSVClient(30 * time.Second)
 	}
 
-	results, err := client.QueryBatch(ctx, queries)
+	res, err := client.QueryBatch(ctx, queries)
 	if err != nil {
-		slog.Info("vuln scan unavailable, skipping", "error", err)
-		return nil, nil // graceful degradation
+		// Graceful degradation for offline scans, but loudly: a security
+		// scan that silently reports nothing looks like a clean bill of
+		// health (stringer-kgr).
+		slog.Warn("vuln scan unavailable — dependencies were NOT checked for vulnerabilities", "error", err)
+		c.metrics = &VulnMetrics{Unavailable: true}
+		return nil, nil
 	}
 
 	var signals []signal.RawSignal
-	metrics := &VulnMetrics{}
+	metrics := &VulnMetrics{
+		FailedFetches: res.FailedFetches,
+		Truncated:     res.Truncated,
+	}
+	if res.FailedFetches > 0 || res.Truncated > 0 {
+		slog.Warn("vuln scan incomplete — some vulnerability data could not be fetched",
+			"failed_detail_fetches", res.FailedFetches, "truncated_queries", res.Truncated)
+	}
 
-	for _, r := range results {
+	for _, r := range res.Details {
 		cve := extractCVE(r.Aliases)
 		titleID := cve
 		if titleID == "" {
@@ -212,8 +227,36 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 			desc = fmt.Sprintf("%s\n\nNo fix available for %s %s.", r.Summary, r.PackageName, r.Version)
 		}
 
+		// Prefer the actual CVSS base score; fall back to the coarse
+		// impact-flag heuristic when the vector cannot be parsed.
 		severity := severityFromCVSS(r.Severity)
+		var scoreNote string
+		if score, ok := cvssBaseScore(r.Severity); ok {
+			severity = severityFromScore(score)
+			scoreNote = fmt.Sprintf("Severity: %s (CVSS %.1f)", severity, score)
+		} else if severity != "" {
+			scoreNote = fmt.Sprintf("Severity: %s", severity)
+		}
 		confidence := confidenceForSeverity(severity)
+
+		// Development-only dependencies cannot reach production users; rank
+		// them below production advisories of equal severity (stringer-bqg).
+		if r.Dev {
+			confidence -= 0.2
+			if confidence < 0.3 {
+				confidence = 0.3
+			}
+		}
+
+		reachNote := "Reachability: production — this dependency ships with the built artifact."
+		if r.Dev {
+			reachNote = "Reachability: dev-only — this dependency is used at build/development time and does not ship to users."
+		}
+		if scoreNote != "" {
+			desc = desc + "\n\n" + scoreNote + "\n" + reachNote
+		} else {
+			desc = desc + "\n\n" + reachNote
+		}
 
 		// Look up the manifest file for this result.
 		meta := fileMap[r.Ecosystem+"|"+r.PackageName+"|"+r.Version]
@@ -247,6 +290,9 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 			tags = append(tags, cve)
 		}
 		tags = append(tags, r.ID)
+		if r.Dev {
+			tags = append(tags, "dev-only")
+		}
 
 		signals = append(signals, signal.RawSignal{
 			Source:      "vuln",
@@ -268,6 +314,7 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 			Severity:     severity,
 			Ecosystem:    meta.ecosystem,
 			FilePath:     meta.filePath,
+			Dev:          r.Dev,
 		})
 	}
 
@@ -589,14 +636,18 @@ func parseCVSSMetrics(cvss string, names ...string) map[string]string {
 // confidenceForSeverity maps a severity level to a confidence score.
 func confidenceForSeverity(severity string) float64 {
 	switch severity {
-	case "high":
+	case "critical":
 		return 0.95
+	case "none":
+		return 0.30
+	case "high":
+		return 0.85
 	case "medium":
-		return 0.80
+		return 0.65
 	case "low":
-		return 0.60
+		return 0.45
 	default:
-		return 0.80 // no severity data → default to medium
+		return 0.80 // no severity data → default to medium-high
 	}
 }
 

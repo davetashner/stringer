@@ -5,9 +5,11 @@ package collectors
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -23,11 +25,11 @@ type mockOSVClient struct {
 	err     error
 }
 
-func (m *mockOSVClient) QueryBatch(_ context.Context, _ []PackageQuery) ([]VulnDetail, error) {
+func (m *mockOSVClient) QueryBatch(_ context.Context, _ []PackageQuery) (*OSVQueryResult, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	return m.results, nil
+	return &OSVQueryResult{Details: m.results}, nil
 }
 
 // validGoMod returns a go.mod with require directives for testing.
@@ -112,7 +114,7 @@ func TestVulnCollector_NoFixAvailable(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, signals, 1)
 
-	assert.Equal(t, 0.80, signals[0].Confidence) // medium severity (C:L)
+	assert.InDelta(t, 0.65, signals[0].Confidence, 0.001) // medium severity (CVSS 5.3)
 	assert.Contains(t, signals[0].Description, "No fix available")
 }
 
@@ -269,7 +271,7 @@ func TestVulnCollector_Metrics(t *testing.T) {
 	assert.Equal(t, "github.com/x/y", metrics.Vulns[0].Module)
 	assert.Equal(t, "v1.0.0", metrics.Vulns[0].Version)
 	assert.Equal(t, "v1.1.0", metrics.Vulns[0].FixedVersion)
-	assert.Equal(t, "high", metrics.Vulns[0].Severity)
+	assert.Equal(t, "critical", metrics.Vulns[0].Severity)
 }
 
 func TestVulnCollector_ReadFileError(t *testing.T) {
@@ -324,22 +326,28 @@ func TestVulnCollector_SeverityBasedConfidence(t *testing.T) {
 		wantSev  string
 	}{
 		{
-			name:     "high severity → 0.95",
+			name:     "critical (9.8) → 0.95",
 			severity: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
 			wantConf: 0.95,
+			wantSev:  "critical",
+		},
+		{
+			name:     "high network DoS (7.5) → 0.85",
+			severity: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+			wantConf: 0.85,
 			wantSev:  "high",
 		},
 		{
-			name:     "medium severity → 0.80",
+			name:     "medium (5.3) → 0.65",
 			severity: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
-			wantConf: 0.80,
+			wantConf: 0.65,
 			wantSev:  "medium",
 		},
 		{
-			name:     "low severity → 0.60",
+			name:     "zero impact → none → 0.30",
 			severity: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N",
-			wantConf: 0.60,
-			wantSev:  "low",
+			wantConf: 0.30,
+			wantSev:  "none",
 		},
 		{
 			name:     "no severity data → 0.80 default",
@@ -402,9 +410,11 @@ func TestConfidenceForSeverity(t *testing.T) {
 		severity string
 		want     float64
 	}{
-		{"high", 0.95},
-		{"medium", 0.80},
-		{"low", 0.60},
+		{"critical", 0.95},
+		{"high", 0.85},
+		{"medium", 0.65},
+		{"low", 0.45},
+		{"none", 0.30},
 		{"", 0.80},
 		{"unknown", 0.80},
 	}
@@ -1370,4 +1380,66 @@ func TestVulnCollector_NpmParseError(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, signals, 1)
 	assert.Equal(t, "go.mod", signals[0].FilePath)
+}
+
+// TestVulnCollector_DevOnlyDiscount verifies dev-only advisories rank below
+// production advisories of equal severity, and that both say which they are
+// (stringer-bqg).
+func TestVulnCollector_DevOnlyDiscount(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{
+		"dependencies": {"prod-pkg": "1.0.0"},
+		"devDependencies": {"dev-pkg": "2.0.0"}
+	}`), 0o600))
+
+	highSeverity := "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H" // 7.5 high
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{
+			{
+				ID: "GHSA-prod", Summary: "prod vuln", Ecosystem: "npm",
+				PackageName: "prod-pkg", Version: "1.0.0", Severity: highSeverity,
+			},
+			{
+				ID: "GHSA-dev", Summary: "dev vuln", Ecosystem: "npm",
+				PackageName: "dev-pkg", Version: "2.0.0", Severity: highSeverity, Dev: true,
+			},
+		},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 2)
+
+	var prod, dev signal.RawSignal
+	for _, s := range signals {
+		if strings.Contains(s.Title, "prod-pkg") {
+			prod = s
+		} else {
+			dev = s
+		}
+	}
+
+	assert.Greater(t, prod.Confidence, dev.Confidence,
+		"a dev-only advisory must not outrank a production one of equal severity")
+	assert.Contains(t, prod.Description, "Reachability: production")
+	assert.Contains(t, dev.Description, "Reachability: dev-only")
+	assert.Contains(t, prod.Description, "Severity: high (CVSS 7.5)")
+	assert.Contains(t, dev.Tags, "dev-only")
+	assert.NotContains(t, prod.Tags, "dev-only")
+}
+
+// TestVulnCollector_UnavailableIsLoud verifies a total OSV failure is
+// recorded in metrics rather than looking like a clean scan (stringer-kgr).
+func TestVulnCollector_UnavailableIsLoud(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), validGoMod(), 0o600))
+
+	c := &VulnCollector{osv: &mockOSVClient{err: errors.New("network down")}}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	assert.Nil(t, signals)
+
+	metrics := c.Metrics().(*VulnMetrics)
+	require.NotNil(t, metrics)
+	assert.True(t, metrics.Unavailable, "an unreachable OSV service must be visible in metrics")
 }
