@@ -13,7 +13,7 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11942/badge?v=2)](https://www.bestpractices.dev/projects/11942)
 
-> **v1.8.6.** Dependency maintenance release: `anthropics/anthropic-sdk-go` v1.63.1 → v1.66.0, `stretchr/testify` v1.12.0 → v1.12.1, plus CodeQL action updates (4.37.7 → 4.37.8). No functional changes since v1.8.5.
+> **v1.9.0.** Accuracy release, driven by a full evaluation against a real TypeScript/React repo. Vulnerability scanning is reachability-aware (npm dev vs. production), severity follows real CVSS v3 base scores, and partial OSV scans are loud instead of silent. Complexity scoring gains an indentation-derived nesting term for non-Go languages (flat guard lists no longer tie tangled code), JSX conditional rendering counts at half weight, and string/comment text no longer counts as control flow. Coupling exempts entry points and barrels; githygiene scans only git-tracked files; docstale and duplication drop three false-positive classes. Generated beads now carry WHAT/WHY/ACTION/DISMISS/CONTEXT bodies. See DR-023/024/025.
 
 **Codebase archaeology for developers and AI agents.** Scan any repo for hidden tech debt — TODOs, vulnerabilities, lottery risk, stale branches, unhealthy dependencies — and get structured results you can act on immediately.
 
@@ -338,6 +338,9 @@ collectors:
     duplication_window_size: 6  # token window for sliding hash
     duplication_signal_cap: 200 # max signals emitted
     duplication_max_files: 10000
+  coupling:
+    coupling_fan_out_threshold: 15   # imports before a module is flagged
+    coupling_exempt_patterns: []     # path globs exempt from fan-out (galleries, registries)
   githygiene:
     large_binary_threshold: 1000000  # bytes
     secret_patterns: []              # custom [{id, pattern, confidence, keywords}]
