@@ -25,6 +25,10 @@ Non-Go languages get token counting where complexity is about structure:
 
 **Bead bodies:** every complexity signal now carries WHAT (the metrics), WHY, ACTION, DISMISS, and CONTEXT (threshold + config key), per stringer-h51. DISMISS is tailored: flat functions are told they are probably fine.
 
+## Amendment (same day, from acceptance testing)
+
+The DR-013 confidence bands (0.8 at score 15) were calibrated for raw branch counts; depth-weighted scores run roughly 2× higher, which pushed ordinary loop+guard+condition validators (nesting 3) to P1 — 16 P1 findings in one file on the eval repo. Bands recalibrated to the AST path's cognitive/30 shape: 0.8 at 30, 0.6 at 18, 0.4 at 6. After recalibration the eval repo's validator file retains two P1s (its two genuinely densest functions) and the top hotspot (TourProvider, 97.5) keeps its rank.
+
 ## Consequences
 
 - Scores drop for flat/JSX-heavy code and hold for nested code; signal titles change (nesting added), so signal IDs change and delta scans will report these as new once.

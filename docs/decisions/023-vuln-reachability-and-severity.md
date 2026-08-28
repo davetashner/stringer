@@ -26,6 +26,10 @@ Additionally, partial OSV failures (unfetchable details, unpaginated `querybatch
 
 **Partial coverage:** `QueryBatch` now returns `OSVQueryResult{Details, FailedFetches, Truncated}`; `querybatch` pagination (`next_page_token`) is followed up to 5 pages per query; total failure sets `VulnMetrics.Unavailable` and logs at Warn. Scans stay non-fatal offline, but never silently.
 
+## Amendment (same day, from acceptance testing)
+
+Signal titles now include the package version (`image-size@0.7.5`): the pipeline deduplicates on Source+Kind+FilePath+Line+Title, so without the version a dev-only and a production instance of the same CVE collapsed into a single signal that carried the production confidence and the dev-only description. Titles are part of signal IDs; this changes IDs once.
+
 ## Consequences
 
 - npm gains full reachability awareness; other ecosystems with a dev distinction (Cargo `dev-dependencies`, Poetry/uv groups, Gemfile groups) parse as production until given the same treatment (follow-up bead).

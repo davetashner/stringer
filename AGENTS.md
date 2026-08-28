@@ -45,7 +45,7 @@ stringer/
 │   │   ├── lotteryrisk*.go     # Lottery risk: core, ownership math, review analysis
 │   │   ├── github.go           # GitHub issues, PRs, and review comments
 │   │   ├── dephealth*.go       # Dependency health: 10 ecosystems (Go, npm, Cargo, Maven, NuGet, PyPI, Packagist, SwiftPM, sbt, Hex)
-│   │   ├── vuln*.go            # Vuln scanner: 11 ecosystems via OSV.dev (+ PHP, Swift, Scala, Elixir parsers); CVSS v3 base-score severity, npm dev/prod reachability, paginated OSV queries with partial-coverage accounting (DR-023)
+│   │   ├── vuln*.go            # Vuln scanner: 11 ecosystems via OSV.dev (+ PHP, Swift, Scala, Elixir parsers); CVSS v3 base-score severity, npm dev/prod reachability, paginated OSV queries with partial-coverage accounting, versioned signal titles (DR-023)
 │   │   ├── configdrift.go       # Config drift: env var drift, dead keys, inconsistent defaults
 │   │   ├── apidrift.go         # API drift: undocumented routes, unimplemented spec paths, stale versions
 │   │   ├── docstale.go         # Doc staleness: stale docs, co-change drift, broken links (URI-scheme targets and fenced code blocks are skipped)

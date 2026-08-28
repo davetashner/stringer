@@ -1443,3 +1443,31 @@ func TestVulnCollector_UnavailableIsLoud(t *testing.T) {
 	require.NotNil(t, metrics)
 	assert.True(t, metrics.Unavailable, "an unreachable OSV service must be visible in metrics")
 }
+
+// TestVulnCollector_TitleIncludesVersion pins the version into the signal
+// title: the pipeline dedups on Source+Kind+FilePath+Line+Title, so without
+// the version a dev-only and a production instance of the same CVE collapse
+// into one signal carrying a misleading mix of both.
+func TestVulnCollector_TitleIncludesVersion(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{
+		"dependencies": {"image-size": "0.7.5"}
+	}`), 0o600))
+
+	c := &VulnCollector{osv: &mockOSVClient{
+		results: []VulnDetail{
+			{ID: "GHSA-x", Summary: "prod copy", Ecosystem: "npm", PackageName: "image-size", Version: "0.7.5"},
+			{ID: "GHSA-x", Summary: "dev copy", Ecosystem: "npm", PackageName: "image-size", Version: "0.8.3", Dev: true},
+		},
+	}}
+
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 2)
+	titles := map[string]bool{}
+	for _, s := range signals {
+		titles[s.Title] = true
+	}
+	assert.True(t, titles["Vulnerable dependency: image-size@0.7.5 [GHSA-x]"], "titles: %v", titles)
+	assert.True(t, titles["Vulnerable dependency: image-size@0.8.3 [GHSA-x]"])
+}

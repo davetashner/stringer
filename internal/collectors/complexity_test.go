@@ -400,11 +400,11 @@ func TestInferIndentUnit(t *testing.T) {
 func TestRegexComplexityConfidence_FlatCap(t *testing.T) {
 	// A high score with flat structure is capped at 0.55 (P3): flat guard
 	// lists are often the clearest way to write the code (stringer-t98).
-	assert.InDelta(t, 0.55, regexComplexityConfidence(20.0, 1), 0.001)
-	assert.InDelta(t, 0.55, regexComplexityConfidence(20.0, 2), 0.001)
-	assert.InDelta(t, 0.8, regexComplexityConfidence(20.0, 3), 0.001)
+	assert.InDelta(t, 0.55, regexComplexityConfidence(40.0, 1), 0.001)
+	assert.InDelta(t, 0.55, regexComplexityConfidence(40.0, 2), 0.001)
+	assert.InDelta(t, 0.8, regexComplexityConfidence(40.0, 3), 0.001)
 	// Below the cap, flat functions keep their score-based confidence.
-	assert.InDelta(t, 0.5, regexComplexityConfidence(6.0, 1), 0.001)
+	assert.InDelta(t, 0.4, regexComplexityConfidence(6.0, 1), 0.001)
 }
 
 func TestComplexityConfidence(t *testing.T) {
@@ -412,13 +412,13 @@ func TestComplexityConfidence(t *testing.T) {
 		score float64
 		want  float64
 	}{
-		{20.0, 0.8},
-		{15.0, 0.8},
-		{8.0, 0.6},
-		{11.5, 0.7},
-		{6.0, 0.5},
-		{7.0, 0.55},
-		{5.0, 0.5},
+		{45.0, 0.8},
+		{30.0, 0.8},
+		{24.0, 0.7},
+		{18.0, 0.6},
+		{12.0, 0.5},
+		{6.0, 0.4},
+		{5.0, 0.4},
 	}
 	for _, tt := range tests {
 		got := complexityConfidence(tt.score)
