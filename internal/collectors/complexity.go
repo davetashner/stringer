@@ -36,11 +36,11 @@ type FunctionComplexity struct {
 	StartLine  int
 	EndLine    int
 	Lines      int
-	Branches   int
-	Score      float64 // lines/50 + branches (regex) or max(cyc/20, cog/30, nest/5) (AST)
+	Branches   int     // raw branch keywords + logical operators
+	Score      float64 // lines/50 + nesting-weighted branches (regex) or cognitive (AST)
 	Cyclomatic int     // AST-based cyclomatic complexity (0 if regex-analyzed)
 	Cognitive  int     // AST-based cognitive complexity (0 if regex-analyzed)
-	MaxNesting int     // AST-based max nesting depth (0 if regex-analyzed)
+	MaxNesting int     // max nesting depth: AST-derived (Go) or indentation-derived (regex)
 	ASTBased   bool    // true if analyzed via Go AST, false if regex-based
 }
 
@@ -311,7 +311,7 @@ func (c *ComplexityCollector) Collect(ctx context.Context, repoPath string, opts
 				FilePath:    fc.FilePath,
 				Line:        fc.StartLine,
 				Title:       fmt.Sprintf("%s: %s (cyclomatic: %d, cognitive: %d, nesting: %d)", titleKind, fc.FuncName, fc.Cyclomatic, fc.Cognitive, fc.MaxNesting),
-				Description: fmt.Sprintf("Lines %d-%d in %s", fc.StartLine, fc.EndLine, fc.FilePath),
+				Description: astComplexityDescription(fc),
 				Confidence:  conf,
 				Tags:        []string{"complexity", "go", "ast-analyzed"},
 			})
@@ -320,15 +320,16 @@ func (c *ComplexityCollector) Collect(ctx context.Context, repoPath string, opts
 			if fc.Score < minScore {
 				continue
 			}
-			conf := complexityConfidence(fc.Score)
+			conf := regexComplexityConfidence(fc.Score, fc.MaxNesting)
 			signals = append(signals, signal.RawSignal{
-				Source:     "complexity",
-				Kind:       "complex-function",
-				FilePath:   fc.FilePath,
-				Line:       fc.StartLine,
-				Title:      fmt.Sprintf("Complex function: %s (score %.1f, %d lines, %d branches)", fc.FuncName, fc.Score, fc.Lines, fc.Branches),
-				Confidence: conf,
-				Tags:       []string{"complexity", "refactor-candidate"},
+				Source:      "complexity",
+				Kind:        "complex-function",
+				FilePath:    fc.FilePath,
+				Line:        fc.StartLine,
+				Title:       fmt.Sprintf("Complex function: %s (score %.1f, %d lines, %d branches, nesting %d)", fc.FuncName, fc.Score, fc.Lines, fc.Branches, fc.MaxNesting),
+				Description: regexComplexityDescription(fc, minScore),
+				Confidence:  conf,
+				Tags:        []string{"complexity", "refactor-candidate"},
 			})
 		}
 	}
@@ -395,17 +396,22 @@ func extractFunctions(lines []string, relPath string, spec *langSpec, minLines i
 		}
 
 		if len(bodyLines) >= minLines {
-			branches := countBranches(bodyLines)
+			ext := filepath.Ext(relPath)
+			body := analyzeBody(bodyLines, ext)
 			nonBlank := countNonBlank(bodyLines)
-			score := float64(nonBlank)/50.0 + float64(branches)
+			// Lines contribute marginally; the score is dominated by
+			// nesting-weighted branch points so that a flat guard list
+			// scores far below equally-branchy nested code (stringer-t98).
+			score := float64(nonBlank)/50.0 + body.WeightedBranches
 
 			results = append(results, FunctionComplexity{
-				FilePath:  relPath,
-				FuncName:  funcName,
-				StartLine: startLine,
-				Lines:     nonBlank,
-				Branches:  branches,
-				Score:     score,
+				FilePath:   relPath,
+				FuncName:   funcName,
+				StartLine:  startLine,
+				Lines:      nonBlank,
+				Branches:   body.Branches,
+				Score:      score,
+				MaxNesting: body.MaxNesting,
 			})
 		}
 
@@ -566,22 +572,169 @@ func leadingSpaces(line string) int {
 	return count
 }
 
-// countBranches counts control flow keywords and logical operators in lines,
-// skipping comment-only lines.
-func countBranches(lines []string) int {
-	count := 0
+// bodyAnalysis holds the branch metrics for one function body.
+type bodyAnalysis struct {
+	Branches         int     // raw branch keywords + logical operators
+	WeightedBranches float64 // nesting-weighted branch cost (see analyzeBody)
+	MaxNesting       int     // indentation-derived max depth (1 = flat)
+}
+
+// jsxLogicalOpWeight discounts && and || in .jsx/.tsx files: `{cond && <X/>}`
+// is React's conditional-rendering idiom, not control flow a reader must
+// hold in their head (stringer-sby). Distinguishing JSX expressions from
+// real logic without a parser is impractical line-by-line, so logical
+// operators in these files count at half weight, documented in AGENTS.md.
+const jsxLogicalOpWeight = 0.5
+
+// maxIndentDepth caps indentation-derived nesting so continuation-line
+// indentation cannot run the depth to absurd values.
+const maxIndentDepth = 10
+
+// analyzeBody counts branch points in a function body, weighting each
+// control-flow keyword by the nesting depth of its line the way cognitive
+// complexity does: a branch at depth 1 costs 1, at depth d costs d. Depth
+// is derived from indentation (relative to the shallowest code line, in
+// units of the smallest observed indent step), which separates "twenty
+// flat guards" from "four conditions nested four deep" without a parser
+// (stringer-t98). String literals and comments are stripped before
+// matching so message text and trailing notes don't count as control flow
+// (stringer-sby). Logical operators count at depth-independent weight 1
+// (0.5 in .jsx/.tsx): they are conditions, not structure.
+func analyzeBody(lines []string, ext string) bodyAnalysis {
+	logicalWeight := 1.0
+	if ext == ".jsx" || ext == ".tsx" {
+		logicalWeight = jsxLogicalOpWeight
+	}
+
+	type codeLine struct {
+		clean  string
+		indent int
+	}
+	var code []codeLine
 	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		if commentLinePattern.MatchString(line) {
 			continue
 		}
-		count += len(branchPattern.FindAllString(line, -1))
-		count += len(logicalOpPattern.FindAllString(line, -1))
+		clean := stripStringsAndComments(line, ext)
+		if strings.TrimSpace(clean) == "" {
+			continue
+		}
+		code = append(code, codeLine{clean: clean, indent: leadingSpaces(line)})
 	}
-	return count
+	if len(code) == 0 {
+		return bodyAnalysis{MaxNesting: 1}
+	}
+
+	base := code[0].indent
+	indentSet := make(map[int]bool)
+	for _, cl := range code {
+		if cl.indent < base {
+			base = cl.indent
+		}
+		indentSet[cl.indent] = true
+	}
+	unit := inferIndentUnit(indentSet)
+
+	out := bodyAnalysis{MaxNesting: 1}
+	for _, cl := range code {
+		depth := 1 + (cl.indent-base)/unit
+		if depth > maxIndentDepth {
+			depth = maxIndentDepth
+		}
+
+		branches := len(branchPattern.FindAllString(cl.clean, -1))
+		logicals := len(logicalOpPattern.FindAllString(cl.clean, -1))
+
+		out.Branches += branches + logicals
+		out.WeightedBranches += float64(branches*depth) + float64(logicals)*logicalWeight
+
+		// Nesting is a structural property: track it on lines that carry
+		// control flow, so continuation-line indentation doesn't inflate it.
+		if branches > 0 && depth > out.MaxNesting {
+			out.MaxNesting = depth
+		}
+	}
+	return out
+}
+
+// inferIndentUnit returns the indentation step size for a body: the
+// smallest positive difference between observed indent levels, clamped to
+// at least 2 columns (1-column deltas are usually alignment, not nesting).
+// Falls back to 4 when the body has a single indent level.
+func inferIndentUnit(indents map[int]bool) int {
+	levels := make([]int, 0, len(indents))
+	for i := range indents {
+		levels = append(levels, i)
+	}
+	sort.Ints(levels)
+
+	unit := 0
+	for i := 1; i < len(levels); i++ {
+		d := levels[i] - levels[i-1]
+		if d >= 2 && (unit == 0 || d < unit) {
+			unit = d
+		}
+	}
+	if unit == 0 {
+		return 4
+	}
+	return unit
+}
+
+// stripStringsAndComments removes string-literal contents and trailing
+// comments from a line so tokens inside them ("retry if this fails",
+// `// if unset, defaults`) don't count as branches (stringer-sby). It is a
+// single-pass quote-state scan, deliberately line-local: multi-line
+// strings are already approximated by the surrounding heuristics.
+func stripStringsAndComments(line, ext string) string {
+	// Languages where # starts a comment.
+	hashComment := ext == ".py" || ext == ".rb" || ext == ".ex" || ext == ".exs"
+	// Rust lifetimes ('a) would read as an unterminated char literal and
+	// swallow the rest of the line, so ' is not a string quote there.
+	singleQuote := ext != ".rs"
+
+	var b strings.Builder
+	runes := []rune(line)
+	var quote rune
+	escaped := false
+
+	for i := 0; i < len(runes); i++ {
+		ch := runes[i]
+		if quote != 0 {
+			switch {
+			case escaped:
+				escaped = false
+			case ch == '\\':
+				escaped = true
+			case ch == quote:
+				quote = 0
+				b.WriteRune(ch)
+			}
+			continue
+		}
+		switch {
+		case ch == '"' || ch == '`' || (ch == '\'' && singleQuote):
+			quote = ch
+			b.WriteRune(ch)
+		case ch == '/' && i+1 < len(runes) && runes[i+1] == '/':
+			return b.String()
+		case ch == '/' && i+1 < len(runes) && runes[i+1] == '*':
+			rest := string(runes[i+2:])
+			end := strings.Index(rest, "*/")
+			if end < 0 {
+				return b.String()
+			}
+			i += 2 + end + 1
+		case ch == '#' && hashComment:
+			return b.String()
+		default:
+			b.WriteRune(ch)
+		}
+	}
+	return b.String()
 }
 
 // countNonBlank counts non-blank lines.
@@ -593,6 +746,49 @@ func countNonBlank(lines []string) int {
 		}
 	}
 	return count
+}
+
+// regexComplexityConfidence maps a regex-path score to confidence, then
+// caps mostly-flat functions at 0.55 (P3 after priority mapping): when
+// nesting is 1–2 the score is driven by branch count alone, and a flat
+// guard list — a validator, a dispatch table — is often the clearest way
+// to write that code (stringer-t98). The bead body says so explicitly.
+func regexComplexityConfidence(score float64, maxNesting int) float64 {
+	conf := complexityConfidence(score)
+	if maxNesting <= 2 && conf > 0.55 {
+		conf = 0.55
+	}
+	return conf
+}
+
+// regexComplexityDescription builds the WHAT/WHY/ACTION/DISMISS/CONTEXT body
+// for a regex-analyzed finding, so a generated bead carries its metrics,
+// its rationale, and an honest statement of when to close it (stringer-h51).
+func regexComplexityDescription(fc FunctionComplexity, minScore float64) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "WHAT: score %.1f = %d non-blank lines ÷ 50 + nesting-weighted branch points (%d raw branches/operators, max nesting depth %d).\n",
+		fc.Score, fc.Lines, fc.Branches, fc.MaxNesting)
+	b.WriteString("WHY: branches buried under nesting are where readers lose track of state; a flat list of guards reads cheaply even when long.\n")
+	if fc.MaxNesting <= 2 {
+		b.WriteString("ACTION: likely none — see DISMISS.\n")
+		b.WriteString("DISMISS: this function is mostly flat (nesting ≤ 2), so the score is driven by branch count alone; validators, dispatch tables, and config builders are often clearest as a flat rule list. Confidence has been capped accordingly — close as working-as-intended unless the branch logic genuinely interleaves.\n")
+	} else {
+		b.WriteString("ACTION: extract the most deeply nested blocks into named helpers, or invert conditions with early returns to flatten the structure.\n")
+		b.WriteString("DISMISS: if the nesting mirrors an inherent structure (a state machine, a recursive descent), a rewrite may not clarify — close with a comment saying so.\n")
+	}
+	fmt.Fprintf(&b, "CONTEXT: fires at score ≥ %.1f; tune via collectors.complexity.min_complexity_score. Non-Go languages are analyzed heuristically (indentation-derived nesting); Go gets AST-based cognitive complexity.", minScore)
+	return b.String()
+}
+
+// astComplexityDescription builds the body for a Go AST-analyzed finding.
+func astComplexityDescription(fc FunctionComplexity) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "WHAT: cyclomatic %d, cognitive %d, max nesting %d. Lines %d-%d in %s.\n",
+		fc.Cyclomatic, fc.Cognitive, fc.MaxNesting, fc.StartLine, fc.EndLine, fc.FilePath)
+	b.WriteString("WHY: cognitive complexity measures how much state a reader must hold; it grows superlinearly with nesting.\n")
+	b.WriteString("ACTION: extract the most deeply nested blocks into named functions; prefer early returns over else-chains.\n")
+	b.WriteString("DISMISS: table-driven or generated code with low nesting relative to cyclomatic count is often fine as-is — close with a comment saying so.")
+	return b.String()
 }
 
 // complexityConfidence maps a complexity score to a confidence value per DR-013:

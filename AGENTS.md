@@ -51,7 +51,7 @@ stringer/
 │   │   ├── docstale.go         # Doc staleness: stale docs, co-change drift, broken links
 │   │   ├── duplication*.go     # Code duplication: exact clones (Type 1) and near-clones (Type 2) via FNV-64a sliding window
 │   │   ├── coupling*.go        # Coupling: circular dependencies (Tarjan's SCC) and high fan-out modules via import graph
-│   │   ├── complexity.go       # Complexity: AST-based for Go (cyclomatic/cognitive/nesting), regex-based for other languages
+│   │   ├── complexity.go       # Complexity: AST-based for Go (cyclomatic/cognitive/nesting); other languages get indentation-derived nesting-weighted scoring with string/comment stripping and a 0.5× JSX logical-op discount (DR-024)
 │   │   ├── complexity_go.go    # Go AST analysis: cyclomatic, cognitive, nesting depth via go/parser
 │   │   ├── githygiene.go       # Git hygiene: large binaries, merge conflicts, committed secrets, mixed line endings
 │   │   ├── secrets.go          # Secret detection: 24+ built-in patterns, custom patterns, allowlist, entropy detection

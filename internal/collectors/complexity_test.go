@@ -273,7 +273,7 @@ end`, "\n")
 	}
 }
 
-func TestCountBranches(t *testing.T) {
+func TestAnalyzeBody_CountsBranches(t *testing.T) {
 	lines := []string{
 		"	if x > 0 {",
 		"		// if this is a comment",
@@ -286,19 +286,125 @@ func TestCountBranches(t *testing.T) {
 		"		}",
 		"	}",
 	}
-	count := countBranches(lines)
-	// if + for + if + || + switch + case + case = 7
-	assert.Equal(t, 7, count)
+	body := analyzeBody(lines, ".ts")
+	// if + for + if + || + switch + case + case = 7 raw
+	assert.Equal(t, 7, body.Branches)
+	// Nested branches cost their depth: if@1 + for@2 + if@3 + switch@4 +
+	// case@4 + case@4 = 1+2+3+4+4+4 = 18, plus || at weight 1 = 19.
+	assert.InDelta(t, 19.0, body.WeightedBranches, 0.01)
+	assert.Equal(t, 4, body.MaxNesting)
 }
 
-func TestCountBranches_SkipsComments(t *testing.T) {
+func TestAnalyzeBody_SkipsComments(t *testing.T) {
 	lines := []string{
 		"// if this is commented",
 		"# elif this too",
 		"  if real_code:",
 	}
-	count := countBranches(lines)
-	assert.Equal(t, 1, count)
+	body := analyzeBody(lines, ".py")
+	assert.Equal(t, 1, body.Branches)
+}
+
+// TestAnalyzeBody_FlatVsNested is the eval fixture proposed in stringer-t98:
+// two bodies with identical branch counts, one flat and one nested four
+// deep. The nested one must score materially higher; before the nesting
+// term they tied.
+func TestAnalyzeBody_FlatVsNested(t *testing.T) {
+	flat := []string{
+		"  if a { doA() }",
+		"  if b { doB() }",
+		"  if c { doC() }",
+		"  if d { doD() }",
+	}
+	nested := []string{
+		"  if a {",
+		"    if b {",
+		"      if c {",
+		"        if d { doD() }",
+		"      }",
+		"    }",
+		"  }",
+	}
+	f := analyzeBody(flat, ".ts")
+	n := analyzeBody(nested, ".ts")
+	assert.Equal(t, f.Branches, n.Branches, "raw branch counts must match for the comparison to mean anything")
+	assert.Greater(t, n.WeightedBranches, f.WeightedBranches*1.5,
+		"nested-4-deep must score materially higher than a flat guard list")
+	assert.Equal(t, 1, f.MaxNesting)
+	assert.Equal(t, 4, n.MaxNesting)
+}
+
+// TestAnalyzeBody_JSXDiscount verifies && in .tsx counts at half weight:
+// conditional rendering is an idiom, not control flow (stringer-sby).
+func TestAnalyzeBody_JSXDiscount(t *testing.T) {
+	lines := []string{
+		"  return (",
+		"    <div>",
+		"      {showHeader && <Header/>}",
+		"      {showBody && <Body/>}",
+		"      {showFooter && <Footer/>}",
+		"    </div>",
+		"  )",
+	}
+	tsx := analyzeBody(lines, ".tsx")
+	ts := analyzeBody(lines, ".ts")
+	assert.Equal(t, 3, tsx.Branches)
+	assert.InDelta(t, 1.5, tsx.WeightedBranches, 0.01)
+	assert.InDelta(t, 3.0, ts.WeightedBranches, 0.01)
+}
+
+// TestAnalyzeBody_IgnoresStringsAndTrailingComments pins the two counting
+// bugs from stringer-sby: tokens inside string literals and trailing
+// comments counted as control flow.
+func TestAnalyzeBody_IgnoresStringsAndTrailingComments(t *testing.T) {
+	lines := []string{
+		`  log.error("retry if the switch fails, or when the case is unclear")`,
+		"  doThing() // if this fails, retry while the loop drains",
+		"  x := 1",
+	}
+	body := analyzeBody(lines, ".go")
+	assert.Equal(t, 0, body.Branches)
+}
+
+func TestStripStringsAndComments(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		ext  string
+		want string
+	}{
+		{"double-quoted string emptied", `x := "if for while"`, ".go", `x := ""`},
+		{"trailing // comment removed", "doThing() // if broken", ".ts", "doThing() "},
+		{"trailing # comment removed (python)", "do_thing()  # unless broken", ".py", "do_thing()  "},
+		{"# kept for non-hash languages", `tag := t # 1`, ".go", `tag := t # 1`},
+		{"inline block comment removed", "a /* if x */ b", ".go", "a  b"},
+		{"unterminated block comment truncates", "a /* if x", ".go", "a "},
+		{"escaped quote stays inside string", "s := \"say \\\"if\\\" twice\"; run()", ".go", `s := ""; run()`},
+		{"rust lifetime is not a string", "fn use_it(x: &'a str) { if y {} }", ".rs", "fn use_it(x: &'a str) { if y {} }"},
+		{"code after string survives", `if x == "case" && y {`, ".go", `if x == "" && y {`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, stripStringsAndComments(tt.line, tt.ext))
+		})
+	}
+}
+
+func TestInferIndentUnit(t *testing.T) {
+	assert.Equal(t, 2, inferIndentUnit(map[int]bool{2: true, 4: true, 6: true}))
+	assert.Equal(t, 4, inferIndentUnit(map[int]bool{4: true, 8: true}))
+	assert.Equal(t, 4, inferIndentUnit(map[int]bool{4: true}), "single level falls back to 4")
+	assert.Equal(t, 4, inferIndentUnit(map[int]bool{4: true, 5: true}), "1-column deltas are alignment, not nesting")
+}
+
+func TestRegexComplexityConfidence_FlatCap(t *testing.T) {
+	// A high score with flat structure is capped at 0.55 (P3): flat guard
+	// lists are often the clearest way to write the code (stringer-t98).
+	assert.InDelta(t, 0.55, regexComplexityConfidence(20.0, 1), 0.001)
+	assert.InDelta(t, 0.55, regexComplexityConfidence(20.0, 2), 0.001)
+	assert.InDelta(t, 0.8, regexComplexityConfidence(20.0, 3), 0.001)
+	// Below the cap, flat functions keep their score-based confidence.
+	assert.InDelta(t, 0.5, regexComplexityConfidence(6.0, 1), 0.001)
 }
 
 func TestComplexityConfidence(t *testing.T) {
