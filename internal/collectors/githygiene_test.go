@@ -6,6 +6,7 @@ package collectors
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -318,4 +319,73 @@ func TestGitHygiene_ConfigurableLargeBinaryThreshold(t *testing.T) {
 	require.NoError(t, err)
 	largeBins2 := filterByKind(sigs2, "large-binary")
 	assert.NotEmpty(t, largeBins2, "500-byte binary should trigger 100-byte threshold")
+}
+
+// gitHygieneRunGit runs a git command in dir, failing the test on error.
+func gitHygieneRunGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+// TestGitHygiene_SkipsUntrackedAndIgnoredFiles pins stringer-nw3: a large
+// binary that git does not track — gitignored working files — is not a git
+// hygiene problem. On a real repo this produced 48 false P1 signals for
+// gitignored media assets.
+func TestGitHygiene_SkipsUntrackedAndIgnoredFiles(t *testing.T) {
+	dir := t.TempDir()
+	gitHygieneRunGit(t, dir, "init")
+
+	// Tracked large binary: must be flagged.
+	tracked := make([]byte, 1_100_000)
+	tracked[0] = 0x00 // NUL byte marks it binary
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "tracked.bin"), tracked, 0o600))
+
+	// Gitignored large binary: must NOT be flagged.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("ignored.bin\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "ignored.bin"), tracked, 0o600))
+
+	// Untracked large binary (not even ignored): must NOT be flagged.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "untracked.bin"), tracked, 0o600))
+
+	gitHygieneRunGit(t, dir, "add", "tracked.bin", ".gitignore")
+	gitHygieneRunGit(t, dir, "-c", "user.name=Test", "-c", "user.email=test@test.com",
+		"commit", "-m", "add tracked binary")
+
+	c := &GitHygieneCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	var large []signal.RawSignal
+	for _, s := range signals {
+		if s.Kind == "large-binary" {
+			large = append(large, s)
+		}
+	}
+	require.Len(t, large, 1, "only the tracked binary is a git hygiene problem")
+	assert.Equal(t, "tracked.bin", large[0].FilePath)
+}
+
+// TestGitHygiene_NonRepoFallsBackToFullScan verifies the collector still
+// works on a bare directory export (no .git).
+func TestGitHygiene_NonRepoFallsBackToFullScan(t *testing.T) {
+	dir := t.TempDir()
+	data := make([]byte, 1_100_000)
+	data[0] = 0x00
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "big.bin"), data, 0o600))
+
+	c := &GitHygieneCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	found := false
+	for _, s := range signals {
+		if s.Kind == "large-binary" {
+			found = true
+		}
+	}
+	assert.True(t, found, "non-repo scan should still flag large binaries")
 }

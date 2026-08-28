@@ -67,6 +67,24 @@ func Exec(ctx context.Context, repoDir string, args ...string) (string, error) {
 	return string(out), nil
 }
 
+// ListTrackedFiles runs `git ls-files -z` in repoDir and returns the set of
+// tracked file paths (relative to repoDir, slash-separated as git emits
+// them). Returns an error when repoDir is not inside a git work tree or git
+// is unavailable.
+func ListTrackedFiles(ctx context.Context, repoDir string) (map[string]bool, error) {
+	out, err := Exec(ctx, repoDir, "ls-files", "-z")
+	if err != nil {
+		return nil, err
+	}
+	tracked := make(map[string]bool)
+	for _, f := range strings.Split(out, "\x00") {
+		if f != "" {
+			tracked[f] = true
+		}
+	}
+	return tracked, nil
+}
+
 // BlameSingleLine runs `git blame --porcelain -L <line>,<line> -- <relPath>`
 // and returns the attribution for that line.
 func BlameSingleLine(ctx context.Context, repoDir, relPath string, line int) (*BlameLine, error) {

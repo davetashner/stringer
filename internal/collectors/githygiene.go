@@ -7,12 +7,14 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/davetashner/stringer/internal/collector"
+	"github.com/davetashner/stringer/internal/gitcli"
 	"github.com/davetashner/stringer/internal/signal"
 )
 
@@ -84,6 +86,17 @@ func (c *GitHygieneCollector) Collect(ctx context.Context, repoPath string, opts
 	// Parse .gitattributes for LFS-tracked patterns.
 	lfsPatterns := parseLFSPatterns(repoPath)
 
+	// Git hygiene is about the repository, not the working directory:
+	// an untracked or gitignored file cannot be a committed binary or a
+	// committed secret. Restrict the scan to tracked files; when the path
+	// is not a git repo (or git is unavailable), fall back to scanning
+	// everything so the collector still works on bare exports (stringer-nw3).
+	tracked, trackedErr := gitcli.ListTrackedFiles(ctx, repoPath)
+	if trackedErr != nil {
+		slog.Debug("githygiene: not filtering to tracked files", "error", trackedErr)
+		tracked = nil
+	}
+
 	var signals []signal.RawSignal
 	metrics := &GitHygieneMetrics{}
 
@@ -117,6 +130,11 @@ func (c *GitHygieneCollector) Collect(ctx context.Context, repoPath string, opts
 		}
 
 		if len(opts.IncludePatterns) > 0 && !matchesAny(relPath, opts.IncludePatterns) {
+			return nil
+		}
+
+		// Skip files git does not track (see above).
+		if tracked != nil && !tracked[filepath.ToSlash(relPath)] {
 			return nil
 		}
 

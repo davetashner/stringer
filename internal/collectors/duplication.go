@@ -219,7 +219,8 @@ func (c *DuplicationCollector) Collect(ctx context.Context, repoPath string, opt
 		dupLines += g.Lines * len(g.Locations)
 	}
 
-	// Sort signals by confidence descending.
+	// Sort signals by confidence descending. Test-only clone groups carry
+	// discounted confidence, so the cap below truncates boilerplate first.
 	sort.Slice(signals, func(i, j int) bool {
 		return signals[i].Confidence > signals[j].Confidence
 	})
@@ -276,6 +277,19 @@ func cloneGroupToSignal(g cloneGroup) signal.RawSignal {
 
 	confidence := duplicationConfidence(g.Lines, len(g.Locations), g.NearClone)
 
+	// A clone group living entirely in test files is usually deliberate
+	// setup boilerplate; down-weight it and say so, so production clones
+	// win the signal cap (stringer-e0o). A clone spanning test AND
+	// production code keeps full confidence.
+	if testOnly := cloneGroupIsTestOnly(g); testOnly {
+		confidence -= 0.15
+		if confidence < 0.2 {
+			confidence = 0.2
+		}
+		tags = append(tags, "test-only")
+		fmt.Fprintf(&desc, "All %d locations are test files — repeated test setup is often deliberate; extract a helper only if it clarifies.\n", len(g.Locations))
+	}
+
 	return signal.RawSignal{
 		Source:      "duplication",
 		Kind:        kind,
@@ -286,6 +300,17 @@ func cloneGroupToSignal(g cloneGroup) signal.RawSignal {
 		Confidence:  confidence,
 		Tags:        tags,
 	}
+}
+
+// cloneGroupIsTestOnly reports whether every location in the group is a
+// test file.
+func cloneGroupIsTestOnly(g cloneGroup) bool {
+	for _, loc := range g.Locations {
+		if !isTestFile(loc.Path) {
+			return false
+		}
+	}
+	return len(g.Locations) > 0
 }
 
 // duplicationConfidence computes confidence per DR-017:
