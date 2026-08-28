@@ -77,6 +77,8 @@ Stringer extracts these signals automatically, scores them by confidence, and ou
 - **Markdown** (`markdown`) — Human-readable summary grouped by collector with priority distribution
 - **Tasks** (`tasks`) — Claude Code task format for direct agent consumption
 - **SARIF** (`sarif`) — [SARIF v2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) static analysis results for IDE and CI integration
+- **HTML** (`html`) — Self-contained single-file dashboard
+- **HTML directory** (`html-dir`) — Dashboard split into `index.html` plus external `assets/dashboard.{css,js}`; requires `--output` to name the target directory
 
 ### Pipeline
 
@@ -91,38 +93,38 @@ Stringer extracts these signals automatically, scores them by confidence, and ou
 - **Monorepo support** — Auto-detects workspaces (go.work, pnpm, npm, lerna, nx, cargo) and scans each independently with `--workspace` filtering
 
 ```
-                              ┌─────────────────────────────────┐
-                              │        Target Repository        │
-                              └────────────────┬────────────────┘
-                                               │
-     ┌──────────┬──────────┬──────────┬────────┼────────┬──────────┬──────────┐
-     ▼          ▼          ▼          ▼        ▼        ▼          ▼          ▼
- ┌───────┐ ┌───────┐ ┌────────┐ ┌────────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────────┐
- │ TODOs │ │  Git  │ │Patterns│ │Lottery │ │GitHub│ │ Dep  │ │ Vuln │ │Complexity│ (parallel)
- │       │ │  log  │ │        │ │ Risk   │ │      │ │ Hlth │ │      │ │          │
- └───┬───┘ └───┬───┘ └───┬────┘ └───┬────┘ └──┬───┘ └──┬───┘ └──┬───┘ └────┬─────┘
-     │         │         │         │          │        │        │           │
-     │    ┌────┴────┐ ┌──┴───┐ ┌──┴────┐ ┌───┴───┐ ┌─┴──────┐ │     ┌─────┴─────┐
-     │    │  Dead   │ │ Git  │ │  Doc  │ │Config │ │  API   │ │     │Duplication│
-     │    │  code   │ │Hygne │ │ Stale │ │ Drift │ │ Drift  │ │     │           │
-     │    └────┬────┘ └──┬───┘ └──┬────┘ └───┬───┘ └───┬────┘ │     └─────┬─────┘
-     │         │         │        │          │         │      │           │
-     │         │         │   ┌────┴─────┐    │         │      │           │
-     │         │         │   │ Coupling │    │         │      │           │
-     │         │         │   └────┬─────┘    │         │      │           │
-     └─────────┴─────────┴────────┴──────────┴─────────┴──────┴───────────┘
-                                               ▼
-                                        ┌────────────┐
-                                        │  Dedup +   │
-                                        │ Validation │
-                                        └──────┬─────┘
-                                               │
-                      ┌────────────┬───────────┼────────────┬────────────┐
-                      ▼            ▼           ▼            ▼            ▼
-                 ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌─────────┐ ┌───────┐
-                 │  Beads  │ │   JSON   │ │ Markdown │ │  Tasks  │ │ SARIF │
-                 │  JSONL  │ │          │ │          │ │         │ │       │
-                 └─────────┘ └──────────┘ └──────────┘ └─────────┘ └───────┘
+                            ┌─────────────────────┐
+                            │  Target Repository  │
+                            └──────────┬──────────┘
+                                       │
+                                       ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│              15 collectors — all run concurrently (errgroup)               │
+│                                                                            │
+│ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ │
+│ │   TODOs    │ │  Patterns  │ │ Dead Code  │ │ Complexity │ │Duplication │ │
+│ └────────────┘ └────────────┘ └────────────┘ └────────────┘ └────────────┘ │
+│                                                                            │
+│ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ │
+│ │   Gitlog   │ │Git Hygiene │ │Lottery Risk│ │   GitHub   │ │  Coupling  │ │
+│ └────────────┘ └────────────┘ └────────────┘ └────────────┘ └────────────┘ │
+│                                                                            │
+│ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐ │
+│ │    Vuln    │ │ Dep Health │ │ Doc Stale  │ │Config Drift│ │ API Drift  │ │
+│ └────────────┘ └────────────┘ └────────────┘ └────────────┘ └────────────┘ │
+│                                                                            │
+└──────────────────────────────────────┬─────────────────────────────────────┘
+                                       │
+                                       ▼
+                           ┌──────────────────────┐
+                           │  Dedup + Validation  │
+                           └───────────┬──────────┘
+                                       │
+      ┌──────────┬──────────┬──────────┼──────────┬──────────┬──────────┐
+      ▼          ▼          ▼          ▼          ▼          ▼          ▼
+ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
+ │ beads  │ │  json  │ │markdown│ │ sarif  │ │ tasks  │ │  html  │ │html-dir│
+ └────────┘ └────────┘ └────────┘ └────────┘ └────────┘ └────────┘ └────────┘
 ```
 
 ## Real-World Results
