@@ -24,11 +24,12 @@ func init() {
 
 // CouplingMetrics holds structured metrics from the coupling scan.
 type CouplingMetrics struct {
-	FilesScanned       int
-	ModulesFound       int
-	CircularDeps       int
-	HighCouplingCount  int
-	SkippedCapExceeded bool
+	FilesScanned        int
+	ModulesFound        int
+	CircularDeps        int
+	HighCouplingCount   int
+	ExemptedAggregators int // entry points/barrels/exempt-glob modules not signaled
+	SkippedCapExceeded  bool
 }
 
 // CouplingCollector detects circular dependencies and high-coupling modules
@@ -203,6 +204,32 @@ func (c *CouplingCollector) Collect(ctx context.Context, repoPath string, opts s
 		return nil, err
 	}
 
+	// Fan-out matters when a module in the middle of the graph pulls in
+	// the world, not when a leaf entry does (stringer-3v0). Compute each
+	// module's in-degree, counting only non-test importers: a test
+	// importing its subject does not make the subject a mid-graph module.
+	inDegree := make(map[string]int)
+	for mod, deps := range graph {
+		if isTestModule(mod) {
+			continue
+		}
+		unique := make(map[string]bool)
+		for _, d := range deps {
+			unique[d] = true
+		}
+		for d := range unique {
+			inDegree[d]++
+		}
+	}
+
+	// Map modules back to a representative file path for glob matching.
+	moduleFile := make(map[string]string, len(files))
+	for _, f := range files {
+		if _, ok := moduleFile[f.module]; !ok {
+			moduleFile[f.module] = f.relPath
+		}
+	}
+
 	// Phase 5: Generate signals.
 	var signals []signal.RawSignal
 
@@ -221,21 +248,35 @@ func (c *CouplingCollector) Collect(ctx context.Context, repoPath string, opts s
 	}
 	sort.Strings(fanOutMods)
 
+	exempted := 0
 	for _, mod := range fanOutMods {
 		count := highFanOut[mod]
-		sig := buildFanOutSignal(mod, count, fanOutThreshold, opts.MinConfidence)
-		if sig != nil {
-			signals = append(signals, *sig)
+		switch {
+		case inDegree[mod] == 0:
+			// Entry points, galleries, scripts: nothing (outside tests)
+			// imports them, so wide imports are their job.
+			exempted++
+		case isBarrelModule(mod):
+			// index/barrel files exist to aggregate re-exports.
+			exempted++
+		case matchesAny(moduleFile[mod], opts.CouplingExemptPatterns):
+			exempted++
+		default:
+			sig := buildFanOutSignal(mod, count, fanOutThreshold, opts.MinConfidence)
+			if sig != nil {
+				signals = append(signals, *sig)
+			}
 		}
 	}
 
 	// Set metrics.
 	c.metrics = &CouplingMetrics{
-		FilesScanned:       fileCount,
-		ModulesFound:       len(moduleSet),
-		CircularDeps:       len(sccs),
-		HighCouplingCount:  len(highFanOut),
-		SkippedCapExceeded: capExceeded,
+		FilesScanned:        fileCount,
+		ModulesFound:        len(moduleSet),
+		CircularDeps:        len(sccs),
+		HighCouplingCount:   len(highFanOut) - exempted,
+		ExemptedAggregators: exempted,
+		SkippedCapExceeded:  capExceeded,
 	}
 
 	// Enrich timestamps from git log.
@@ -290,9 +331,12 @@ func buildFanOutSignal(module string, count, threshold int, minConfidence float6
 
 	title := fmt.Sprintf("High coupling: %s imports %d modules", module, count)
 	desc := fmt.Sprintf(
-		"Module %q has %d direct dependencies, which is above the threshold of %d. "+
-			"High fan-out increases the risk of cascading breakage when any dependency changes.",
-		module, count, threshold,
+		"WHAT: %q has %d direct in-project dependencies; the threshold is %d.\n"+
+			"WHY: a module in the middle of the graph with wide fan-out turns any dependency change into a potential cascade through it.\n"+
+			"ACTION: split the module along its clusters of imports, or push decisions down so callers depend on narrower seams.\n"+
+			"DISMISS: if this file's role is aggregation — an entry point, a gallery, a barrel — wide imports are its job; entry points (nothing imports them) and index barrels are auto-exempt, and you can exempt this path once via collectors.coupling.coupling_exempt_patterns in .stringer.yml.\n"+
+			"CONTEXT: threshold configurable via collectors.coupling.coupling_fan_out_threshold (default %d).",
+		module, count, threshold, defaultFanOutThreshold,
 	)
 
 	return &signal.RawSignal{
@@ -304,6 +348,21 @@ func buildFanOutSignal(module string, count, threshold int, minConfidence float6
 		Confidence:  conf,
 		Tags:        []string{"architecture", "coupling"},
 	}
+}
+
+// isTestModule reports whether a module name looks like a test module, so
+// test importers don't count toward a module's in-degree.
+func isTestModule(mod string) bool {
+	base := strings.ToLower(filepath.Base(mod))
+	return strings.Contains(base, ".test") || strings.Contains(base, ".spec") ||
+		strings.HasSuffix(base, "_test") || strings.HasPrefix(base, "test_")
+}
+
+// isBarrelModule reports whether a module is an index/barrel file whose
+// purpose is re-exporting.
+func isBarrelModule(mod string) bool {
+	base := strings.ToLower(filepath.Base(mod))
+	return base == "index" || base == "mod" || base == "__init__"
 }
 
 // cycleConfidence returns the confidence for a circular dependency signal.

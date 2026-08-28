@@ -101,6 +101,9 @@ func Merge(fileCfg *Config, cliCfg signal.ScanConfig) signal.ScanConfig {
 			if co.CouplingMaxFiles == 0 && fc.CouplingMaxFiles > 0 {
 				co.CouplingMaxFiles = fc.CouplingMaxFiles
 			}
+			if len(co.CouplingExemptPatterns) == 0 && len(fc.CouplingExemptPatterns) > 0 {
+				co.CouplingExemptPatterns = fc.CouplingExemptPatterns
+			}
 			if co.DocStaleDays == 0 && fc.DocStaleDays > 0 {
 				co.DocStaleDays = fc.DocStaleDays
 			}

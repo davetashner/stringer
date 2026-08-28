@@ -137,8 +137,9 @@ var collectorThresholds = map[string][]struct {
 		{"deadcode_max_files", "10000"},
 	},
 	"coupling": {
-		{"coupling_fan_out_threshold", "10"},
+		{"coupling_fan_out_threshold", "15"},
 		{"coupling_max_files", "10000"},
+		{"coupling_exempt_patterns", "[]"},
 	},
 	"docstale": {
 		{"doc_stale_days", "180"},

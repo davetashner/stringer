@@ -50,7 +50,7 @@ stringer/
 │   │   ├── apidrift.go         # API drift: undocumented routes, unimplemented spec paths, stale versions
 │   │   ├── docstale.go         # Doc staleness: stale docs, co-change drift, broken links (URI-scheme targets and fenced code blocks are skipped)
 │   │   ├── duplication*.go     # Code duplication: exact clones (Type 1) and near-clones (Type 2) via FNV-64a sliding window; test-only clone groups down-weighted and tagged test-only
-│   │   ├── coupling*.go        # Coupling: circular dependencies (Tarjan's SCC) and high fan-out modules via import graph
+│   │   ├── coupling*.go        # Coupling: circular dependencies (Tarjan's SCC) and high fan-out modules via import graph; entry points/barrels auto-exempt, per-path exempt globs, default threshold 15 (DR-025)
 │   │   ├── complexity.go       # Complexity: AST-based for Go (cyclomatic/cognitive/nesting); other languages get indentation-derived nesting-weighted scoring with string/comment stripping and a 0.5× JSX logical-op discount (DR-024)
 │   │   ├── complexity_go.go    # Go AST analysis: cyclomatic, cognitive, nesting depth via go/parser
 │   │   ├── githygiene.go       # Git hygiene: large binaries, merge conflicts, committed secrets, mixed line endings — tracked files only (git ls-files), full-scan fallback outside a repo
