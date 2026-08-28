@@ -124,6 +124,7 @@ func (s *complexitySection) Render(w io.Writer) error {
 			Column{Header: "File"},
 			Column{Header: "Lines", Align: AlignRight},
 			Column{Header: "Branches", Align: AlignRight},
+			Column{Header: "Nesting", Align: AlignRight},
 			Column{Header: "Score", Align: AlignRight, Color: ColorComplexity},
 		)
 		for _, fc := range regexFuncs {
@@ -132,6 +133,7 @@ func (s *complexitySection) Render(w io.Writer) error {
 				fc.FilePath,
 				fmt.Sprintf("%d", fc.Lines),
 				fmt.Sprintf("%d", fc.Branches),
+				fmt.Sprintf("%d", fc.MaxNesting),
 				fmt.Sprintf("%.1f", fc.Score),
 			)
 		}
