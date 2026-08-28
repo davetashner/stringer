@@ -38,7 +38,7 @@ func cvssBaseScore(vector string) (float64, bool) {
 	}
 	pr, ok7 := cvssWeight(m["PR"], prWeights)
 
-	if !(ok1 && ok2 && ok3 && ok4 && ok5 && ok6 && ok7) {
+	if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 {
 		return 0, false
 	}
 

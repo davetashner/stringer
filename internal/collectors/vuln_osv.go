@@ -117,8 +117,9 @@ func (c *realOSVClient) QueryBatch(ctx context.Context, queries []PackageQuery) 
 			if i >= len(batch) {
 				break
 			}
+			q := batch[i]
 			for _, v := range r.Vulns {
-				hits = append(hits, vulnHit{vulnID: v.ID, query: batch[i]})
+				hits = append(hits, vulnHit{vulnID: v.ID, query: q})
 			}
 
 			// Follow pagination for heavily-affected packages. The batch
@@ -127,13 +128,13 @@ func (c *realOSVClient) QueryBatch(ctx context.Context, queries []PackageQuery) 
 			token := r.NextPageToken
 			for page := 0; token != "" && page < osvMaxPages; page++ {
 				pageResults, pageErr := c.postBatchQuery(ctx, []osvQueryItem{{
-					Package:   osvPackage{Name: batch[i].Name, Ecosystem: batch[i].Ecosystem},
-					Version:   batch[i].Version,
+					Package:   osvPackage{Name: q.Name, Ecosystem: q.Ecosystem},
+					Version:   q.Version,
 					PageToken: token,
 				}})
 				if pageErr != nil {
 					slog.Warn("osv: pagination fetch failed, results truncated",
-						"package", batch[i].Name, "error", pageErr)
+						"package", q.Name, "error", pageErr)
 					out.Truncated++
 					token = ""
 					break
@@ -141,14 +142,14 @@ func (c *realOSVClient) QueryBatch(ctx context.Context, queries []PackageQuery) 
 				token = ""
 				if len(pageResults) > 0 {
 					for _, v := range pageResults[0].Vulns {
-						hits = append(hits, vulnHit{vulnID: v.ID, query: batch[i]})
+						hits = append(hits, vulnHit{vulnID: v.ID, query: q})
 					}
 					token = pageResults[0].NextPageToken
 				}
 			}
 			if token != "" {
 				slog.Warn("osv: pagination limit reached, results truncated",
-					"package", batch[i].Name, "pages", osvMaxPages)
+					"package", q.Name, "pages", osvMaxPages)
 				out.Truncated++
 			}
 		}
