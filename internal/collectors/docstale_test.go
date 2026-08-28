@@ -409,3 +409,30 @@ func TestDocStale_ConfigurableDriftMinCommits(t *testing.T) {
 	}
 	assert.Equal(t, 5, minCommits)
 }
+
+// TestFindBrokenLinks_SkipsURISchemesAndFences pins stringer-rd7: entity-ID
+// link targets (person:lanrezac-charles) and link-shaped text inside fenced
+// code blocks are not filesystem paths; all seven broken-link findings on a
+// real repo were these two shapes.
+func TestFindBrokenLinks_SkipsURISchemesAndFences(t *testing.T) {
+	dir := t.TempDir()
+	doc := `# Authoring
+
+A [person link](person:lanrezac-charles) and an [era link](1914:army-de-4).
+A [tel link](tel:+15551234) and a [vscode link](vscode://file/x).
+A [placeholder](…) and [another](<entity-id>).
+
+` + "```" + `markdown
+A [sample link in a fence](missing-from-fence.md)
+` + "```" + `
+
+A [genuinely broken link](does-not-exist.md) survives all filters.
+A [good link](real.md) is fine.
+`
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "guide.md"), []byte(doc), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "real.md"), []byte("# real\n"), 0o600))
+
+	broken := findBrokenLinks(dir, "guide.md")
+	require.Len(t, broken, 1, "only the genuinely broken relative link should be reported, got %v", broken)
+	assert.Equal(t, "does-not-exist.md", broken[0].target)
+}

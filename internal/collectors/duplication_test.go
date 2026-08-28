@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -986,5 +987,45 @@ func writeTestFile(t *testing.T, dir, relPath, content string) {
 	}
 	if err := os.WriteFile(fullPath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestDuplication_TestOnlyClonesDownWeighted pins stringer-e0o: a clone
+// group living entirely in test files is discounted and labeled so that
+// production clones win the signal cap.
+func TestDuplication_TestOnlyClonesDownWeighted(t *testing.T) {
+	testOnly := cloneGroup{
+		Lines:     7,
+		Locations: []cloneLocation{{Path: "src/a.test.ts", StartLine: 3}, {Path: "src/b.test.ts", StartLine: 9}},
+	}
+	production := cloneGroup{
+		Lines:     7,
+		Locations: []cloneLocation{{Path: "src/a.ts", StartLine: 3}, {Path: "src/b.ts", StartLine: 9}},
+	}
+	mixed := cloneGroup{
+		Lines:     7,
+		Locations: []cloneLocation{{Path: "src/a.test.ts", StartLine: 3}, {Path: "src/b.ts", StartLine: 9}},
+	}
+
+	sigTest := cloneGroupToSignal(testOnly)
+	sigProd := cloneGroupToSignal(production)
+	sigMixed := cloneGroupToSignal(mixed)
+
+	if sigTest.Confidence >= sigProd.Confidence {
+		t.Errorf("test-only boilerplate (%.2f) must rank below identical production clones (%.2f)",
+			sigTest.Confidence, sigProd.Confidence)
+	}
+	if math.Abs(sigProd.Confidence-sigMixed.Confidence) > 0.001 {
+		t.Errorf("a clone spanning test AND production must keep full confidence: prod %.2f, mixed %.2f",
+			sigProd.Confidence, sigMixed.Confidence)
+	}
+	if !slices.Contains(sigTest.Tags, "test-only") {
+		t.Errorf("test-only group must carry the test-only tag, got %v", sigTest.Tags)
+	}
+	if !strings.Contains(sigTest.Description, "test files") {
+		t.Errorf("test-only group description must say so, got %q", sigTest.Description)
+	}
+	if slices.Contains(sigProd.Tags, "test-only") {
+		t.Errorf("production group must not carry the test-only tag")
 	}
 }

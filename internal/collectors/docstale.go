@@ -69,6 +69,16 @@ var docDirs = []string{"docs", "doc"}
 // mdLinkPattern matches markdown links: [text](target)
 var mdLinkPattern = regexp.MustCompile(`\[(?:[^\]]*)\]\(([^)]+)\)`)
 
+// uriSchemePattern matches a scheme-like prefix (person:, tel:, vscode:,
+// 1914:, …) — RFC 3986 schemes plus digit-led variants used as entity-ID
+// namespaces in content systems. A colon in the first path segment of a
+// markdown link target essentially never denotes a relative file, so such
+// targets are not checked against the working tree (stringer-rd7).
+var uriSchemePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9+.-]*:`)
+
+// fencePattern matches a code-fence delimiter line (``` or ~~~).
+var fencePattern = regexp.MustCompile("^\\s*(```|~~~)")
+
 // Collect walks the repository looking for stale documentation, co-change
 // drift, and broken internal links.
 func (c *DocStaleCollector) Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error) {
@@ -310,21 +320,28 @@ func findBrokenLinks(repoPath, relPath string) []brokenLink {
 
 	scanner := bufio.NewScanner(f)
 	lineNo := 0
+	inFence := false
 	for scanner.Scan() {
 		lineNo++
 		line := scanner.Text()
+
+		// Link-shaped text inside fenced code blocks is sample code, not a
+		// link (stringer-rd7).
+		if fencePattern.MatchString(line) {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
 
 		matches := mdLinkPattern.FindAllStringSubmatch(line, -1)
 		for _, m := range matches {
 			target := m[1]
 
-			// Skip external URLs.
-			if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
-				continue
-			}
-
-			// Skip mailto links.
-			if strings.HasPrefix(target, "mailto:") {
+			// Skip any target with a URI scheme (http:, mailto:, but also
+			// person:, tel:, vscode:, …) — schemes are not paths.
+			if uriSchemePattern.MatchString(target) {
 				continue
 			}
 
@@ -338,6 +355,11 @@ func findBrokenLinks(repoPath, relPath string) []brokenLink {
 				continue
 			}
 
+			// Skip placeholder targets that are not plausible paths.
+			if isPlaceholderLinkTarget(target) {
+				continue
+			}
+
 			// Resolve relative to the markdown file's directory.
 			resolved := filepath.Join(docDir, target)
 			if _, statErr := FS.Stat(resolved); statErr != nil {
@@ -347,6 +369,19 @@ func findBrokenLinks(repoPath, relPath string) []brokenLink {
 	}
 
 	return broken
+}
+
+// isPlaceholderLinkTarget reports whether a link target is documentation
+// filler rather than a checkable path: ellipses, bracketed placeholders.
+func isPlaceholderLinkTarget(target string) bool {
+	t := strings.TrimSpace(target)
+	if t == "…" || t == "..." || t == ".." || t == "." {
+		return true
+	}
+	if strings.HasPrefix(t, "<") && strings.HasSuffix(t, ">") {
+		return true
+	}
+	return false
 }
 
 // detectDocCodeDrift analyzes commit history to find source dirs with many
