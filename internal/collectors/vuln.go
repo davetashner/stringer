@@ -218,7 +218,12 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 			titleID = r.ID
 		}
 
-		title := fmt.Sprintf("Vulnerable dependency: %s [%s]", r.PackageName, titleID)
+		// The version is part of the title: the pipeline deduplicates on
+		// Source+Kind+FilePath+Line+Title, and a lockfile can hold the same
+		// package at multiple versions — without the version, a dev-only
+		// and a production instance of the same CVE collapse into one
+		// signal with a misleading mix of both (stringer-kgr).
+		title := fmt.Sprintf("Vulnerable dependency: %s@%s [%s]", r.PackageName, r.Version, titleID)
 
 		var desc string
 		if r.FixedVersion != "" {

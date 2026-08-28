@@ -791,23 +791,25 @@ func astComplexityDescription(fc FunctionComplexity) string {
 	return b.String()
 }
 
-// complexityConfidence maps a complexity score to a confidence value per DR-013:
-//   - score >= 15: 0.8
-//   - score 8–15: linear interpolation 0.6–0.8
-//   - score 6–8: linear interpolation 0.5–0.6
+// complexityConfidence maps a nesting-weighted score to confidence.
+// Recalibrated for DR-024's depth-weighted scoring, which roughly doubled
+// raw scores (a branch at depth d costs d): the DR-013 bands (0.8 at 15)
+// were tuned for raw branch counts and pushed ordinary loop+guard
+// validators to P1. New bands, mirroring the AST path's cognitive/30 shape:
+//   - score >= 30: 0.8 (P1 territory — genuinely tangled)
+//   - score 18–30: linear 0.6–0.8
+//   - score 6–18: linear 0.4–0.6
 //   - score < 6: not emitted (handled by caller)
 func complexityConfidence(score float64) float64 {
 	switch {
-	case score >= 15:
+	case score >= 30:
 		return 0.8
-	case score >= 8:
-		// Linear from 0.6 at 8 to 0.8 at 15.
-		return 0.6 + 0.2*(score-8)/(15-8)
+	case score >= 18:
+		return 0.6 + 0.2*(score-18)/(30-18)
 	case score >= 6:
-		// Linear from 0.5 at 6 to 0.6 at 8.
-		return 0.5 + 0.1*(score-6)/(8-6)
+		return 0.4 + 0.2*(score-6)/(18-6)
 	default:
-		return 0.5
+		return 0.4
 	}
 }
 
