@@ -27,8 +27,16 @@ func parseNpmDeps(data []byte) ([]PackageQuery, error) {
 	seen := make(map[string]bool)
 	var queries []PackageQuery
 
-	for _, deps := range []map[string]string{pkg.Dependencies, pkg.DevDependencies} {
-		for name, version := range deps {
+	// Dependencies first, devDependencies second: if a package somehow
+	// appears in both maps, the production entry wins (dev=false).
+	for _, group := range []struct {
+		deps map[string]string
+		dev  bool
+	}{
+		{pkg.Dependencies, false},
+		{pkg.DevDependencies, true},
+	} {
+		for name, version := range group.deps {
 			if seen[name] {
 				continue
 			}
@@ -43,6 +51,7 @@ func parseNpmDeps(data []byte) ([]PackageQuery, error) {
 				Ecosystem: "npm",
 				Name:      name,
 				Version:   v,
+				Dev:       group.dev,
 			})
 		}
 	}
@@ -70,7 +79,13 @@ func parseNpmLockDeps(data []byte) ([]PackageQuery, error) {
 		return nil, err
 	}
 
-	seen := make(map[string]bool)
+	// Dedup by name+version, not name alone: a lockfile routinely holds the
+	// same package at multiple versions (nested under different parents), and
+	// collapsing them once nondeterministically dropped a production-reachable
+	// vulnerable version while keeping the dev-only one (stringer-kgr).
+	// seen maps "name|version" → index into queries so a later production
+	// occurrence can clear the Dev flag on an entry first seen as dev-only.
+	seen := make(map[string]int)
 	var queries []PackageQuery
 
 	for path, entry := range lock.Packages {
@@ -95,15 +110,22 @@ func parseNpmLockDeps(data []byte) ([]PackageQuery, error) {
 			name = path[idx+len("node_modules/"):]
 		}
 
-		if seen[name] {
+		key := name + "|" + entry.Version
+		if i, ok := seen[key]; ok {
+			// Production reachability wins: dev-only holds only when every
+			// occurrence of this name+version is flagged dev.
+			if !entry.Dev {
+				queries[i].Dev = false
+			}
 			continue
 		}
-		seen[name] = true
+		seen[key] = len(queries)
 
 		queries = append(queries, PackageQuery{
 			Ecosystem: "npm",
 			Name:      name,
 			Version:   entry.Version,
+			Dev:       entry.Dev,
 		})
 	}
 

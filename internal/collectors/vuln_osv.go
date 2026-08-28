@@ -19,6 +19,7 @@ import (
 const (
 	osvDefaultBaseURL   = "https://api.osv.dev/v1"
 	osvBatchLimit       = 1000
+	osvMaxPages         = 5
 	osvMaxRetries       = 3
 	osvRetryBaseDelay   = 500 * time.Millisecond
 	osvMaxResponseBytes = 10 * 1024 * 1024 // 10 MiB
@@ -29,6 +30,7 @@ type PackageQuery struct {
 	Ecosystem string
 	Name      string
 	Version   string
+	Dev       bool // true when the dependency is development-only (not production-reachable)
 }
 
 // VulnDetail holds processed vulnerability information from OSV.dev.
@@ -41,11 +43,21 @@ type VulnDetail struct {
 	Version      string
 	FixedVersion string
 	Severity     string // CVSS v3 score string, or ""
+	Dev          bool   // true when the affected dependency is development-only
+}
+
+// OSVQueryResult holds vulnerability details plus coverage accounting so
+// callers can tell a clean scan from a partial one. A partial scan that
+// looks complete is worse than no scan, because it is trusted (stringer-kgr).
+type OSVQueryResult struct {
+	Details       []VulnDetail
+	FailedFetches int // vuln detail fetches that errored after retries
+	Truncated     int // queries whose paginated results were cut short
 }
 
 // osvClient abstracts OSV.dev API access for testability.
 type osvClient interface {
-	QueryBatch(ctx context.Context, queries []PackageQuery) ([]VulnDetail, error)
+	QueryBatch(ctx context.Context, queries []PackageQuery) (*OSVQueryResult, error)
 }
 
 // Compile-time check that realOSVClient implements osvClient.
@@ -67,9 +79,10 @@ func newOSVClient(timeout time.Duration) *realOSVClient {
 // QueryBatch queries OSV.dev for vulnerabilities affecting the given packages.
 // It splits large query sets into batches of osvBatchLimit, deduplicates vuln IDs,
 // fetches full details, and maps results back to the originating packages.
-func (c *realOSVClient) QueryBatch(ctx context.Context, queries []PackageQuery) ([]VulnDetail, error) {
+func (c *realOSVClient) QueryBatch(ctx context.Context, queries []PackageQuery) (*OSVQueryResult, error) {
+	out := &OSVQueryResult{}
 	if len(queries) == 0 {
-		return nil, nil
+		return out, nil
 	}
 
 	// Map query index → original PackageQuery for result mapping.
@@ -101,14 +114,49 @@ func (c *realOSVClient) QueryBatch(ctx context.Context, queries []PackageQuery) 
 		}
 
 		for i, r := range results {
+			if i >= len(batch) {
+				break
+			}
+			q := batch[i]
 			for _, v := range r.Vulns {
-				hits = append(hits, vulnHit{vulnID: v.ID, query: batch[i]})
+				hits = append(hits, vulnHit{vulnID: v.ID, query: q})
+			}
+
+			// Follow pagination for heavily-affected packages. The batch
+			// endpoint returns a per-query next_page_token; ignoring it
+			// silently truncates results (stringer-kgr).
+			token := r.NextPageToken
+			for page := 0; token != "" && page < osvMaxPages; page++ {
+				pageResults, pageErr := c.postBatchQuery(ctx, []osvQueryItem{{
+					Package:   osvPackage{Name: q.Name, Ecosystem: q.Ecosystem},
+					Version:   q.Version,
+					PageToken: token,
+				}})
+				if pageErr != nil {
+					slog.Warn("osv: pagination fetch failed, results truncated",
+						"package", q.Name, "error", pageErr)
+					out.Truncated++
+					token = ""
+					break
+				}
+				token = ""
+				if len(pageResults) > 0 {
+					for _, v := range pageResults[0].Vulns {
+						hits = append(hits, vulnHit{vulnID: v.ID, query: q})
+					}
+					token = pageResults[0].NextPageToken
+				}
+			}
+			if token != "" {
+				slog.Warn("osv: pagination limit reached, results truncated",
+					"package", q.Name, "pages", osvMaxPages)
+				out.Truncated++
 			}
 		}
 	}
 
 	if len(hits) == 0 {
-		return nil, nil
+		return out, nil
 	}
 
 	// Collect unique vuln IDs and fetch full details.
@@ -126,13 +174,16 @@ func (c *realOSVClient) QueryBatch(ctx context.Context, queries []PackageQuery) 
 		vuln, err := c.fetchVuln(ctx, id)
 		if err != nil {
 			slog.Warn("osv: failed to fetch vuln details, skipping", "id", id, "error", err)
+			out.FailedFetches++
 			continue
 		}
 		vulnCache[id] = vuln
 	}
 
-	// Build results mapping each (vuln, package) pair to a VulnDetail.
-	var details []VulnDetail
+	// Build results mapping each (vuln, package, version) triple to a
+	// VulnDetail. Version is part of the key because a lockfile can hold
+	// the same package at multiple versions (e.g. a nested dependency),
+	// and each installed instance is a distinct finding.
 	dedupKey := make(map[string]bool)
 	for _, h := range hits {
 		vuln := vulnCache[h.vulnID]
@@ -140,13 +191,13 @@ func (c *realOSVClient) QueryBatch(ctx context.Context, queries []PackageQuery) 
 			continue
 		}
 
-		key := h.vulnID + "|" + h.query.Ecosystem + "|" + h.query.Name
+		key := h.vulnID + "|" + h.query.Ecosystem + "|" + h.query.Name + "|" + h.query.Version
 		if dedupKey[key] {
 			continue
 		}
 		dedupKey[key] = true
 
-		details = append(details, VulnDetail{
+		out.Details = append(out.Details, VulnDetail{
 			ID:           vuln.ID,
 			Aliases:      vuln.Aliases,
 			Summary:      vuln.Summary,
@@ -155,10 +206,11 @@ func (c *realOSVClient) QueryBatch(ctx context.Context, queries []PackageQuery) 
 			Version:      h.query.Version,
 			FixedVersion: extractOSVFixVersion(vuln, h.query.Ecosystem, h.query.Name),
 			Severity:     extractOSVSeverity(vuln),
+			Dev:          h.query.Dev,
 		})
 	}
 
-	return details, nil
+	return out, nil
 }
 
 // postBatchQuery POSTs to /v1/querybatch and returns the results.
@@ -292,8 +344,9 @@ type osvBatchRequest struct {
 }
 
 type osvQueryItem struct {
-	Package osvPackage `json:"package"`
-	Version string     `json:"version"`
+	Package   osvPackage `json:"package"`
+	Version   string     `json:"version"`
+	PageToken string     `json:"page_token,omitempty"`
 }
 
 type osvPackage struct {
@@ -306,7 +359,8 @@ type osvBatchResponse struct {
 }
 
 type osvBatchResult struct {
-	Vulns []osvBatchVuln `json:"vulns"`
+	Vulns         []osvBatchVuln `json:"vulns"`
+	NextPageToken string         `json:"next_page_token"`
 }
 
 type osvBatchVuln struct {

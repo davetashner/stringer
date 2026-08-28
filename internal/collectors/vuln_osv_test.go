@@ -81,14 +81,14 @@ func TestOSVClient_QueryBatch_SingleVuln(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestOSVClient(srv.URL)
-	results, err := client.QueryBatch(context.Background(), []PackageQuery{
+	res, err := client.QueryBatch(context.Background(), []PackageQuery{
 		{Ecosystem: "Maven", Name: "com.example:example-lib", Version: "1.5.0"},
 	})
 
 	require.NoError(t, err)
-	require.Len(t, results, 1)
+	require.Len(t, res.Details, 1)
 
-	d := results[0]
+	d := res.Details[0]
 	assert.Equal(t, "GHSA-1234-5678-abcd", d.ID)
 	assert.Equal(t, []string{"CVE-2024-12345"}, d.Aliases)
 	assert.Equal(t, "SQL injection in example-lib", d.Summary)
@@ -127,16 +127,16 @@ func TestOSVClient_QueryBatch_MultipleVulns(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestOSVClient(srv.URL)
-	results, err := client.QueryBatch(context.Background(), []PackageQuery{
+	res, err := client.QueryBatch(context.Background(), []PackageQuery{
 		{Ecosystem: "Go", Name: "github.com/a/b", Version: "v1.0.0"},
 		{Ecosystem: "Go", Name: "github.com/c/d", Version: "v2.0.0"},
 	})
 
 	require.NoError(t, err)
-	require.Len(t, results, 3)
+	require.Len(t, res.Details, 3)
 
 	byID := make(map[string]VulnDetail)
-	for _, r := range results {
+	for _, r := range res.Details {
 		byID[r.ID] = r
 	}
 
@@ -159,24 +159,24 @@ func TestOSVClient_QueryBatch_NoVulns(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestOSVClient(srv.URL)
-	results, err := client.QueryBatch(context.Background(), []PackageQuery{
+	res, err := client.QueryBatch(context.Background(), []PackageQuery{
 		{Ecosystem: "Go", Name: "github.com/safe/pkg", Version: "v1.0.0"},
 		{Ecosystem: "Go", Name: "github.com/also/safe", Version: "v2.0.0"},
 	})
 
 	require.NoError(t, err)
-	assert.Nil(t, results)
+	assert.Nil(t, res.Details)
 }
 
 func TestOSVClient_QueryBatch_EmptyInput(t *testing.T) {
 	client := newTestOSVClient("http://unused")
-	results, err := client.QueryBatch(context.Background(), nil)
+	res, err := client.QueryBatch(context.Background(), nil)
 	require.NoError(t, err)
-	assert.Nil(t, results)
+	assert.Nil(t, res.Details)
 
-	results, err = client.QueryBatch(context.Background(), []PackageQuery{})
+	res, err = client.QueryBatch(context.Background(), []PackageQuery{})
 	require.NoError(t, err)
-	assert.Nil(t, results)
+	assert.Nil(t, res.Details)
 }
 
 func TestOSVClient_QueryBatch_VulnFetchFailure(t *testing.T) {
@@ -197,14 +197,14 @@ func TestOSVClient_QueryBatch_VulnFetchFailure(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestOSVClient(srv.URL)
-	results, err := client.QueryBatch(context.Background(), []PackageQuery{
+	res, err := client.QueryBatch(context.Background(), []PackageQuery{
 		{Ecosystem: "Go", Name: "pkg", Version: "v1.0.0"},
 	})
 
 	// Should succeed with partial results — MISSING-VULN skipped with warning.
 	require.NoError(t, err)
-	require.Len(t, results, 1)
-	assert.Equal(t, "PRESENT-VULN", results[0].ID)
+	require.Len(t, res.Details, 1)
+	assert.Equal(t, "PRESENT-VULN", res.Details[0].ID)
 }
 
 func TestOSVClient_QueryBatch_RetryOn5xx(t *testing.T) {
@@ -236,13 +236,13 @@ func TestOSVClient_QueryBatch_RetryOn5xx(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestOSVClient(srv.URL)
-	results, err := client.QueryBatch(context.Background(), []PackageQuery{
+	res, err := client.QueryBatch(context.Background(), []PackageQuery{
 		{Ecosystem: "Go", Name: "pkg", Version: "v1.0.0"},
 	})
 
 	require.NoError(t, err)
-	require.Len(t, results, 1)
-	assert.Equal(t, "V1", results[0].ID)
+	require.Len(t, res.Details, 1)
+	assert.Equal(t, "V1", res.Details[0].ID)
 	assert.GreaterOrEqual(t, int(attempts.Load()), 2, "should have retried")
 }
 
@@ -306,17 +306,17 @@ func TestOSVClient_QueryBatch_DedupSameVulnAcrossPackages(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestOSVClient(srv.URL)
-	results, err := client.QueryBatch(context.Background(), []PackageQuery{
+	res, err := client.QueryBatch(context.Background(), []PackageQuery{
 		{Ecosystem: "Go", Name: "pkg-a", Version: "v1.0.0"},
 		{Ecosystem: "Go", Name: "pkg-b", Version: "v2.0.0"},
 	})
 
 	require.NoError(t, err)
 	// Two results: one per package, even though it's the same vuln.
-	require.Len(t, results, 2)
+	require.Len(t, res.Details, 2)
 
 	byPkg := make(map[string]VulnDetail)
-	for _, r := range results {
+	for _, r := range res.Details {
 		byPkg[r.PackageName] = r
 	}
 	assert.Equal(t, "v1.1.0", byPkg["pkg-a"].FixedVersion)
@@ -343,13 +343,13 @@ func TestOSVClient_QueryBatch_NoFixVersion(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestOSVClient(srv.URL)
-	results, err := client.QueryBatch(context.Background(), []PackageQuery{
+	res, err := client.QueryBatch(context.Background(), []PackageQuery{
 		{Ecosystem: "Go", Name: "pkg", Version: "v1.0.0"},
 	})
 
 	require.NoError(t, err)
-	require.Len(t, results, 1)
-	assert.Equal(t, "", results[0].FixedVersion)
+	require.Len(t, res.Details, 1)
+	assert.Equal(t, "", res.Details[0].FixedVersion)
 }
 
 func TestOSVClient_QueryBatch_NoSeverity(t *testing.T) {
@@ -369,13 +369,13 @@ func TestOSVClient_QueryBatch_NoSeverity(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestOSVClient(srv.URL)
-	results, err := client.QueryBatch(context.Background(), []PackageQuery{
+	res, err := client.QueryBatch(context.Background(), []PackageQuery{
 		{Ecosystem: "Go", Name: "pkg", Version: "v1.0.0"},
 	})
 
 	require.NoError(t, err)
-	require.Len(t, results, 1)
-	assert.Equal(t, "", results[0].Severity)
+	require.Len(t, res.Details, 1)
+	assert.Equal(t, "", res.Details[0].Severity)
 }
 
 func TestOSVClient_QueryBatch_NonCVSS3Severity(t *testing.T) {
@@ -396,14 +396,14 @@ func TestOSVClient_QueryBatch_NonCVSS3Severity(t *testing.T) {
 	defer srv.Close()
 
 	client := newTestOSVClient(srv.URL)
-	results, err := client.QueryBatch(context.Background(), []PackageQuery{
+	res, err := client.QueryBatch(context.Background(), []PackageQuery{
 		{Ecosystem: "Go", Name: "pkg", Version: "v1.0.0"},
 	})
 
 	require.NoError(t, err)
-	require.Len(t, results, 1)
+	require.Len(t, res.Details, 1)
 	// Falls back to first severity entry.
-	assert.Equal(t, "AV:N/AC:L/Au:N/C:C/I:C/A:C", results[0].Severity)
+	assert.Equal(t, "AV:N/AC:L/Au:N/C:C/I:C/A:C", res.Details[0].Severity)
 }
 
 func TestExtractOSVFixVersion(t *testing.T) {
@@ -489,4 +489,118 @@ func TestNewOSVClient(t *testing.T) {
 	client := newOSVClient(10 * time.Second)
 	assert.Equal(t, osvDefaultBaseURL, client.baseURL)
 	assert.Equal(t, 10*time.Second, client.httpClient.Timeout)
+}
+
+// TestOSVClient_QueryBatch_Pagination verifies that per-query
+// next_page_token responses are followed rather than silently truncated
+// (stringer-kgr).
+func TestOSVClient_QueryBatch_Pagination(t *testing.T) {
+	vulns := map[string]*osvVulnerability{
+		"V-PAGE-1": {ID: "V-PAGE-1", Summary: "first page"},
+		"V-PAGE-2": {ID: "V-PAGE-2", Summary: "second page"},
+	}
+
+	var batchCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/querybatch" && r.Method == http.MethodPost:
+			batchCalls++
+			var req osvBatchRequest
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&req))
+			w.Header().Set("Content-Type", "application/json")
+			if len(req.Queries) > 0 && req.Queries[0].PageToken == "tok-1" {
+				// Second page: last vuln, no further token.
+				_ = json.NewEncoder(w).Encode(osvBatchResponse{Results: []osvBatchResult{
+					{Vulns: []osvBatchVuln{{ID: "V-PAGE-2"}}},
+				}})
+				return
+			}
+			// First page: one vuln plus a continuation token.
+			_ = json.NewEncoder(w).Encode(osvBatchResponse{Results: []osvBatchResult{
+				{Vulns: []osvBatchVuln{{ID: "V-PAGE-1"}}, NextPageToken: "tok-1"},
+			}})
+
+		case len(r.URL.Path) > 7 && r.URL.Path[:7] == "/vulns/":
+			id := r.URL.Path[7:]
+			vuln, ok := vulns[id]
+			require.True(t, ok, "unexpected vuln fetch %s", id)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(vuln)
+
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	client := newTestOSVClient(srv.URL)
+	res, err := client.QueryBatch(context.Background(), []PackageQuery{
+		{Ecosystem: "npm", Name: "busy-package", Version: "1.0.0"},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, 2, batchCalls, "should have followed the page token")
+	require.Len(t, res.Details, 2)
+	ids := map[string]bool{}
+	for _, d := range res.Details {
+		ids[d.ID] = true
+	}
+	assert.True(t, ids["V-PAGE-1"])
+	assert.True(t, ids["V-PAGE-2"])
+	assert.Zero(t, res.Truncated)
+}
+
+// TestOSVClient_QueryBatch_FailedFetchCounted verifies that detail-fetch
+// failures are surfaced in the result instead of only a log line, so
+// callers can report a partial scan as partial (stringer-kgr).
+func TestOSVClient_QueryBatch_FailedFetchCounted(t *testing.T) {
+	batchResp := &osvBatchResponse{Results: []osvBatchResult{
+		{Vulns: []osvBatchVuln{{ID: "V-OK"}, {ID: "V-MISSING"}}},
+	}}
+	vulns := map[string]*osvVulnerability{
+		"V-OK": {ID: "V-OK", Summary: "fetchable"},
+	}
+
+	srv := newTestOSVServer(t, batchResp, vulns)
+	defer srv.Close()
+
+	client := newTestOSVClient(srv.URL)
+	res, err := client.QueryBatch(context.Background(), []PackageQuery{
+		{Ecosystem: "npm", Name: "pkg", Version: "1.0.0"},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, res.Details, 1)
+	assert.Equal(t, "V-OK", res.Details[0].ID)
+	assert.Equal(t, 1, res.FailedFetches)
+}
+
+// TestOSVClient_QueryBatch_DistinctVersionsDistinctFindings verifies the
+// same package at two versions yields two findings for the same advisory.
+func TestOSVClient_QueryBatch_DistinctVersionsDistinctFindings(t *testing.T) {
+	batchResp := &osvBatchResponse{Results: []osvBatchResult{
+		{Vulns: []osvBatchVuln{{ID: "V-BOTH"}}},
+		{Vulns: []osvBatchVuln{{ID: "V-BOTH"}}},
+	}}
+	vulns := map[string]*osvVulnerability{
+		"V-BOTH": {ID: "V-BOTH", Summary: "affects both installed versions"},
+	}
+
+	srv := newTestOSVServer(t, batchResp, vulns)
+	defer srv.Close()
+
+	client := newTestOSVClient(srv.URL)
+	res, err := client.QueryBatch(context.Background(), []PackageQuery{
+		{Ecosystem: "npm", Name: "image-size", Version: "0.7.5"},
+		{Ecosystem: "npm", Name: "image-size", Version: "0.8.3", Dev: true},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, res.Details, 2)
+	byVersion := map[string]VulnDetail{}
+	for _, d := range res.Details {
+		byVersion[d.Version] = d
+	}
+	assert.False(t, byVersion["0.7.5"].Dev)
+	assert.True(t, byVersion["0.8.3"].Dev)
 }
