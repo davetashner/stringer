@@ -39,7 +39,7 @@ stringer/
 │   ├── collector/          # Collector registry and interface
 │   │   └── collector.go        # Register(), List(), Get(), Collector interface
 │   ├── collectors/         # Signal extraction modules (one file per collector)
-│   │   ├── todos.go            # TODO/FIXME/HACK/XXX/BUG/OPTIMIZE scanner
+│   │   ├── todos.go            # TODO/FIXME/HACK/XXX/BUG/OPTIMIZE scanner; owns defaultExcludePatterns (vendor, node_modules, .beads, .stringer, .claude/worktrees, …) shared by all collectors
 │   │   ├── gitlog.go           # Reverts, high-churn files, stale branches
 │   │   ├── patterns.go         # Large files, missing tests, low test coverage ratios (Go, JS/TS, Python, Ruby, Java, Kotlin, Rust, C#, PHP, Swift)
 │   │   ├── lotteryrisk*.go     # Lottery risk: core, ownership math, review analysis

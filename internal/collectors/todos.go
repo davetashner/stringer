@@ -74,6 +74,7 @@ var defaultExcludePatterns = []string{
 	"eval/**",
 	".beads/**",
 	".stringer/**",
+	".claude/worktrees/**",
 }
 
 // defaultDemoPatterns are directory globs for demo/example/tutorial paths.

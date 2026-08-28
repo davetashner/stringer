@@ -1432,3 +1432,20 @@ func TestIsBinaryFile_MockOpenError(t *testing.T) {
 	// Should treat as binary (unreadable).
 	assert.True(t, isBinaryFile("/any/path"))
 }
+
+// TestDefaultExcludes_ClaudeWorktrees pins the exclusion of embedded
+// .claude/worktrees working copies: scanning a repo that carries agent
+// worktree checkouts produced 890 duplicate complexity signals from stale
+// copies of the same source tree.
+func TestDefaultExcludes_ClaudeWorktrees(t *testing.T) {
+	excludes := mergeExcludes(nil)
+	if !shouldExclude(".claude/worktrees/feat/thing/src/App.tsx", excludes) {
+		t.Error("files under .claude/worktrees must be excluded by default")
+	}
+	if !shouldExclude(".claude/worktrees", excludes) && !shouldExclude(".claude/worktrees/feat", excludes) {
+		t.Error("the .claude/worktrees directory itself should be prunable")
+	}
+	if shouldExclude(".claude/settings.json", excludes) {
+		t.Error(".claude config files other than worktrees must not be excluded")
+	}
+}
