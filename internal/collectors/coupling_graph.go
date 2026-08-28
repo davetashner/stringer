@@ -410,7 +410,11 @@ func tarjanSCC(ctx context.Context, graph importGraph) ([][]string, error) {
 
 // --- Fan-out analysis ---
 
-const defaultFanOutThreshold = 10
+// defaultFanOutThreshold is the fan-out count at which a module is flagged.
+// 15, not 10: in component-per-file ecosystems an ordinary React card with
+// hooks, types, styles and three children clears ten imports without being
+// coupled in any meaningful sense (stringer-3v0).
+const defaultFanOutThreshold = 15
 
 // fanOutModules returns modules whose direct import count meets or exceeds
 // the threshold, along with their counts.

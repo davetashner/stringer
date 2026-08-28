@@ -550,28 +550,33 @@ func TestCouplingCollect_HighCoupling(t *testing.T) {
 
 	writeCouplingTestFile(t, dir, "go.mod", "module "+modPath+"\n\ngo 1.21\n")
 
-	// Create 12 leaf packages.
-	for i := 0; i < 12; i++ {
+	// Create 16 leaf packages (default threshold is 15).
+	for i := 0; i < 16; i++ {
 		pkgName := string(rune('a' + i))
 		writeCouplingTestFile(t, dir, "pkg"+pkgName+"/"+pkgName+".go",
 			"package pkg"+pkgName+"\n\nfunc Do() {}\n")
 	}
 
-	// Create hub package that imports all 12.
+	// Create hub package that imports all 16.
 	var imports strings.Builder
 	imports.WriteString("package hub\n\nimport (\n")
-	for i := 0; i < 12; i++ {
+	for i := 0; i < 16; i++ {
 		pkgName := string(rune('a' + i))
 		imports.WriteString("\t\"" + modPath + "/pkg" + pkgName + "\"\n")
 	}
 	imports.WriteString(")\n\nfunc Hub() {\n")
-	for i := 0; i < 12; i++ {
+	for i := 0; i < 16; i++ {
 		pkgName := string(rune('a' + i))
 		imports.WriteString("\tpkg" + pkgName + ".Do()\n")
 	}
 	imports.WriteString("}\n")
 
 	writeCouplingTestFile(t, dir, "hub/hub.go", imports.String())
+
+	// A consumer imports hub, making hub a mid-graph module rather than an
+	// entry point (entry points are exempt from fan-out signals).
+	writeCouplingTestFile(t, dir, "consumer/consumer.go",
+		"package consumer\n\nimport \""+modPath+"/hub\"\n\nfunc Use() { hub.Hub() }\n")
 
 	c := &CouplingCollector{}
 	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
@@ -985,8 +990,11 @@ func Hub() { a.A(); b.B(); c.C(); d.D(); e.E() }
 		writeCouplingTestFile(t, dir, pkg+"/"+pkg+".go",
 			fmt.Sprintf("package %s\n\nfunc %s() {}\n", pkg, strings.ToUpper(pkg)))
 	}
+	// A consumer imports hub so hub is not an (exempt) entry point.
+	writeCouplingTestFile(t, dir, "consumer/consumer.go",
+		"package consumer\n\nimport \"example.com/test/hub\"\n\nfunc Use() { hub.Hub() }\n")
 
-	// With default threshold (10), 5 imports should NOT trigger.
+	// With default threshold (15), 5 imports should NOT trigger.
 	c1 := &CouplingCollector{}
 	sigs1, err := c1.Collect(context.Background(), dir, signal.CollectorOpts{})
 	require.NoError(t, err)
@@ -996,7 +1004,7 @@ func Hub() { a.A(); b.B(); c.C(); d.D(); e.E() }
 			fanOutCount1++
 		}
 	}
-	assert.Equal(t, 0, fanOutCount1, "should not trigger with default threshold 10")
+	assert.Equal(t, 0, fanOutCount1, "should not trigger with default threshold 15")
 
 	// With threshold 3, 5 imports SHOULD trigger.
 	c2 := &CouplingCollector{}
@@ -1041,5 +1049,133 @@ func TestFanOutModules_ContextCancellation(t *testing.T) {
 	_, err := fanOutModules(ctx, graph, 10)
 	if err == nil {
 		t.Error("expected error from cancelled context")
+	}
+}
+
+// TestCoupling_EntryPointExempt pins stringer-3v0: a module nothing imports
+// (an entry point, a gallery, a script) is exempt from fan-out signals —
+// wide imports are its job.
+func TestCoupling_EntryPointExempt(t *testing.T) {
+	dir := t.TempDir()
+	var b strings.Builder
+	b.WriteString("import { A } from './a'\n")
+	for i := 0; i < 20; i++ {
+		fmt.Fprintf(&b, "import { X%d } from './x%d'\n", i, i)
+	}
+	writeCouplingTestFile(t, dir, "src/gallery.ts", b.String())
+	for i := 0; i < 20; i++ {
+		writeCouplingTestFile(t, dir, fmt.Sprintf("src/x%d.ts", i), "export const X = 1\n")
+	}
+	writeCouplingTestFile(t, dir, "src/a.ts", "export const A = 1\n")
+
+	c := &CouplingCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	for _, s := range signals {
+		assert.NotEqual(t, "high-coupling", s.Kind,
+			"entry point (in-degree 0) must be exempt, got signal %q", s.Title)
+	}
+	m := c.Metrics().(*CouplingMetrics)
+	assert.Equal(t, 1, m.ExemptedAggregators)
+}
+
+// TestCoupling_TestImporterDoesNotAnchor verifies that a module imported
+// ONLY by its test file still counts as an entry point: a test importing
+// its subject doesn't make the subject a mid-graph module.
+func TestCoupling_TestImporterDoesNotAnchor(t *testing.T) {
+	dir := t.TempDir()
+	var b strings.Builder
+	for i := 0; i < 20; i++ {
+		fmt.Fprintf(&b, "import { X%d } from './x%d'\n", i, i)
+	}
+	writeCouplingTestFile(t, dir, "src/gallery.ts", b.String())
+	writeCouplingTestFile(t, dir, "src/gallery.test.ts", "import { G } from './gallery'\n")
+	for i := 0; i < 20; i++ {
+		writeCouplingTestFile(t, dir, fmt.Sprintf("src/x%d.ts", i), "export const X = 1\n")
+	}
+
+	c := &CouplingCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	for _, s := range signals {
+		assert.NotEqual(t, "high-coupling", s.Kind,
+			"module imported only by its test must stay exempt, got %q", s.Title)
+	}
+}
+
+// TestCoupling_MidGraphStillFlagged verifies a genuinely mid-graph module
+// with wide fan-out is still flagged, with the WHAT/WHY/ACTION/DISMISS body
+// (stringer-h51).
+func TestCoupling_MidGraphStillFlagged(t *testing.T) {
+	dir := t.TempDir()
+	var b strings.Builder
+	for i := 0; i < 20; i++ {
+		fmt.Fprintf(&b, "import { X%d } from './x%d'\n", i, i)
+	}
+	writeCouplingTestFile(t, dir, "src/middle.ts", b.String())
+	writeCouplingTestFile(t, dir, "src/app.ts", "import { M } from './middle'\n")
+	for i := 0; i < 20; i++ {
+		writeCouplingTestFile(t, dir, fmt.Sprintf("src/x%d.ts", i), "export const X = 1\n")
+	}
+
+	c := &CouplingCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	var found *signal.RawSignal
+	for i := range signals {
+		if signals[i].Kind == "high-coupling" && strings.Contains(signals[i].Title, "middle") {
+			found = &signals[i]
+		}
+	}
+	require.NotNil(t, found, "mid-graph wide module must still be flagged")
+	assert.Contains(t, found.Description, "WHAT:")
+	assert.Contains(t, found.Description, "DISMISS:")
+	assert.Contains(t, found.Description, "coupling_exempt_patterns")
+}
+
+// TestCoupling_BarrelExempt verifies index/barrel files are exempt.
+func TestCoupling_BarrelExempt(t *testing.T) {
+	dir := t.TempDir()
+	var b strings.Builder
+	for i := 0; i < 20; i++ {
+		fmt.Fprintf(&b, "import { X%d } from './x%d'\n", i, i)
+	}
+	writeCouplingTestFile(t, dir, "src/index.ts", b.String())
+	writeCouplingTestFile(t, dir, "src/app.ts", "import { I } from './index'\n")
+	for i := 0; i < 20; i++ {
+		writeCouplingTestFile(t, dir, fmt.Sprintf("src/x%d.ts", i), "export const X = 1\n")
+	}
+
+	c := &CouplingCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	for _, s := range signals {
+		assert.NotEqual(t, "high-coupling", s.Kind,
+			"barrel file must be exempt, got %q", s.Title)
+	}
+}
+
+// TestCoupling_ExemptPatterns verifies per-path glob exemption from config.
+func TestCoupling_ExemptPatterns(t *testing.T) {
+	dir := t.TempDir()
+	var b strings.Builder
+	for i := 0; i < 20; i++ {
+		fmt.Fprintf(&b, "import { X%d } from './x%d'\n", i, i)
+	}
+	writeCouplingTestFile(t, dir, "src/registry.ts", b.String())
+	writeCouplingTestFile(t, dir, "src/app.ts", "import { R } from './registry'\n")
+	for i := 0; i < 20; i++ {
+		writeCouplingTestFile(t, dir, fmt.Sprintf("src/x%d.ts", i), "export const X = 1\n")
+	}
+
+	c := &CouplingCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{
+		CouplingExemptPatterns: []string{"src/registry.ts"},
+	})
+	require.NoError(t, err)
+	for _, s := range signals {
+		assert.NotEqual(t, "high-coupling", s.Kind,
+			"exempt-glob module must not be flagged, got %q", s.Title)
 	}
 }

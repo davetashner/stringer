@@ -69,8 +69,9 @@ type CollectorConfig struct {
 	DeadcodeMaxFiles int `yaml:"deadcode_max_files,omitempty"`
 
 	// Coupling collector settings.
-	CouplingFanOutThreshold int `yaml:"coupling_fan_out_threshold,omitempty"`
-	CouplingMaxFiles        int `yaml:"coupling_max_files,omitempty"`
+	CouplingFanOutThreshold int      `yaml:"coupling_fan_out_threshold,omitempty"`
+	CouplingMaxFiles        int      `yaml:"coupling_max_files,omitempty"`
+	CouplingExemptPatterns  []string `yaml:"coupling_exempt_patterns,omitempty"`
 
 	// Doc staleness collector settings.
 	DocStaleDays       int `yaml:"doc_stale_days,omitempty"`

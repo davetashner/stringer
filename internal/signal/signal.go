@@ -137,6 +137,10 @@ type CollectorOpts struct {
 	// 0 uses default (10000).
 	CouplingMaxFiles int
 
+	// CouplingExemptPatterns are path globs whose modules are exempt from
+	// high-coupling (fan-out) signals — entry points, galleries, barrels.
+	CouplingExemptPatterns []string
+
 	// DocStaleDays overrides the minimum age gap in days between source and doc
 	// last-commit to flag a stale-doc signal. 0 uses default (180).
 	DocStaleDays int
