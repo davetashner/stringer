@@ -145,4 +145,4 @@ scan(path: ".", kind: "fixme,bug", min_confidence: 0.7)
 
 ## Configuration
 
-MCP tools respect `.stringer.yaml` in the repository root. File-level configuration is merged with tool parameters, with tool parameters taking precedence. See the [README](../README.md#configuration-file) for config file details.
+MCP tools respect `.stringer.yaml` in the repository root. File-level configuration is merged with tool parameters, with tool parameters taking precedence. See the [README](../README.md#configuration) for config file details.

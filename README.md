@@ -13,9 +13,9 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11942/badge?v=2)](https://www.bestpractices.dev/projects/11942)
 
-> **v1.9.0.** Accuracy release, driven by a full evaluation against a real TypeScript/React repo. Vulnerability scanning is reachability-aware (npm dev vs. production), severity follows real CVSS v3 base scores, and partial OSV scans are loud instead of silent. Complexity scoring gains an indentation-derived nesting term for non-Go languages (flat guard lists no longer tie tangled code), JSX conditional rendering counts at half weight, and string/comment text no longer counts as control flow. Coupling exempts entry points and barrels; githygiene scans only git-tracked files; docstale and duplication drop three false-positive classes. Generated beads now carry WHAT/WHY/ACTION/DISMISS/CONTEXT bodies. See DR-023/024/025.
+> **v1.9.0** is an accuracy release: reachability-aware vulnerability scanning, severity from real CVSS base scores, nesting-aware complexity scoring for non-Go languages, and fewer false positives from the coupling, githygiene, docstale, and duplication collectors. Full details in the [release notes](https://github.com/davetashner/stringer/releases/latest) and DR-023/024/025.
 
-**Codebase archaeology for developers and AI agents.** Scan any repo for hidden tech debt — TODOs, vulnerabilities, lottery risk, stale branches, unhealthy dependencies — and get structured results you can act on immediately.
+**Codebase archaeology for developers and AI agents.** Stringer scans a repo for the tech debt already recorded in it — TODOs, vulnerable dependencies, single-owner code, complexity hotspots, stale branches — and turns it into structured output you can act on.
 
 ```bash
 # Install via Homebrew
@@ -34,63 +34,48 @@ stringer scan . -f markdown
 stringer scan . -f json -o signals.json
 ```
 
-## The Problem
+## Why
 
-Every codebase accumulates hidden debt. TODOs pile up. Dependencies go stale. One engineer becomes the sole owner of a critical module. A vulnerability lands in a transitive dependency and nobody notices.
+The evidence of tech debt is already sitting in your repo: code comments, git history, dependency manifests, GitHub issues. What's missing is a single tool that reads all of it. Developers end up juggling `grep TODO`, a dependency audit tool, and issue searches, while AI agents burn tokens rediscovering the same context every session.
 
-This debt is already visible in the code — in comments, git history, dependency manifests, and GitHub issues — but no single tool surfaces all of it. Developers context-switch between `grep TODO`, dependency audit tools, and GitHub issue searches. AI agents burn inference tokens rediscovering what's already in the repo.
+Stringer runs fifteen collectors in one command, scores each finding by confidence, and writes results in whatever format your workflow needs: markdown for a human, JSON or SARIF for CI, tasks for a Claude Code agent, or [Beads](https://github.com/steveyegge/beads) JSONL for seeding a backlog. Nearly all of it is deterministic static analysis that runs locally, with no API keys or per-request costs. An optional LLM pass adds signal clustering, priority inference, and dependency detection on top; `--no-llm` skips it.
 
-Stringer extracts these signals automatically, scores them by confidence, and outputs structured results in your format of choice — whether that's a markdown summary for a human, JSON for a CI pipeline, tasks for an AI agent, or [Beads](https://github.com/steveyegge/beads) JSONL for backlog seeding.
+## Collectors
 
-## Why Stringer?
+| Collector | What it finds |
+|-----------|---------------|
+| `todos` | `TODO`, `FIXME`, `HACK`, `XXX`, `BUG`, `OPTIMIZE` comments, enriched with git blame author and age |
+| `vuln` | Known CVEs via [OSV.dev](https://osv.dev/) across 11 ecosystems (Go, npm, Maven, Gradle, Cargo, .NET, Python, Composer, Swift, sbt, Mix) — no language toolchains required |
+| `dephealth` | Archived, deprecated, and stale dependencies across 10 ecosystems |
+| `lotteryrisk` | Directories where one author owns most of the code, weighted by recency |
+| `complexity` | Complex functions via Go AST analysis (or heuristics for other languages), cross-referenced with churn |
+| `deadcode` | Unused functions and types |
+| `duplication` | Copy-paste and near-clone duplication via token-based hashing |
+| `coupling` | Tightly coupled modules and circular dependency chains |
+| `gitlog` | Reverts, high-churn files, and stale branches |
+| `githygiene` | Large binaries, merge conflict markers, committed secrets, mixed line endings |
+| `patterns` | Large files and low test coverage ratios, with test detection for 12 languages |
+| `docstale` | Stale docs, doc/source co-change drift, broken internal links |
+| `configdrift` | Env var drift, dead config keys, inconsistent defaults across environment files |
+| `apidrift` | Drift between OpenAPI/Swagger specs and route handlers |
+| `github` | Open issues, PRs, and actionable review comments (requires `GITHUB_TOKEN`) |
 
-**Real scanning, not just TODO grep.** Fifteen collectors cover vulnerability detection across 11 ecosystems, dependency health across 10 ecosystems, lottery risk analysis, code churn, stale branches, coverage gaps, complexity hotspots, dead code, code duplication, coupling & circular dependencies, git hygiene, documentation staleness, configuration drift, API contract drift, and GitHub issues — all in a single command. Most of this runs locally with zero network calls.
+Run `stringer collectors info <name>` for signal types and tunable thresholds.
 
-**Works without AI, works better with it.** Core scanning is deterministic static analysis — no API keys, no per-request costs. The optional LLM pass adds signal clustering, priority inference, and dependency detection on top. Use `--no-llm` to skip it entirely.
+## Output formats
 
-**Output goes where you need it.** Markdown for humans, JSON for CI pipelines, tasks for Claude Code agents, or Beads JSONL for backlog seeding. Same scan, different consumers.
+| Format | Use case |
+|--------|----------|
+| `beads` (default) | JSONL for [Beads](https://github.com/steveyegge/beads), with deterministic content-based IDs |
+| `json` | Raw signals with metadata envelope |
+| `markdown` | Human-readable summary grouped by collector |
+| `sarif` | [SARIF v2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) for IDE and CI integration |
+| `tasks` | Claude Code task format for direct agent consumption |
+| `html` / `html-dir` | Self-contained dashboard, or split into `index.html` plus assets |
 
-## What It Does Today
+## Pipeline
 
-### Collectors
-
-- **TODO collector** (`todos`) — Scans source files for `TODO`, `FIXME`, `HACK`, `XXX`, `BUG`, and `OPTIMIZE` comments. Enriched with git blame author and timestamp. Confidence scoring with age-based boosts.
-- **Git log collector** (`gitlog`) — Detects reverts, high-churn files, and stale branches from git history.
-- **Patterns collector** (`patterns`) — Flags large files and modules with low test coverage ratios. Test detection supports Go, JavaScript/TypeScript, Python, Ruby, Java, Kotlin, Rust, C#, PHP, Swift, Scala, and Elixir.
-- **Lottery risk analyzer** (`lotteryrisk`) — Flags directories with low lottery risk (single-author ownership risk) using git blame and commit history with recency weighting.
-- **GitHub collector** (`github`) — Imports open issues, pull requests, and actionable review comments from GitHub. With `--include-closed`, also generates pre-closed signals from merged PRs and closed issues with architectural module context. Requires `GITHUB_TOKEN` env var.
-- **Dependency health collector** (`dephealth`) — Detects archived, deprecated, and stale dependencies across ten ecosystems: Go (`go.mod`), npm (`package.json`), Rust (`Cargo.toml`), Java/Maven (`pom.xml`), C#/.NET (`*.csproj`), Python (`requirements.txt`/`pyproject.toml`), PHP (`composer.json`), Swift (`Package.swift`), Scala (`build.sbt`), and Elixir (`mix.exs`).
-- **Vulnerability scanner** (`vuln`) — Detects known CVEs across eleven ecosystems via [OSV.dev](https://osv.dev/): Go (`go.mod`), Java/Maven (`pom.xml`), Java/Gradle (`build.gradle`/`.kts`), Rust (`Cargo.toml`), C#/.NET (`*.csproj`), Python (`requirements.txt`/`pyproject.toml`), Node.js (`package.json`), PHP (`composer.json`), Swift (`Package.swift`), Scala (`build.sbt`), and Elixir (`mix.exs`). No language toolchains required — only network access to osv.dev. Severity-based confidence scoring from CVSS vectors.
-- **Complexity hotspot collector** (`complexity`) — Detects complex functions using Go AST analysis (cyclomatic, cognitive complexity, nesting depth) or regex-based heuristics for other languages. Surfaces functions that are both complex and high-churn.
-- **Dead code detector** (`deadcode`) — Detects unused functions and types via regex heuristic and reference search across the codebase.
-- **Git hygiene detector** (`githygiene`) — Detects large binaries, merge conflict markers, committed secrets (24 built-in patterns + custom patterns + allowlist + entropy detection), and mixed line endings.
-- **Documentation staleness detector** (`docstale`) — Detects stale documentation, co-change drift between docs and source files, and broken internal links.
-- **Configuration drift detector** (`configdrift`) — Detects env var drift, dead config keys, and inconsistent defaults across environment files.
-- **API contract drift detector** (`apidrift`) — Detects drift between OpenAPI/Swagger specs and route handler registrations in code.
-- **Code duplication detector** (`duplication`) — Detects copy-paste code duplication using token-based sliding window with FNV-64a hashing. Finds both exact duplicates (Type 1) and near-clones with renamed identifiers (Type 2). Output capped at 200 signals by default.
-- **Coupling & circular dependency detector** (`coupling`) — Detects tightly coupled modules and circular dependency chains via import/require analysis.
-
-### Output Formats
-
-- **Beads JSONL** (`beads`) — Produces JSONL compatible with [Beads](https://github.com/steveyegge/beads), with deterministic content-based IDs
-- **JSON** (`json`) — Raw signals with metadata envelope, TTY-aware pretty/compact output
-- **Markdown** (`markdown`) — Human-readable summary grouped by collector with priority distribution
-- **Tasks** (`tasks`) — Claude Code task format for direct agent consumption
-- **SARIF** (`sarif`) — [SARIF v2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) static analysis results for IDE and CI integration
-- **HTML** (`html`) — Self-contained single-file dashboard
-- **HTML directory** (`html-dir`) — Dashboard split into `index.html` plus external `assets/dashboard.{css,js}`; requires `--output` to name the target directory
-
-### Pipeline
-
-- **Parallel execution** — Collectors run concurrently via errgroup
-- **Per-collector error modes** — skip, warn (default), or fail
-- **Signal deduplication** — Content-based SHA-256 hashing merges duplicate signals
-- **Beads-aware dedup** — When using Beads output, filters signals already tracked in the repo
-- **Delta scanning** — `--delta` mode tracks state between scans, showing only new/removed/moved signals
-- **Baseline suppression** — Suppress known findings with `stringer baseline suppress`; suppressed signals filtered from scan output
-- **Pre-closed signals** — Generates closed entries from merged PRs, closed issues, and resolved TODOs
-- **Dry-run mode** — Preview signal counts without producing output
-- **Monorepo support** — Auto-detects workspaces (go.work, pnpm, npm, lerna, nx, cargo) and scans each independently with `--workspace` filtering
+Collectors run concurrently, then signals are deduplicated (content-based SHA-256 hashing) and validated before formatting. Per-collector error modes (skip, warn, fail), delta scanning with move detection, baseline suppression, beads-aware dedup, and monorepo workspace auto-detection all happen in this pipeline.
 
 ```
                             ┌─────────────────────┐
@@ -127,9 +112,9 @@ Stringer extracts these signals automatically, scores them by confidence, and ou
  └────────┘ └────────┘ └────────┘ └────────┘ └────────┘ └────────┘ └────────┘
 ```
 
-## Real-World Results
+## Real-world results
 
-Stringer tested against 10 popular open-source repositories across four languages and a wide range of codebase sizes — from 131-file libraries to 28k-file monorepos. All runs completed successfully with zero crashes.
+Runs against 10 popular open-source repositories, from a 131-file library to a 28k-file monorepo:
 
 | Repository | Language | Files | Signals | Time | Highlights |
 |------------|----------|------:|--------:|-----:|------------|
@@ -146,7 +131,7 @@ Stringer tested against 10 popular open-source repositories across four language
 
 <sub>Tested February 2026 on stringer dev build. Repos cloned with `--depth 100`. Times include both `scan` and `report`.</sub>
 
-**Recommendation:** Use `--dry-run` first to see signal counts, then use `--max-issues` to cap output on your first scan.
+On a large repo, preview first and cap the output:
 
 ```bash
 # Preview how many signals exist
@@ -156,37 +141,31 @@ stringer scan . --dry-run
 stringer scan . --max-issues 50 -f markdown
 ```
 
-## Getting Started
-
-### Quick health check
+## Getting started
 
 ```bash
-# Get a repo health report — lottery risk, churn, coverage gaps, recommendations
+# Repo health report: lottery risk, churn, coverage gaps, recommendations
 stringer report .
-```
 
-### Scan for issues
-
-```bash
-# 1. Preview signal count
+# Preview signal count, then scan
 stringer scan . --dry-run
-
-# 2. Scan and review as markdown
 stringer scan . -f markdown
 
-# 3. Or save as JSON for programmatic use
+# Save as JSON for programmatic use
 stringer scan . -f json -o signals.json
 
-# 4. Focus on security
+# Focus on security
 stringer scan . -c vuln,dephealth -f markdown
+
+# Machine-readable dry run
+stringer scan . --dry-run --json
 ```
 
 ### Seed a Beads backlog
 
-If you use [Beads](https://github.com/steveyegge/beads) for agent task tracking, stringer's default output produces beads-compatible JSONL. Use `bd create` to import individual signals:
+If you use [Beads](https://github.com/steveyegge/beads) for agent task tracking, stringer's default output is beads-compatible JSONL. Until a native `bd import` lands ([requested upstream](https://github.com/steveyegge/beads/issues/2505)), import via `bd create`:
 
 ```bash
-# Import scan results into a beads backlog
 stringer scan . --max-issues 20 -q | while IFS= read -r line; do
   title=$(echo "$line" | jq -r .title)
   desc=$(echo "$line" | jq -r .description)
@@ -196,111 +175,55 @@ done
 bd ready --json
 ```
 
-> **Note:** A native `bd import` command for bulk JSONL ingestion is [requested upstream](https://github.com/steveyegge/beads/issues/2505). Once available, this will simplify to `stringer scan . | bd import -i -`.
+## Example prompts
 
-### Machine-readable dry run
+Stringer is built to be driven by agents. Paste any of these into Claude Code, Cursor, or Windsurf:
 
-```bash
-stringer scan . --dry-run --json
-```
-
-```json
-{
-  "total_signals": 70,
-  "collectors": [
-    {
-      "name": "todos",
-      "signals": 70,
-      "duration": "303.6685ms"
-    }
-  ],
-  "duration": "303.724958ms",
-  "exit_code": 0
-}
-```
-
-## Example Prompts
-
-You don't need to memorize flags or read docs. Stringer is designed for agents. Copy-paste any of these into Claude Code, Cursor, Windsurf, or your agent of choice.
-
-### Bootstrap a new project
-
-> Install stringer (`brew install davetashner/tap/stringer`), then set it up in this repo — run `stringer init .`, scan the codebase, and give me a summary of what it found. Output as markdown.
-
-### Understand a codebase you just inherited
+> Install stringer (`brew install davetashner/tap/stringer`), then set it up in this repo — run `stringer init .`, scan the codebase, and give me a summary of what it found.
 
 > Use stringer to scan this project and tell me what needs attention. I want to know about TODOs, stale branches, security vulnerabilities, and any files where only one person understands the code.
 
-### Get a health report
-
-> Run `stringer report .` on this project and walk me through the results. What are the riskiest areas?
-
-### Check for security issues
-
 > Use stringer to scan this repo for known vulnerabilities and unhealthy dependencies. Prioritize anything with a CVE.
-
-### Ongoing maintenance
-
-> Run a stringer delta scan (`stringer scan . --delta`) to find new issues since the last scan. Tell me what changed.
-
-### Set up agent integration
 
 > Set up stringer's MCP server so you can use it as a tool. Run `stringer init .` if there's no config yet, then register the MCP server with `claude mcp add stringer -- stringer mcp serve`.
 
-### Scope a scan to what matters
-
-> Use stringer to scan only the `src/api/` directory for TODOs and code patterns. Skip the git log and GitHub collectors — I just want local code issues. Use `stringer scan . --paths src/api/ -c todos,patterns`.
-
-### Generate agent docs
-
-> Use stringer to generate an AGENTS.md for this project (`stringer docs . -o AGENTS.md`). This will give future agents a map of the codebase.
-
-## Usage Reference
+## Usage
 
 ```
 stringer scan [path] [flags]
 ```
 
-| Flag               | Short | Default | Description                                               |
-| ------------------ | ----- | ------- | --------------------------------------------------------- |
-| `--collectors`     | `-c`  | (all)   | Comma-separated list of collectors to run                 |
-| `--format`         | `-f`  | `beads` | Output format                                             |
-| `--output`         | `-o`  | stdout  | Output file path                                          |
-| `--dry-run`        |       |         | Show signal count without producing output                |
-| `--delta`          |       |         | Only output new signals since last scan                   |
-| `--json`           |       |         | Machine-readable output for `--dry-run`                   |
-| `--max-issues`     |       | `0`     | Cap output count (0 = unlimited)                          |
-| `--min-confidence` |       | `0`     | Filter signals below this threshold (0.0-1.0)            |
-| `--kind`           |       |         | Filter by signal kind (comma-separated)                   |
-| `--strict`         |       |         | Exit non-zero on any collector failure                    |
-| `--git-depth`      |       | `0`     | Max commits to examine (default 1000)                     |
-| `--git-since`      |       |         | Only examine commits after this duration (e.g., 90d, 6m)  |
-| `--exclude`             | `-e`  |         | Glob patterns to exclude from scanning                    |
-| `--exclude-collectors`  | `-x`  |         | Comma-separated list of collectors to skip                |
-| `--include-closed`      |       |         | Include closed/merged issues and PRs from GitHub          |
-| `--history-depth`       |       |         | Filter closed items older than this duration (e.g., 90d)  |
-| `--anonymize`           |       | `auto`  | Anonymize author names: auto, always, or never            |
-| `--collector-timeout`   |       |         | Per-collector timeout (e.g. 60s, 2m); 0 = no timeout      |
-| `--paths`               |       |         | Restrict scanning to specific files or directories         |
-| `--include-demo-paths`  |       |         | Include demo/example/tutorial paths in noise-prone signals |
-| `--infer-priority`      |       |         | Use LLM to infer priority from signal context             |
-| `--infer-deps`          |       |         | Use LLM to detect dependencies between signals            |
-| `--no-llm`              |       |         | Skip all LLM passes (clustering, priority, dependencies)  |
-| `--workspace`           |       |         | Scan only named workspace(s) (comma-separated)            |
-| `--no-workspaces`       |       |         | Disable monorepo auto-detection, scan root as single dir  |
-| `--no-baseline`         |       |         | Skip baseline suppression filtering                       |
-| `--sarif-baseline`      |       |         | Previous SARIF file for baseline comparison (SARIF only)  |
-| `--no-snippets`         |       |         | Omit code snippets from SARIF output                      |
+The flags you'll reach for most:
 
-**Global flags:** `--quiet` (`-q`), `--verbose` (`-v`), `--no-color`, `--help` (`-h`)
+| Flag | Description |
+|------|-------------|
+| `-c, --collectors` | Comma-separated list of collectors to run |
+| `-f, --format` | Output format (`beads`, `json`, `markdown`, `sarif`, `tasks`, `html`, `html-dir`) |
+| `-o, --output` | Output file path (default stdout) |
+| `--dry-run` | Show signal counts without producing output |
+| `--delta` | Only output new signals since the last scan |
+| `--max-issues` | Cap output count |
+| `-e, --exclude` | Glob patterns to exclude from scanning |
+| `--paths` | Restrict scanning to specific files or directories |
+| `--no-llm` | Skip all LLM passes |
 
-**Available collectors:** `todos`, `gitlog`, `patterns`, `lotteryrisk`, `github`, `dephealth`, `vuln`, `complexity`, `deadcode`, `githygiene`, `docstale`, `configdrift`, `apidrift`, `duplication`, `coupling`
+The full flag tables for `scan` and every other command live in [docs/cli-reference.md](docs/cli-reference.md), or run `stringer <command> --help`.
 
-**Available formats:** `beads`, `json`, `markdown`, `sarif`, `tasks`
+### Other commands
 
-## Configuration File
+| Command | What it does |
+|---------|--------------|
+| `stringer report .` | Repo health report: lottery risk, churn, hotspots, trends, recommendations. `--format html-dir` exports a dashboard |
+| `stringer docs .` | Generate an `AGENTS.md` scaffold from repo structure (`--update` preserves manual sections) |
+| `stringer context .` | Compact repo summary for AI prompts: structure, recent activity, open work |
+| `stringer init .` | Bootstrap `.stringer.yaml`, an AGENTS.md section, and MCP registration |
+| `stringer config` | Get/set config values with dot-notation key paths, repo-level or global |
+| `stringer baseline` | Suppress known findings so they're filtered from future scans |
+| `stringer collectors` | List collectors and inspect their signal types and thresholds |
 
-Place a `.stringer.yaml` in your repository root to set persistent scan options. CLI flags override config file values.
+## Configuration
+
+Place a `.stringer.yaml` in your repository root for persistent scan options. Precedence: CLI flags > `.stringer.yaml` > global config (`~/.config/stringer/config.yaml`) > built-in defaults.
 
 ```yaml
 # .stringer.yaml
@@ -310,77 +233,32 @@ no_llm: true
 
 collectors:
   todos:
-    enabled: true
-    error_mode: warn
     min_confidence: 0.5
-    include_patterns:
-      - "*.go"
-      - "*.ts"
     exclude_patterns:
       - vendor/**
       - node_modules/**
   gitlog:
     git_depth: 500
     git_since: 6m
-  patterns:
-    include_demo_paths: true  # report missing-tests / low-test-ratio in example dirs
-    large_file_threshold: 1500  # lines
-    test_ratio_threshold: 0.1   # 10%
-  lotteryrisk:
-    include_demo_paths: true  # report lottery-risk in example dirs
-  github:
-    include_closed: true
-    history_depth: 90d
   complexity:
-    min_complexity_score: 6     # minimum score to emit signal
-    min_function_lines: 5       # skip tiny functions
-  duplication:
-    duplication_window_size: 6  # token window for sliding hash
-    duplication_signal_cap: 200 # max signals emitted
-    duplication_max_files: 10000
+    min_complexity_score: 6
   coupling:
-    coupling_fan_out_threshold: 15   # imports before a module is flagged
-    coupling_exempt_patterns: []     # path globs exempt from fan-out (galleries, registries)
-  githygiene:
-    large_binary_threshold: 1000000  # bytes
-    secret_patterns: []              # custom [{id, pattern, confidence, keywords}]
-    secret_allowlist: []             # regex patterns to suppress false positives
-    entropy_detection: false         # opt-in Shannon entropy detection
+    coupling_fan_out_threshold: 15
 ```
 
-**Precedence:** CLI flags > `.stringer.yaml` > global config > defaults
+Each collector accepts its own options (`enabled`, `error_mode`, thresholds, patterns); run `stringer collectors info <name>` to see them, or `stringer config list` to see every setting with its source.
 
-Stringer also supports a global config at `~/.config/stringer/config.yaml` (or `$XDG_CONFIG_HOME/stringer/config.yaml`). Repo-level settings override global settings. Use `stringer config set --global` to manage it.
+By default, stringer suppresses noise-prone signals (`missing-tests`, `low-test-ratio`, `low-lottery-risk`) in demo, example, and tutorial directories. Use `--include-demo-paths` or set `include_demo_paths: true` per collector to scan those paths too.
 
-If no config file exists, stringer uses its built-in defaults (all collectors enabled, beads format, no issue cap).
+## SARIF integration
 
-By default, stringer suppresses noise-prone signals (`missing-tests`, `low-test-ratio`, `low-lottery-risk`) in demo/example/tutorial directories (`examples/`, `tutorials/`, `demos/`, `samples/`, and variants). Use `--include-demo-paths` or set `include_demo_paths: true` per collector to scan these paths.
-
-## SARIF Integration
-
-Stringer can output [SARIF v2.1.0](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html) for IDE and CI integration. The format is auto-detected from the `.sarif` file extension, or set explicitly with `--format sarif`. SARIF output includes `automationDetails` for run correlation, code snippets with 3-line context, baseline suppression annotations, and `--sarif-baseline` for differential analysis.
+SARIF output is auto-detected from a `.sarif` file extension, or set explicitly with `--format sarif`. It includes `automationDetails` for run correlation, code snippets with 3-line context (disable with `--no-snippets`), and `--sarif-baseline previous.sarif` for differential analysis.
 
 ```bash
-# Auto-detected from file extension
 stringer scan . -o results.sarif
-
-# Explicit format flag
-stringer scan . --format sarif -o results.sarif
-
-# Baseline comparison — show only new findings
-stringer scan . --format sarif --sarif-baseline previous.sarif -o current.sarif
-
-# Without code snippets
-stringer scan . -o results.sarif --no-snippets
 ```
 
-### VS Code
-
-Install the [SARIF Viewer](https://marketplace.visualstudio.com/items?itemName=MS-SarifVSCode.sarif-viewer) extension, then open the `.sarif` file. Signals appear as inline annotations in the editor with severity levels mapped from stringer priority (P1=error, P2=warning, P3=note, P4=none).
-
-### GitHub Code Scanning
-
-Add stringer to a GitHub Actions workflow to surface signals as code scanning alerts:
+For VS Code, install the [SARIF Viewer](https://marketplace.visualstudio.com/items?itemName=MS-SarifVSCode.sarif-viewer) extension; signals appear as inline annotations with severity mapped from stringer priority (P1=error, P2=warning, P3=note, P4=none). For GitHub code scanning, upload the file in a workflow:
 
 ```yaml
 - name: Run stringer
@@ -392,215 +270,25 @@ Add stringer to a GitHub Actions workflow to surface signals as code scanning al
     sarif_file: results.sarif
 ```
 
-## Other Commands
+## Agent integration
 
-### `stringer report`
-
-Generates a repository health report with analysis sections for lottery risk, code churn, complexity hotspots, TODO age distribution, coverage gaps, module summaries, health trends, git hygiene, and actionable recommendations.
+Stringer ships an [MCP](https://modelcontextprotocol.io/) server exposing `scan`, `report`, `context`, and `docs` as tools.
 
 ```bash
-stringer report .              # print to stdout
-stringer report . -o report.txt # write to file
-stringer report . --format json     # machine-readable output
-stringer report . --format html-dir # HTML dashboard export
-stringer report . --sections lottery-risk,churn  # specific sections only
-```
-
-| Flag                    | Short | Default | Description                                               |
-| ----------------------- | ----- | ------- | --------------------------------------------------------- |
-| `--collectors`          | `-c`  | (all)   | Comma-separated list of collectors to run                 |
-| `--sections`            |       | (all)   | Comma-separated report sections to include                |
-| `--output`              | `-o`  | stdout  | Output file path                                          |
-| `--format`              | `-f`  |         | Output format (`json` for machine-readable, `html-dir` for dashboard) |
-| `--git-depth`           |       | `0`     | Max commits to examine (default 1000)                     |
-| `--git-since`           |       |         | Only examine commits after this duration (e.g., 90d, 6m)  |
-| `--anonymize`           |       | `auto`  | Anonymize author names: auto, always, or never            |
-| `--exclude-collectors`  | `-x`  |         | Comma-separated list of collectors to skip                |
-| `--collector-timeout`   |       |         | Per-collector timeout (e.g. 60s, 2m); 0 = no timeout      |
-| `--paths`               |       |         | Restrict scanning to specific files or directories         |
-| `--workspace`           |       |         | Report only named workspace(s) (comma-separated)          |
-
-**Available sections:** `lottery-risk`, `churn`, `todo-age`, `coverage`, `recommendations`, `trends`, `hotspots`, `git-hygiene`, `complexity`, `module-summary`
-
-### `stringer docs`
-
-Auto-generates an `AGENTS.md` scaffold from your repository structure, documenting modules, entry points, and conventions for AI agents.
-
-```bash
-stringer docs .              # print to stdout
-stringer docs . -o AGENTS.md # write to file
-stringer docs . --update     # update existing AGENTS.md, preserving manual sections
-```
-
-| Flag       | Short | Default | Description                                              |
-| ---------- | ----- | ------- | -------------------------------------------------------- |
-| `--output` | `-o`  | stdout  | Output file path                                         |
-| `--update` |       |         | Update existing AGENTS.md, preserving manual sections    |
-
-### `stringer context`
-
-Generates a compact context summary of the repository for use in AI prompts. Includes project structure, recent git activity, and open work items.
-
-```bash
-stringer context .
-stringer context . --format json  # machine-readable output
-stringer context . --weeks 8      # include 8 weeks of history
-```
-
-| Flag       | Short | Default | Description                                              |
-| ---------- | ----- | ------- | -------------------------------------------------------- |
-| `--output` | `-o`  | stdout  | Output file path                                         |
-| `--format` | `-f`  |         | Output format: `json` or `markdown`                      |
-| `--weeks`  |       | `4`     | Weeks of git history to include                          |
-
-### `stringer init`
-
-Bootstraps stringer in a repository. Detects project characteristics and generates starter configuration. Non-destructive by default — skips files that already exist.
-
-```bash
-stringer init .          # bootstrap stringer config
-stringer init . --force  # overwrite existing .stringer.yaml
-```
-
-When run, `stringer init`:
-- Creates `.stringer.yaml` with sensible defaults based on project detection
-- Appends a stringer integration section to `AGENTS.md`
-- Generates `.mcp.json` when a `.claude/` directory is detected (for MCP server integration)
-
-| Flag      | Short | Default | Description                          |
-| --------- | ----- | ------- | ------------------------------------ |
-| `--force` |       |         | Overwrite existing `.stringer.yaml`  |
-
-### `stringer config`
-
-View and modify stringer configuration from the CLI. Supports dot-notation key paths and both repo-level and global config.
-
-```bash
-stringer config list                          # show all settings with source
-stringer config get output_format             # get a single value
-stringer config set output_format json        # set a value in .stringer.yaml
-stringer config set collectors.todos.min_confidence 0.8
-stringer config set --global no_llm true      # set in global config
-```
-
-| Subcommand | Description |
-|------------|-------------|
-| `get <key>` | Get a config value by dot-notation key path |
-| `set <key> <value>` | Set a config value (auto-detects type) |
-| `list` | List all values with source annotations (repo/global) |
-
-Use `--global` on `get`/`set` to target `~/.config/stringer/config.yaml` instead of the repo-level `.stringer.yaml`.
-
-### `stringer baseline`
-
-Manage signal suppressions. Create a baseline from the current scan, suppress known findings, and track them across scans. Suppressed signals are filtered from future scan output.
-
-```bash
-stringer baseline create .                              # snapshot current signals as baseline
-stringer baseline suppress str-0e4098f9 --reason acknowledged  # suppress a signal
-stringer baseline suppress str-11e6af70 --reason false-positive --note "Test fixture"
-stringer baseline suppress str-3afa7732 --reason won't-fix --expires 90d
-stringer baseline list                                  # show active suppressions
-stringer baseline remove str-0e4098f9                   # un-suppress a signal
-stringer baseline status                                # summary counts
-```
-
-| Subcommand | Description |
-|------------|-------------|
-| `create <path>` | Create baseline from current scan |
-| `suppress <id>` | Suppress a signal by ID |
-| `list` | List active suppressions |
-| `remove <id>` | Remove a suppression |
-| `status` | Show suppression summary |
-
-**Suppression reasons:** `acknowledged`, `won't-fix`, `false-positive`
-
-### `stringer collectors`
-
-List and inspect registered collectors.
-
-```bash
-stringer collectors list         # table of all collectors with status
-stringer collectors info todos   # detailed info, signal types, config options
-stringer collectors info duplication --json  # machine-readable with thresholds
-```
-
-| Subcommand | Description |
-|------------|-------------|
-| `list` | Show all collectors with name, status, and description |
-| `info <name>` | Show detailed info including signal types, config options, and tunable thresholds |
-
-## Agent Integration
-
-Stringer includes an [MCP](https://modelcontextprotocol.io/) server so AI agents can call stringer tools directly.
-
-### Quick Setup
-
-```bash
-# Option 1: Auto-detect and configure
+# Auto-detect and configure
 stringer init .
 
-# Option 2: Register manually with Claude Code
+# Or register manually with Claude Code
 claude mcp add stringer -- stringer mcp serve
 ```
 
-### MCP Tools
+See [docs/agent-integration.md](docs/agent-integration.md) for parameters and example workflows.
 
-| Tool | Description |
-|------|-------------|
-| `scan` | Scan a repository for actionable work items (TODOs, git patterns, code smells) |
-| `report` | Generate a repository health report with metrics and recommendations |
-| `context` | Generate a context summary for agent onboarding |
-| `docs` | Generate or update an AGENTS.md scaffold |
+## How output works
 
-See [docs/agent-integration.md](docs/agent-integration.md) for detailed usage, parameters, and example workflows.
+Each signal gets a confidence score (0.0–1.0). For TODO signals, the base score comes from the keyword (`BUG` 0.8, `FIXME` 0.65, `HACK` 0.55, `TODO` 0.5, `XXX` 0.45, `OPTIMIZE` 0.35), with a +0.1 boost if git blame shows it's under 30 days old. See [DR-004](docs/decisions/004-confidence-scoring-semantics.md) for the design rationale. Confidence maps to priority: ≥0.8 is P1, ≥0.6 is P2, ≥0.4 is P3, below that P4.
 
-## How Output Works
-
-### Confidence Scoring
-
-Each signal gets a confidence score (0.0-1.0) based on keyword severity and age from git blame:
-
-**Base scores by keyword:**
-
-| Keyword    | Base Score |
-| ---------- | ---------- |
-| `BUG`      | 0.8        |
-| `FIXME`    | 0.65       |
-| `HACK`     | 0.55       |
-| `TODO`     | 0.5        |
-| `XXX`      | 0.45       |
-| `OPTIMIZE` | 0.35       |
-
-**Recency boost from git blame:**
-- Less than 30 days old: +0.1
-- Older or no blame data: +0.0
-
-Score is capped at 1.0. See [DR-004](docs/decisions/004-confidence-scoring-semantics.md) for the full design rationale.
-
-### Priority Mapping
-
-Confidence maps to priority:
-
-| Confidence | Priority |
-| ---------- | -------- |
-| >= 0.8     | P1       |
-| >= 0.6     | P2       |
-| >= 0.4     | P3       |
-| < 0.4      | P4       |
-
-### Content-Based Hashing
-
-Each signal gets a deterministic ID: `SHA-256(source + kind + filepath + line + title)`, truncated to 8 hex characters with a `str-` prefix (e.g., `str-0e4098f9`). Re-scanning the same repo produces the same IDs, making output idempotent and preventing duplicates on reimport.
-
-### Labels
-
-Every signal is tagged with:
-- The keyword kind (e.g., `todo`, `fixme`, `hack`)
-- `stringer-generated` — distinguishes stringer output from manually filed issues
-- The collector name (`todos`)
-
-### Sample Output
+Signal IDs are deterministic: `SHA-256(source + kind + filepath + line + title)`, truncated to 8 hex characters with a `str-` prefix. Re-scanning the same repo produces the same IDs, so output is idempotent and reimports don't duplicate. Every signal is labeled with its kind (`todo`, `fixme`, ...), its collector name, and `stringer-generated` to distinguish it from manually filed issues.
 
 Given this source file:
 
@@ -618,49 +306,30 @@ Stringer produces:
 {"id":"str-3afa7732","title":"HACK: Temporary workaround until upstream fixes the API","description":"Location: main.go:15","type":"chore","priority":3,"status":"open","created_at":"","created_by":"stringer","labels":["hack","stringer-generated","stringer-generated","todos"]}
 ```
 
-The `type` field is derived from keyword: `bug`/`fixme` -> `bug`, `todo` -> `task`, `hack`/`xxx`/`optimize` -> `chore`.
+The `type` field derives from the keyword: `bug`/`fixme` -> `bug`, `todo` -> `task`, `hack`/`xxx`/`optimize` -> `chore`.
 
-## Exit Codes
+## Limitations and roadmap
 
-| Code | Name              | Meaning                                          |
-| ---- | ----------------- | ------------------------------------------------ |
-| `0`  | OK                | All collectors succeeded                         |
-| `1`  | Invalid Args      | Invalid arguments or bad path                    |
-| `2`  | Partial Failure   | Some collectors failed, partial output written   |
-| `3`  | Total Failure     | No output produced                               |
+Signal IDs are line-sensitive: moving a TODO to a different line changes its ID. Delta scanning (`--delta`) detects moves, but other consumers may see a moved signal as new. A content-based ID scheme that survives line moves is planned.
 
-## Current Limitations
+## Design principles
 
-- **Line-sensitive hashing.** Moving a TODO to a different line changes its signal ID. Delta scanning (`--delta`) detects moved signals but downstream consumers may see them as new.
-
-## Roadmap
-
-Planned for future releases:
-
-- **Stable signal IDs** — Content-based hashing that survives line moves within a file
-
-## Design Principles
-
-**Read-only.** Stringer never modifies the target repository. It reads files and git history, writes output to stdout or a file.
-
-**Composable collectors.** Each collector is independent, testable, and implements one Go interface. Adding a new signal source means implementing `Collector` with `Name()` and `Collect()` methods.
-
-**LLM-optional.** Core scanning works without API keys. The LLM pass adds signal clustering, priority inference, and dependency detection but is never required. Use `--no-llm` to skip it entirely.
-
-**Idempotent.** Running stringer twice on the same repo produces the same output. Content-based hashing ensures deterministic IDs.
-
-**Format-agnostic.** The same scan pipeline feeds every output format. Beads JSONL, JSON, Markdown, and Tasks all render the same signal data — pick the format that fits your workflow.
+- **Read-only.** Stringer never modifies the target repository.
+- **Composable.** Each collector is independent and implements one small Go interface (`Name()` and `Collect()`).
+- **LLM-optional.** Core scanning needs no API keys; the LLM pass is additive.
+- **Idempotent.** Same repo in, same output out, with deterministic IDs.
+- **Format-agnostic.** One scan pipeline feeds every output format.
 
 ## Requirements
 
 - Go 1.25+ (for building from source)
 - Git (for blame enrichment and git log analysis)
-- `GITHUB_TOKEN` env var (optional — only needed for the GitHub collector)
-- [`bd` CLI](https://github.com/steveyegge/beads) (optional — only needed for Beads JSONL import)
+- `GITHUB_TOKEN` env var (optional, for the GitHub collector)
+- [`bd` CLI](https://github.com/steveyegge/beads) (optional, for Beads JSONL import)
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup, workflow, and guidelines. See [AGENTS.md](./AGENTS.md) for architecture details and the collector interface. This project uses Beads for task tracking — run `bd ready --json` to find open work.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup and [AGENTS.md](./AGENTS.md) for architecture details and the collector interface. This project uses Beads for task tracking; run `bd ready --json` to find open work.
 
 ## License
 
