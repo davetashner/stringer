@@ -17,8 +17,7 @@ This document describes the required GitHub branch protection settings for the `
 - Require status checks to pass before merging: **Enabled**
 - Require branches to be up to date before merging: **Enabled**
 - Required status checks:
-  - `Test (Go 1.24)`
-  - `Test (Go 1.25)`
+  - `Test (Go 1.26)`
   - `Vet`
   - `Format`
   - `Lint`
@@ -52,7 +51,7 @@ Alternatively, use the GitHub CLI:
 ```bash
 gh api repos/davetashner/stringer/branches/main/protection \
   --method PUT \
-  --field required_status_checks='{"strict":true,"contexts":["Test (Go 1.24)","Test (Go 1.25)","Vet","Format","Lint","Tidy","Coverage","Vulncheck","Binary Size","Go Generate","License Check"]}' \
+  --field required_status_checks='{"strict":true,"contexts":["Test (Go 1.26)","Vet","Format","Lint","Tidy","Coverage","Vulncheck","Binary Size","Go Generate","License Check"]}' \
   --field enforce_admins=true \
   --field required_pull_request_reviews='{"required_approving_review_count":1,"dismiss_stale_reviews":true}' \
   --field restrictions=null \
