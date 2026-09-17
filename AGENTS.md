@@ -155,7 +155,7 @@ stringer/
 
 ## Tech Stack
 
-- **Language:** Go 1.24+ (matches Beads ecosystem)
+- **Language:** Go 1.26+ (stdlib security advisory fixes; matches Beads ecosystem)
 - **CLI framework:** `spf13/cobra` for command/flag parsing
 - **Git interaction:** `go-git` for commit iteration and diffs; native `git` CLI for blame and ownership analysis ([DR-011](docs/decisions/011-native-git-blame.md))
 - **Testing:** `stretchr/testify` for assertions
