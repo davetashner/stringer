@@ -322,7 +322,7 @@ Signal IDs are line-sensitive: moving a TODO to a different line changes its ID.
 
 ## Requirements
 
-- Go 1.25+ (for building from source)
+- Go 1.26+ (for building from source)
 - Git (for blame enrichment and git log analysis)
 - `GITHUB_TOKEN` env var (optional, for the GitHub collector)
 - [`bd` CLI](https://github.com/steveyegge/beads) (optional, for Beads JSONL import)

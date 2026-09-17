@@ -437,8 +437,7 @@ Optional but valuable:
 
 | Check | What it verifies |
 |-------|-----------------|
-| `Test (Go 1.24)` | Build + tests on minimum supported Go version |
-| `Test (Go 1.25)` | Build + tests on latest Go version |
+| `Test (Go 1.26)` | Build + tests on supported Go version |
 | `Vet` | `go vet` static analysis |
 | `Format` | `gofmt` formatting compliance |
 | `Lint` | `golangci-lint` (includes gosec SAST) |
