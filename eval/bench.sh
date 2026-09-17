@@ -98,7 +98,10 @@ for target in "${TARGETS[@]}"; do
     else
         rm -rf "$repo_dir"
         echo "  cloning --depth $DEPTH"
-        git clone --quiet --depth "$DEPTH" "https://github.com/$target.git" "$repo_dir"
+        if ! git clone --quiet --depth "$DEPTH" "https://github.com/$target.git" "$repo_dir"; then
+            echo "  CLONE FAILED for $target, skipping" | tee -a "$OUT/failures.txt"
+            continue
+        fi
     fi
     sha=$(git -C "$repo_dir" rev-parse HEAD)
     sha_date=$(git -C "$repo_dir" log -1 --format=%cs)
