@@ -98,7 +98,15 @@ for target in "${TARGETS[@]}"; do
     else
         rm -rf "$repo_dir"
         echo "  cloning --depth $DEPTH"
-        if ! git clone --quiet --depth "$DEPTH" "https://github.com/$target.git" "$repo_dir"; then
+        cloned=false
+        for attempt in 1 2 3; do
+            if git clone --quiet --depth "$DEPTH" "https://github.com/$target.git" "$repo_dir"; then
+                cloned=true; break
+            fi
+            echo "  clone attempt $attempt failed, retrying in 60s"
+            rm -rf "$repo_dir"; sleep 60
+        done
+        if [[ "$cloned" != true ]]; then
             echo "  CLONE FAILED for $target, skipping" | tee -a "$OUT/failures.txt"
             continue
         fi
