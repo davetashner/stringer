@@ -13,7 +13,7 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11942/badge?v=2)](https://www.bestpractices.dev/projects/11942)
 
-> **v1.9.0** is an accuracy release: reachability-aware vulnerability scanning, severity from real CVSS base scores, nesting-aware complexity scoring for non-Go languages, and fewer false positives from the coupling, githygiene, docstale, and duplication collectors. Full details in the [release notes](https://github.com/davetashner/stringer/releases/latest) and DR-023/024/025.
+> **v1.10.0** is a maintenance release: the minimum Go version moves to 1.26+ (carrying the GO-2026-5972/6088/5026 stdlib security fixes), plus routine dependency and CI action updates. Full details in the [release notes](https://github.com/davetashner/stringer/releases/latest).
 
 **Codebase archaeology for developers and AI agents.** Stringer scans a repo for the tech debt already recorded in it — TODOs, vulnerable dependencies, single-owner code, complexity hotspots, stale branches — and turns it into structured output you can act on.
 
