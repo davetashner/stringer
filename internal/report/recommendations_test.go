@@ -104,9 +104,9 @@ func TestRecommendations_Coverage(t *testing.T) {
 		Metrics: map[string]any{
 			"patterns": &collectors.PatternsMetrics{
 				DirectoryTestRatios: []collectors.DirectoryTestRatio{
-					{Path: "pkg/core", SourceFiles: 10, TestFiles: 0, Ratio: 0},    // no tests
-					{Path: "pkg/util", SourceFiles: 10, TestFiles: 1, Ratio: 0.05}, // very low
-					{Path: "pkg/api", SourceFiles: 10, TestFiles: 8, Ratio: 0.8},   // good
+					{Path: "pkg/core", SourceFiles: 10, CoveredFiles: 0, TestFiles: 0, Ratio: 0},    // no tests
+					{Path: "pkg/util", SourceFiles: 20, CoveredFiles: 1, TestFiles: 1, Ratio: 0.05}, // very low
+					{Path: "pkg/api", SourceFiles: 10, CoveredFiles: 8, TestFiles: 0, Ratio: 0.8},   // good, tests in a mirror tree
 				},
 			},
 		},

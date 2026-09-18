@@ -140,6 +140,32 @@ func isUnderTestRoot(relPath string, testRoots []string) bool {
 	return false
 }
 
+// testOnlyDirSegments are directory names that hold nothing but tests and
+// their support code (fixtures, helpers, base classes). Matched
+// case-insensitively at any depth so that tests/, src/test/, __tests__/ and
+// Swift's Tests/ are all recognised.
+var testOnlyDirSegments = map[string]bool{
+	"tests":     true,
+	"test":      true,
+	"spec":      true,
+	"__tests__": true,
+	"benches":   true,
+}
+
+// isTestOnlyDir returns true if relPath sits under a test-only directory at
+// any depth. Files there that do not carry a test-file name (conftest.py,
+// TestCase.php, setup.js, fixtures) are test support code: they are neither
+// source files to be covered nor test files, so a test tree never appears as
+// a source directory in DirectoryTestRatios.
+func isTestOnlyDir(relPath string) bool {
+	for _, seg := range dirSegments(relPath) {
+		if testOnlyDirSegments[strings.ToLower(seg)] {
+			return true
+		}
+	}
+	return false
+}
+
 // generatedHeaderLines is how many leading lines are inspected for a
 // generated-code marker.
 const generatedHeaderLines = 5

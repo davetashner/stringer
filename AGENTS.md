@@ -46,6 +46,8 @@ stringer/
 │   │   │                       # patterns_testindex.go: repo-wide test index built once per scan — a source file counts as tested when any test file anywhere matches its stem
 │   │   │                       # (<Name>Test(s)/Spec/Suite, Test<Name>, <name>_test/_spec, test_<name>, <Name>.test/.spec) or a <Name>Test(s) basename ends with it (NotificationDatabaseChannelTest → DatabaseChannel);
 │   │   │                       # covers Maven src/main↔src/test mirrors (any module depth) and tests/<Project>.Tests/ sibling projects. patterns_testlookup.go: path-based fallbacks (same dir, parallel test roots, Rust inline tests).
+│   │   │                       # DirectoryTestRatio.Ratio = CoveredFiles/SourceFiles using that same covered decision (not colocated test files), so mirrored trees get a real ratio; TestFiles keeps the colocated count.
+│   │   │                       # low-test-ratio uses the same ratio. isTestOnlyDir (tests/, test/, spec/, __tests__/, benches/, Tests/ at any depth) drops test support files from both source and test counts (stringer-nxx.15).
 │   │   │                       # patterns_classify.go: isNonSourceForTests excludes config (config/, *.config.*, settings.py, dotfiles), data-only classes in PHP/C#/Java/Kotlin/Scala (Events/, Contracts/, Exceptions/, Dto(s)/, Models/,
 │   │   │                       # Entities/, Interfaces/, *Exception/*Dto/*Interface), and doc/demo trees (docs_src/, docs/, examples/, extras/, samples/, tutorial*/ unless --include-demo-paths) from missing-tests AND DirectoryTestRatios
 │   │   ├── lotteryrisk*.go     # Lottery risk: core, ownership math, review analysis, minimum-substance + shallow-history rules (lotteryrisk_substance.go: >=3 source files and >=100 blamed lines, static/fixture dir names skipped; shallow clones capped at 0.5 confidence and tagged shallow-history, DR-006 amendment)
@@ -123,7 +125,7 @@ stringer/
 │   │   ├── lotteryrisk.go      # Lottery risk analysis section
 │   │   ├── churn.go            # Code churn hotspots section
 │   │   ├── todoage.go          # TODO age distribution section
-│   │   ├── coverage.go         # Test coverage gaps section
+│   │   ├── coverage.go         # Test coverage gaps section (Source / Covered / Tests / Ratio / Assessment; NO TESTS = CoveredFiles == 0)
 │   │   ├── recommendations.go  # Actionable recommendations section
 │   │   └── modulesummary.go    # Module health summary section
 │   ├── baseline/           # Signal suppression state (baseline.json)

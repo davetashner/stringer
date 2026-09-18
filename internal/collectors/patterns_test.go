@@ -294,7 +294,7 @@ func TestLowTestRatioDetected(t *testing.T) {
 	require.Len(t, ratioSignals, 1)
 	assert.Equal(t, "patterns", ratioSignals[0].Source)
 	assert.Equal(t, "pkg", ratioSignals[0].FilePath)
-	assert.Contains(t, ratioSignals[0].Title, "0 test files / 5 source files")
+	assert.Contains(t, ratioSignals[0].Title, "0 of 5 source files have tests")
 	assert.InDelta(t, lowTestRatioConfidence, ratioSignals[0].Confidence, 0.001)
 	assert.Contains(t, ratioSignals[0].Tags, "low-test-ratio")
 }
@@ -1059,12 +1059,13 @@ func TestPatterns_UnreadableFileSkipped(t *testing.T) {
 func TestPatterns_MultipleDirRatios(t *testing.T) {
 	dir := t.TempDir()
 
-	// Create dir1 with 4 source files and 0 tests (low ratio).
+	// Create dir1 with 4 source files and 0 tests (low ratio). Basenames are
+	// distinct from dir2's so the repo-wide test index cannot credit them.
 	dir1 := filepath.Join(dir, "dir1")
 	require.NoError(t, os.MkdirAll(dir1, 0o750))
 	for i := 0; i < 4; i++ {
 		require.NoError(t, os.WriteFile(
-			filepath.Join(dir1, fmt.Sprintf("f%d.go", i)),
+			filepath.Join(dir1, fmt.Sprintf("g%d.go", i)),
 			[]byte("package dir1\n"), 0o600))
 	}
 
