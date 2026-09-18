@@ -18,10 +18,43 @@ import (
 	"github.com/davetashner/stringer/internal/signal"
 )
 
+// HeartbeatInterval controls how often Run reports collectors that are still
+// running via Progress.OnHeartbeat. It is a package-level variable so tests can
+// shorten it; a value <= 0 disables the heartbeat.
+var HeartbeatInterval = 60 * time.Second
+
+// RunningCollector describes a collector that has not yet finished, as
+// reported by Progress.OnHeartbeat.
+type RunningCollector struct {
+	// Name is the collector name.
+	Name string
+	// Elapsed is how long the collector has been running so far.
+	Elapsed time.Duration
+}
+
+// Progress holds optional callbacks that Run invokes to report progress while
+// collectors execute. The pipeline itself carries no logging policy; callers
+// (e.g. the scan and report commands) decide how to surface these events.
+//
+// Callbacks are invoked serially — never concurrently with each other — and
+// should return quickly, since they hold up result bookkeeping.
+type Progress struct {
+	// OnCollectorDone is invoked the moment a collector finishes, before the
+	// remaining collectors complete. The result includes name, signals,
+	// duration and any error.
+	OnCollectorDone func(result signal.CollectorResult)
+
+	// OnHeartbeat is invoked every HeartbeatInterval while at least one
+	// collector is still running, listing the unfinished collectors and how
+	// long each has been running.
+	OnHeartbeat func(running []RunningCollector)
+}
+
 // Pipeline orchestrates the execution of collectors and aggregates results.
 type Pipeline struct {
 	config     signal.ScanConfig
 	collectors []collector.Collector
+	progress   Progress
 }
 
 // New creates a Pipeline from the given ScanConfig. It resolves collectors
@@ -46,6 +79,13 @@ func NewWithCollectors(config signal.ScanConfig, collectors []collector.Collecto
 		config:     config,
 		collectors: collectors,
 	}
+}
+
+// SetProgress installs progress callbacks that Run invokes as collectors
+// finish and while long-running collectors are still in flight. Nil callbacks
+// are ignored. Must be called before Run.
+func (p *Pipeline) SetProgress(pr Progress) {
+	p.progress = pr
 }
 
 // Run executes all configured collectors in parallel, validates their output,
@@ -76,19 +116,26 @@ func (p *Pipeline) Run(ctx context.Context) (*signal.ScanResult, error) {
 	}
 
 	var (
-		mu      sync.Mutex
-		results = make([]signal.CollectorResult, len(p.collectors))
+		mu       sync.Mutex
+		results  = make([]signal.CollectorResult, len(p.collectors))
+		started  = make([]time.Time, len(p.collectors))
+		finished = make([]bool, len(p.collectors))
 	)
 
 	g, gctx := errgroup.WithContext(ctx)
 
 	for i, c := range p.collectors {
 		i, c := i, c // capture loop variables
+		started[i] = time.Now()
 		g.Go(func() error {
 			result := p.runCollector(gctx, c)
 
 			mu.Lock()
 			results[i] = result
+			finished[i] = true
+			if p.progress.OnCollectorDone != nil {
+				p.progress.OnCollectorDone(result)
+			}
 			mu.Unlock()
 
 			if result.Err != nil {
@@ -107,8 +154,14 @@ func (p *Pipeline) Run(ctx context.Context) (*signal.ScanResult, error) {
 		})
 	}
 
+	// Report still-running collectors periodically until every goroutine
+	// has finished, so a single slow collector is visible mid-run.
+	stopHeartbeat := p.startHeartbeat(&mu, started, finished)
+
 	// Wait for all collectors to finish.
-	if err := g.Wait(); err != nil {
+	err := g.Wait()
+	stopHeartbeat()
+	if err != nil {
 		return &signal.ScanResult{
 			Results:  results,
 			Duration: time.Since(start),
@@ -163,6 +216,55 @@ func (p *Pipeline) Run(ctx context.Context) (*signal.ScanResult, error) {
 		Duration: time.Since(start),
 		Metrics:  metrics,
 	}, nil
+}
+
+// startHeartbeat launches a goroutine that invokes Progress.OnHeartbeat every
+// HeartbeatInterval with the collectors that have not yet finished. It returns
+// a stop function that halts the goroutine and waits for it to exit. When no
+// heartbeat callback is set (or the interval is disabled) it is a no-op.
+//
+// started must be fully populated before this is called; finished is read
+// under mu, which is also held while invoking the callback so that heartbeat
+// and completion callbacks never run concurrently.
+func (p *Pipeline) startHeartbeat(mu *sync.Mutex, started []time.Time, finished []bool) func() {
+	if p.progress.OnHeartbeat == nil || HeartbeatInterval <= 0 {
+		return func() {}
+	}
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	ticker := time.NewTicker(HeartbeatInterval)
+
+	go func() {
+		defer close(done)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case now := <-ticker.C:
+				mu.Lock()
+				var running []RunningCollector
+				for i, c := range p.collectors {
+					if !finished[i] {
+						running = append(running, RunningCollector{
+							Name:    c.Name(),
+							Elapsed: now.Sub(started[i]),
+						})
+					}
+				}
+				if len(running) > 0 {
+					p.progress.OnHeartbeat(running)
+				}
+				mu.Unlock()
+			}
+		}
+	}()
+
+	return func() {
+		close(stop)
+		<-done
+	}
 }
 
 // effectivePriority returns the signal's priority for sorting.

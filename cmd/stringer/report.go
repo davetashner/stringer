@@ -188,6 +188,7 @@ func runReport(cmd *cobra.Command, args []string) error {
 			collectorNames = cn
 		}
 		slog.Info("generating report", "collectors", len(cn))
+		p.SetProgress(collectorProgressLogger(ws.Name))
 
 		wsResult, err := p.Run(cmd.Context())
 		if err != nil {

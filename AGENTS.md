@@ -105,7 +105,7 @@ stringer/
 │   │   ├── tasks.go            # Claude Code task format
 │   │   └── signalid.go         # Shared deterministic signal ID generation
 │   ├── pipeline/           # Scan orchestration
-│   │   ├── pipeline.go         # New(), Run() — parallel execution via errgroup
+│   │   ├── pipeline.go         # New(), Run() — parallel execution via errgroup; Progress callbacks + heartbeat
 │   │   ├── dedup.go            # Content-based signal deduplication
 │   │   ├── enrich.go           # Cross-signal confidence boosting (co-location)
 │   │   ├── baseline.go         # FilterSuppressed() — baseline suppression filtering
@@ -362,6 +362,7 @@ Stringer uses the stdlib `log/slog` everywhere. Follow these rules so agents and
 - **Never concatenate runtime values into the message.** Do not write `slog.Warn("vuln: reading "+name, …)`; use `slog.Warn("vuln: reading manifest", "file", name, …)` so structured consumers can index on `file`.
 - **Do not log-and-return the same error.** Either log it or wrap-and-return (with `fmt.Errorf("…: %w", err)`), not both — pick based on whether the caller can do anything with it.
 - **Field names:** `snake_case`, stable across releases. Common keys: `file`, `path`, `package`, `version`, `url`, `status`, `cap`, `attempt`.
+- **Pipeline progress:** `pipeline.Run` carries no logging policy. It accepts optional `pipeline.Progress` callbacks via `SetProgress`: `OnCollectorDone` fires the moment each collector finishes (name, signal count, duration, error) and `OnHeartbeat` fires every `pipeline.HeartbeatInterval` (60s; package variable so tests can shorten it) with the collectors still running and their elapsed time. `scan` and `report` both wire `collectorProgressLogger` (cmd/stringer/scan.go), which logs `collector complete` at Info / `collector failed` at Error as they happen and `collectors still running` at Debug (visible under `-v`). Do not add a post-run per-collector log loop; it would double-log.
 
 ### Adding a new formatter
 
