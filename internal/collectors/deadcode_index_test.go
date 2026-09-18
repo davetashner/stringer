@@ -138,10 +138,11 @@ func TestSymbolIndex_MatchesLegacy_Fixtures(t *testing.T) {
 	check("Accent", "e.go", false, false) // ASCII boundary next to é
 	check("Kanji", "e.go", false, false)  // ASCII boundary next to CJK
 	check("Naive", "e.go", true, false)   // "naïve" is not "Naive"
-	// Legacy quirk preserved: `\bvalid\?\b` needs a word byte after "?", so
-	// "valid?\n" never matches and predicate/bang methods read as dead.
-	check("valid?", "r.rb", true, false)
-	check("save!", "r.rb", true, false)
+	// Predicate/bang names drop the trailing `\b` (stringer-nxx.3): valid?
+	// is called inside r.rb, save! from s.rb, and "validx"/"save" are not
+	// references.
+	check("valid?", "r.rb", false, false)
+	check("save!", "r.rb", false, false)
 	check("Foo.Bar", "m.ex", false, false) // Foo.Bar.hello() in n.ex
 	check("Foo.Baz", "m.ex", true, false)  // "Foo .Baz" is not Foo.Baz
 	check("Solo.Mod", "m.ex", false, true) // only n_test.exs

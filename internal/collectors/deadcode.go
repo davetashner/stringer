@@ -33,6 +33,7 @@ type symbolDef struct {
 	Exported   bool
 	Language   string // file extension (e.g., ".go")
 	InInternal bool   // Go: inside internal/ directory
+	InTest     bool   // defined in a test file (only with include_tests)
 }
 
 // DeadCodeMetrics holds structured metrics from the dead code scan.
@@ -94,12 +95,20 @@ var skipNames = map[string]bool{
 var skipPrefixes = []string{"Test", "Benchmark", "Example", "test_", "test"}
 
 // wordBoundary builds a regex to match a symbol name at word boundaries.
+// Ruby/Elixir predicate and bang names (`valid?`, `save!`) end in a
+// non-word byte, after which `\b` could only match before another word
+// byte, so the trailing boundary is dropped for them: `\bvalid\?` matches
+// `obj.valid?` and `valid?(x)` but not the plain method `valid`.
 // Results are cached on the collector to avoid redundant compilation.
 func (c *DeadCodeCollector) wordBoundary(name string) *regexp.Regexp {
 	if re, ok := c.regexCache[name]; ok {
 		return re
 	}
-	re := regexp.MustCompile(`\b` + regexp.QuoteMeta(name) + `\b`)
+	pat := `\b` + regexp.QuoteMeta(name)
+	if !strings.HasSuffix(name, "?") && !strings.HasSuffix(name, "!") {
+		pat += `\b`
+	}
+	re := regexp.MustCompile(pat)
 	c.regexCache[name] = re
 	return re
 }
@@ -173,6 +182,7 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 	var symbols []symbolDef
 	var files []fileContents
 	var fileCount int
+	hasEntryPoint := false
 
 	err := FS.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -188,6 +198,9 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 		}
 
 		if d.IsDir() {
+			if isEntryPointPath(relPath, true) {
+				hasEntryPoint = true
+			}
 			if shouldExclude(relPath, excludes) {
 				return filepath.SkipDir
 			}
@@ -196,6 +209,9 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 
 		if shouldExclude(relPath, excludes) {
 			return nil
+		}
+		if isEntryPointPath(relPath, false) {
+			hasEntryPoint = true
 		}
 
 		// Skip symlinks outside repo tree.
@@ -232,20 +248,25 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 			return nil
 		}
 
-		testFile := isTestFile(relPath)
+		// Test files (naming conventions plus test/tests/__tests__/spec
+		// directories) only count as references unless include_tests is set:
+		// their helpers, fixtures and URL-dispatched views are discovered by
+		// the harness, not called by name (stringer-nxx.3).
+		testFile := isComplexityTestFile(relPath)
 		files = append(files, fileContents{
 			relPath: relPath,
 			content: content,
 			isTest:  testFile,
 		})
-
-		// Don't extract symbols from test files.
-		if testFile {
+		if testFile && !opts.IncludeTests {
 			return nil
 		}
 
 		// Extract symbols.
-		syms := extractSymbols(content, relPath, ext)
+		syms := extractSymbols(content, relPath, ext, opts.IncludeTests)
+		for i := range syms {
+			syms[i].InTest = testFile
+		}
 		symbols = append(symbols, syms...)
 
 		if opts.ProgressFunc != nil && fileCount%500 == 0 {
@@ -263,6 +284,12 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 			return nil, fmt.Errorf("walking repo: %w", err)
 		}
 	}
+
+	// A repository without an application entry point, or whose manifest
+	// declares it a library, exports its public symbols for downstream
+	// consumers the reference search cannot see (stringer-nxx.3).
+	libManifest, appManifest := manifestKind(repoPath)
+	isLibrary := libManifest || (!hasEntryPoint && !appManifest)
 
 	// Pass 2: Tokenize every file once into an inverted index, then resolve
 	// each symbol with a lookup instead of a regexp scan over every file.
@@ -286,7 +313,8 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 			continue
 		}
 
-		conf := deadCodeConfidence(sym, testOnly)
+		publicAPI := isLibrary && sym.Exported && !sym.InInternal && !sym.InTest
+		conf := deadCodeConfidence(sym, testOnly, publicAPI)
 		if conf < opts.MinConfidence {
 			continue
 		}
@@ -297,6 +325,12 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 		tags := []string{"dead-code", "cleanup-candidate"}
 		if testOnly {
 			tags = append(tags, "test-only-reference")
+		}
+		if publicAPI {
+			tags = append(tags, "public-api")
+		}
+		if sym.InTest {
+			tags = append(tags, "test-file")
 		}
 
 		signals = append(signals, signal.RawSignal{
@@ -351,73 +385,72 @@ func readFileContent(path string) (string, error) {
 }
 
 // extractSymbols finds function and type definitions in file content.
-func extractSymbols(content, relPath, ext string) []symbolDef {
+// Definitions that are alive through a mechanism the reference search
+// cannot observe are not extracted: Rust fns inside `impl Trait for Type`
+// (dispatched through the trait), Rust test fns and #[cfg(test)] blocks
+// (unless includeTests), and functions or types registered by a
+// decorator/attribute/annotation (routes, handlers, fixtures, tests).
+func extractSymbols(content, relPath, ext string, includeTests bool) []symbolDef {
 	var syms []symbolDef
 	lines := strings.Split(content, "\n")
 	inInternal := strings.Contains(relPath, "internal/") || strings.HasPrefix(relPath, "internal/")
 
+	var rc rustLineContext
+	if ext == ".rs" {
+		rc = scanRustContext(lines)
+	}
+	// skip reports whether the definition on line i must not be extracted.
+	skip := func(i int, isFunc bool) bool {
+		if ext == ".rs" {
+			// `_name` is Rust's explicit "intentionally unused" convention
+			// (compile-time assertions such as `fn _assert_kinds()`).
+			if isFunc && (rc.traitImpl[i] || strings.HasPrefix(lines[i][indentWidth(lines[i]):], "fn _")) {
+				return true
+			}
+			if !includeTests && (rc.cfgTest[i] || precededByRustTestAttr(lines, i)) {
+				return true
+			}
+		}
+		return precededByDecorator(lines, i, ext)
+	}
+	add := func(i int, name, kind string) {
+		exported := symbolExported(name, lines[i], ext)
+		if ext == ".cs" {
+			if csharpNeverDead(name, lines, i) {
+				return
+			}
+			exported = csharpExported(lines[i])
+		}
+		syms = append(syms, symbolDef{
+			Name:       name,
+			FilePath:   relPath,
+			Line:       i + 1,
+			Kind:       kind,
+			Exported:   exported,
+			Language:   ext,
+			InInternal: inInternal,
+		})
+	}
+
 	// Extract functions using existing langSpecs.
-	spec := extToSpec[ext]
-	if spec != nil {
+	if spec := extToSpec[ext]; spec != nil {
 		for i, line := range lines {
 			name, _ := matchFuncStart(line, spec, i+1)
-			if name == "" {
+			if name == "" || skip(i, true) {
 				continue
 			}
-			exported := isExported(name, ext)
-			// Rust: check if line has "pub" keyword.
-			if ext == ".rs" {
-				exported = strings.Contains(line, "pub ")
-			}
-			if ext == ".cs" {
-				if csharpNeverDead(name, lines, i) {
-					continue
-				}
-				exported = csharpExported(line)
-			}
-			syms = append(syms, symbolDef{
-				Name:       name,
-				FilePath:   relPath,
-				Line:       i + 1,
-				Kind:       "unused-function",
-				Exported:   exported,
-				Language:   ext,
-				InInternal: inInternal,
-			})
+			add(i, name, "unused-function")
 		}
 	}
 
 	// Extract types.
-	typePat := typePatterns[ext]
-	if typePat != nil {
+	if typePat := typePatterns[ext]; typePat != nil {
 		for i, line := range lines {
 			matches := typePat.FindStringSubmatch(line)
-			if matches == nil {
+			if matches == nil || matches[1] == "" || skip(i, false) {
 				continue
 			}
-			name := matches[1]
-			if name == "" {
-				continue
-			}
-			exported := isExported(name, ext)
-			if ext == ".rs" {
-				exported = strings.Contains(line, "pub ")
-			}
-			if ext == ".cs" {
-				if csharpNeverDead(name, lines, i) {
-					continue
-				}
-				exported = csharpExported(line)
-			}
-			syms = append(syms, symbolDef{
-				Name:       name,
-				FilePath:   relPath,
-				Line:       i + 1,
-				Kind:       "unused-type",
-				Exported:   exported,
-				Language:   ext,
-				InInternal: inInternal,
-			})
+			add(i, matches[1], "unused-type")
 		}
 	}
 
@@ -434,17 +467,22 @@ func extractSymbols(content, relPath, ext string) []symbolDef {
 // mean it is test-only. Word-only names (the common case) are resolved from
 // the token index; names with non-word bytes (Elixir "Foo.Bar", Ruby
 // "valid?") fall back to the regexp over index-bounded candidate files.
+//
+// A symbol defined in a test file (include_tests) is referenced by any other
+// file, test or not, since test files are its natural callers.
 func (c *DeadCodeCollector) isDeadSymbol(sym *symbolDef, idx *symbolIndex) (dead bool, testOnly bool) {
 	if isWordOnly(sym.Name) {
-		return idx.lookupToken(sym.Name, sym.FilePath)
+		return idx.lookupToken(sym.Name, sym.FilePath, sym.InTest)
 	}
-	return idx.lookupRegex(c.wordBoundary(sym.Name), sym.Name, sym.FilePath)
+	return idx.lookupRegex(c.wordBoundary(sym.Name), sym.Name, sym.FilePath, sym.InTest)
 }
 
 // deadCodeConfidence returns the confidence score for a dead code signal
-// based on the symbol's visibility and language context.
-func deadCodeConfidence(sym *symbolDef, testOnly bool) float64 {
-	if testOnly {
+// based on the symbol's visibility and language context. publicAPI marks
+// an exported symbol of a library repository, which downstream consumers
+// may reference: it caps confidence at 0.3.
+func deadCodeConfidence(sym *symbolDef, testOnly, publicAPI bool) float64 {
+	if testOnly || publicAPI {
 		return 0.3
 	}
 
