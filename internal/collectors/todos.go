@@ -55,7 +55,8 @@ var todoPattern = regexp.MustCompile(
 		`(.*)`, // message (captured)
 )
 
-// defaultExcludePatterns are directory/file globs skipped unless overridden.
+// defaultExcludePatterns are directory/file globs skipped by every collector
+// unless a user opts back in with a negated exclude pattern (e.g. "!**/*.pb.go").
 var defaultExcludePatterns = []string{
 	"vendor/**",
 	"node_modules/**",
@@ -75,7 +76,26 @@ var defaultExcludePatterns = []string{
 	".beads/**",
 	".stringer/**",
 	".claude/worktrees/**",
+	// Vendored precompiled bundles and minified assets: never hand-edited, so
+	// every complexity/duplication/todo signal in them is noise.
+	"**/compiled/**",
+	"**/*.min.js",
+	"**/*.min.css",
+	"**/*.bundle.js",
+	"**/*.production.js",
+	"**/*.development.js",
+	// Machine-generated source (Go codegen, protobuf, C# designers, …).
+	"**/zz_generated*.go",
+	"**/*.pb.go",
+	"**/*_string.go",
+	"**/*.generated.*",
+	"**/*.g.cs",
+	"**/*.Designer.cs",
 }
+
+// excludeNegationPrefix marks a user exclude pattern that removes a default
+// exclude instead of adding one: "!**/*.min.js" re-enables minified JS.
+const excludeNegationPrefix = "!"
 
 // defaultDemoPatterns are directory globs for demo/example/tutorial paths.
 // Noise-prone signal kinds (missing-tests, low-test-ratio, low-lottery-risk)
@@ -188,6 +208,12 @@ func (c *TodoCollector) Collect(ctx context.Context, repoPath string, opts signa
 
 		// Skip binary files.
 		if isBinaryFile(path) {
+			return nil
+		}
+
+		// Skip generated and minified files unless the user explicitly
+		// asked for them via include patterns.
+		if len(opts.IncludePatterns) == 0 && isGeneratedFile(path) {
 			return nil
 		}
 
@@ -388,31 +414,61 @@ func computeConfidence(sig signal.RawSignal) float64 {
 // shouldExclude returns true if relPath matches any of the exclude patterns.
 func shouldExclude(relPath string, patterns []string) bool {
 	for _, pattern := range patterns {
-		matched, err := filepath.Match(pattern, relPath)
+		if matchesExcludePattern(relPath, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesExcludePattern reports whether a single exclude glob matches relPath.
+//
+// Supported forms:
+//
+//	vendor/**        directory at the root or at any interior depth
+//	*.min.js         filename at any depth
+//	**/compiled/**   same as compiled/** (explicit any-depth prefix)
+//	**/gen/*.go      path suffix at any depth
+func matchesExcludePattern(relPath, pattern string) bool {
+	sep := string(filepath.Separator)
+	if rest, ok := strings.CutPrefix(pattern, "**/"); ok {
+		if matchesExcludePattern(relPath, rest) {
+			return true
+		}
+		// Path patterns like "gen/*.go" must also match at every depth.
+		if strings.Contains(rest, "/") && !strings.HasSuffix(rest, "/**") {
+			segs := strings.Split(relPath, sep)
+			for i := 1; i < len(segs); i++ {
+				if matched, err := filepath.Match(rest, strings.Join(segs[i:], sep)); err == nil && matched {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	matched, err := filepath.Match(pattern, relPath)
+	if err == nil && matched {
+		return true
+	}
+	// Match the pattern against just the filename for non-path patterns
+	// like "*.min.js" that should apply to files in any directory.
+	if !strings.Contains(pattern, "/") && !strings.Contains(pattern, "**") {
+		matched, err = filepath.Match(pattern, filepath.Base(relPath))
 		if err == nil && matched {
 			return true
 		}
-		// Match the pattern against just the filename for non-path patterns
-		// like "*.min.js" that should apply to files in any directory.
-		if !strings.Contains(pattern, "/") && !strings.Contains(pattern, "**") {
-			matched, err = filepath.Match(pattern, filepath.Base(relPath))
-			if err == nil && matched {
-				return true
-			}
+	}
+	// Handle ** patterns: "vendor/**" should match vendor/ and anything below.
+	if strings.HasSuffix(pattern, "/**") {
+		dir := strings.TrimSuffix(pattern, "/**")
+		// Match at root: vendor/foo.go
+		if relPath == dir || strings.HasPrefix(relPath, dir+sep) {
+			return true
 		}
-		// Handle ** patterns: "vendor/**" should match vendor/ and anything below.
-		if strings.HasSuffix(pattern, "/**") {
-			dir := strings.TrimSuffix(pattern, "/**")
-			sep := string(filepath.Separator)
-			// Match at root: vendor/foo.go
-			if relPath == dir || strings.HasPrefix(relPath, dir+sep) {
-				return true
-			}
-			// Match interior segments: "wwwroot/lib/**" matches
-			// "samples/foo/wwwroot/lib/bootstrap.js"
-			if strings.Contains(relPath, sep+dir+sep) || strings.HasSuffix(relPath, sep+dir) {
-				return true
-			}
+		// Match interior segments: "wwwroot/lib/**" matches
+		// "samples/foo/wwwroot/lib/bootstrap.js"
+		if strings.Contains(relPath, sep+dir+sep) || strings.HasSuffix(relPath, sep+dir) {
+			return true
 		}
 	}
 	return false
@@ -453,11 +509,27 @@ func matchesAny(relPath string, patterns []string) bool {
 }
 
 // mergeExcludes returns the union of default and user-provided exclude patterns.
-// User patterns are appended to (not replacing) the defaults.
+// User patterns are appended to (not replacing) the defaults. A user pattern
+// prefixed with "!" removes the identically-spelled default instead, so
+// "!**/*.pb.go" opts protobuf output back in.
 func mergeExcludes(userPatterns []string) []string {
-	merged := make([]string, len(defaultExcludePatterns))
-	copy(merged, defaultExcludePatterns)
-	merged = append(merged, userPatterns...)
+	negated := make(map[string]bool)
+	for _, p := range userPatterns {
+		if neg, ok := strings.CutPrefix(p, excludeNegationPrefix); ok {
+			negated[neg] = true
+		}
+	}
+	merged := make([]string, 0, len(defaultExcludePatterns)+len(userPatterns))
+	for _, p := range defaultExcludePatterns {
+		if !negated[p] {
+			merged = append(merged, p)
+		}
+	}
+	for _, p := range userPatterns {
+		if !strings.HasPrefix(p, excludeNegationPrefix) {
+			merged = append(merged, p)
+		}
+	}
 	return merged
 }
 

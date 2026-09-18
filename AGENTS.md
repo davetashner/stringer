@@ -39,7 +39,8 @@ stringer/
 │   ├── collector/          # Collector registry and interface
 │   │   └── collector.go        # Register(), List(), Get(), Collector interface
 │   ├── collectors/         # Signal extraction modules (one file per collector)
-│   │   ├── todos.go            # TODO/FIXME/HACK/XXX/BUG/OPTIMIZE scanner; owns defaultExcludePatterns (vendor, node_modules, .beads, .stringer, .claude/worktrees, …) shared by all collectors
+│   │   ├── todos.go            # TODO/FIXME/HACK/XXX/BUG/OPTIMIZE scanner; owns defaultExcludePatterns (vendor, node_modules, .beads, .stringer, .claude/worktrees, **/compiled/**, *.min.js, *.pb.go, zz_generated*.go, …) shared by all collectors; "!pattern" in user excludes opts a default back in
+│   │   ├── patterns_classify.go # shared file classification: isTestFile, isGeneratedFile (header markers in first 5 lines + minified heuristic: avg line > 400 chars over first 20 lines) used by every source-walking collector
 │   │   ├── gitlog.go           # Reverts, high-churn files, stale branches
 │   │   ├── patterns.go         # Large files, missing tests, low test coverage ratios (Go, JS/TS, Python, Ruby, Java, Kotlin, Rust, C#, PHP, Swift)
 │   │   ├── lotteryrisk*.go     # Lottery risk: core, ownership math, review analysis
