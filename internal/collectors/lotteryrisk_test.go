@@ -27,6 +27,7 @@ func TestLotteryRiskCollector_Name(t *testing.T) {
 }
 
 func TestLotteryRiskCollector_SingleAuthor(t *testing.T) {
+	lowerLotteryRiskThresholds(t)
 	// All files by one author should yield lottery risk 1, confidence 0.8.
 	_, dir := initGoGitRepo(t, map[string]string{
 		"main.go":     "package main\n\nfunc main() {}\n",
@@ -87,6 +88,7 @@ func TestLotteryRiskCollector_TwoAuthorsEqual(t *testing.T) {
 }
 
 func TestLotteryRiskCollector_OneDominant(t *testing.T) {
+	lowerLotteryRiskThresholds(t)
 	// One author writes 90% of code, lottery risk should be 1.
 	repo, dir := initGoGitRepo(t, map[string]string{
 		"main.go": "package main\n",
@@ -185,6 +187,7 @@ func TestLotteryRiskCollector_DeterministicOutput(t *testing.T) {
 }
 
 func TestLotteryRiskCollector_SignalFields(t *testing.T) {
+	lowerLotteryRiskThresholds(t)
 	// Verify all signal fields are populated correctly.
 	_, dir := initGoGitRepo(t, map[string]string{
 		"main.go": "package main\n\nfunc main() {}\n",
@@ -332,6 +335,7 @@ func TestLotteryRiskConfidence_LotteryRisk10(t *testing.T) {
 // --- GitDepth tests ---
 
 func TestLotteryRiskCollector_GitDepthLimitsCommitWalk(t *testing.T) {
+	lowerLotteryRiskThresholds(t)
 	// With a very low GitDepth, commit-based ownership weights should differ
 	// from the default. This test verifies that walkCommitsForOwnership
 	// respects the depth setting.
@@ -516,6 +520,7 @@ func TestLotteryRiskCollector_ReviewDiversity(t *testing.T) {
 }
 
 func TestLotteryRiskCollector_ReviewParticipation_NoToken(t *testing.T) {
+	lowerLotteryRiskThresholds(t)
 	t.Setenv("GITHUB_TOKEN", "")
 
 	_, dir := initGoGitRepo(t, map[string]string{
@@ -626,6 +631,7 @@ func TestResolveAnonymize_AutoNoToken(t *testing.T) {
 }
 
 func TestLotteryRiskCollector_AnonymizeAlways(t *testing.T) {
+	lowerLotteryRiskThresholds(t)
 	_, dir := initGoGitRepo(t, map[string]string{
 		"main.go": "package main\n\nfunc main() {}\n",
 	})
@@ -665,6 +671,7 @@ func TestLotteryRiskCollector_DemoPathsSuppressed(t *testing.T) {
 }
 
 func TestLotteryRiskCollector_DemoPathsIncludedWithOptIn(t *testing.T) {
+	lowerLotteryRiskThresholds(t)
 	_, dir := initGoGitRepo(t, map[string]string{
 		"examples/basic/main.go": "package main\n\nfunc main() {}\n",
 	})
@@ -703,6 +710,7 @@ func TestLotteryRiskCollector_ExcludePatternsRespected(t *testing.T) {
 // --- Timestamp enrichment tests ---
 
 func TestLotteryRiskCollector_TimestampsEnriched(t *testing.T) {
+	lowerLotteryRiskThresholds(t)
 	_, dir := initGoGitRepo(t, map[string]string{
 		"main.go":     "package main\n\nfunc main() {}\n",
 		"lib/util.go": "package lib\n\nfunc Util() {}\n",
@@ -756,6 +764,7 @@ func TestLotteryRiskCollector_Metrics(t *testing.T) {
 }
 
 func TestLotteryRiskCollector_GitRootUsed(t *testing.T) {
+	lowerLotteryRiskThresholds(t)
 	_, dir := initGoGitRepo(t, map[string]string{
 		"main.go": "package main\n\nfunc main() {}\n",
 	})
@@ -978,6 +987,7 @@ func TestComputeLotteryRisk_OnlyBlame(t *testing.T) {
 }
 
 func TestLotteryRiskCollector_GitSinceOption(t *testing.T) {
+	lowerLotteryRiskThresholds(t)
 	// Single-author repo with GitSince should still produce signals.
 	_, dir := initGoGitRepo(t, map[string]string{
 		"main.go":     "package main\n\nfunc main() {}\n",

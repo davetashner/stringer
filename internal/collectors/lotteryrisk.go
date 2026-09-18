@@ -102,6 +102,7 @@ type dirOwnership struct {
 	Path        string
 	Authors     map[string]*authorStats
 	TotalLines  int
+	SourceFiles int // source files found in the directory (before the blame cap)
 	LotteryRisk int
 }
 
@@ -148,8 +149,17 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 	}
 
 	// Walk commits and attribute weighted commit activity to directories.
+	// Commit weight is scoped per directory: each changed file credits only
+	// its owning directory (see findOwningDir).
 	if err := walkCommitsForOwnership(ctx, gitRoot, ownership, opts); err != nil {
 		return nil, fmt.Errorf("walking commits for ownership: %w", err)
+	}
+
+	// Shallow clones over-report ownership; detect once and annotate signals.
+	hist := detectHistory(ctx, gitRoot)
+	if hist.Shallow {
+		slog.Warn("lottery risk: shallow clone detected, ownership is over-estimated and confidence is capped",
+			"commits", hist.Commits, "cap", shallowConfidenceCap)
 	}
 
 	// Resolve anonymization mode.
@@ -181,8 +191,11 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 		// Build metrics entry for every non-empty directory.
 		metricsDirectories = append(metricsDirectories, buildDirectoryOwnership(own))
 
-		if bf <= defaultLotteryRiskThreshold {
+		if bf <= defaultLotteryRiskThreshold && hasMinimumSubstance(own) {
 			sig := buildLotteryRiskSignal(own, anon)
+			if hist.Shallow {
+				applyShallowCaveat(&sig, hist.Commits)
+			}
 			signals = append(signals, sig)
 		}
 	}
@@ -333,6 +346,7 @@ func blameDirectories(ctx context.Context, gitDir string, repoPath string, owner
 		if dir == "" {
 			return nil
 		}
+		ownership[dir].SourceFiles++
 
 		if dirFileCount[dir] >= maxFiles {
 			return nil
@@ -416,7 +430,7 @@ func walkCommitsForOwnership(ctx context.Context, gitDir string, ownership map[s
 			strings.Contains(errMsg, "bad default revision") ||
 			strings.Contains(errMsg, "object not found") ||
 			strings.Contains(errMsg, "exit status 128") {
-			slog.Warn("lottery risk: limited git history detected, ownership data may be incomplete (shallow clone?)", "error", err)
+			slog.Warn("lottery risk: limited git history detected, commit-weighted ownership unavailable (shallow or empty clone?)", "error", err)
 			return nil
 		}
 		return fmt.Errorf("git log --numstat: %w", err)

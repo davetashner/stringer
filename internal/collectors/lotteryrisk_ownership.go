@@ -14,16 +14,24 @@ import (
 
 // ownershipFraction computes a weighted ownership score from blame-line and
 // commit-weight contributions. Returns a value in [0, 1].
+//
+// When only one component is available for the directory (no blamed lines,
+// or no commits inside the walked window), that component carries the full
+// weight. Otherwise a sole author would show as "60%" or "40%" and the
+// majority test would misreport the lottery risk (DR-006 amendment).
 func ownershipFraction(blameLines, totalBlameLines int, commitWeight, totalCommitWeight float64) float64 {
-	var blameFrac float64
-	if totalBlameLines > 0 {
-		blameFrac = float64(blameLines) / float64(totalBlameLines)
+	switch {
+	case totalBlameLines > 0 && totalCommitWeight > 0:
+		blameFrac := float64(blameLines) / float64(totalBlameLines)
+		commitFrac := commitWeight / totalCommitWeight
+		return blameFrac*blameWeight + commitFrac*commitWeightFraction
+	case totalBlameLines > 0:
+		return float64(blameLines) / float64(totalBlameLines)
+	case totalCommitWeight > 0:
+		return commitWeight / totalCommitWeight
+	default:
+		return 0
 	}
-	var commitFrac float64
-	if totalCommitWeight > 0 {
-		commitFrac = commitWeight / totalCommitWeight
-	}
-	return blameFrac*blameWeight + commitFrac*commitWeightFraction
 }
 
 // computeLotteryRisk calculates the lottery risk for a directory: the minimum
