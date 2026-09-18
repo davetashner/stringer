@@ -62,11 +62,10 @@ func parseSbtDeps(data []byte) []PackageQuery {
 		}
 		seen[key] = true
 
-		queries = append(queries, PackageQuery{
-			Ecosystem: "Maven",
-			Name:      groupID + ":" + artifactID,
-			Version:   version,
-		})
+		// Ivy ranges ("[1.0,2.0)", "1.0+") query their lower bound as a floor.
+		if q := mavenStyleQuery("Maven", groupID+":"+artifactID, version); q != nil {
+			queries = append(queries, *q)
+		}
 	}
 
 	return queries

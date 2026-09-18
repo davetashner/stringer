@@ -41,18 +41,23 @@ func parseNpmDeps(data []byte) ([]PackageQuery, error) {
 				continue
 			}
 
-			v := extractNpmVersion(version)
+			v, isRange := extractNpmVersion(version)
 			if v == "" {
 				continue
 			}
 
 			seen[name] = true
-			queries = append(queries, PackageQuery{
+			q := PackageQuery{
 				Ecosystem: "npm",
 				Name:      name,
 				Version:   v,
 				Dev:       group.dev,
-			})
+			}
+			if isRange {
+				q.IsRange = true
+				q.Constraint = strings.TrimSpace(version)
+			}
+			queries = append(queries, q)
 		}
 	}
 
@@ -132,45 +137,23 @@ func parseNpmLockDeps(data []byte) ([]PackageQuery, error) {
 	return queries, nil
 }
 
-// extractNpmVersion strips semver range prefixes and returns the base version string.
-// Returns "" for versions that can't be meaningfully queried (wildcards, URLs, tags).
-func extractNpmVersion(version string) string {
+// extractNpmVersion reduces a semver constraint to a concrete query version
+// and reports whether the constraint is a range (^, ~, >=, ||, x, hyphen)
+// rather than an exact pin. Returns "" for versions that can't be
+// meaningfully queried (wildcards, URLs, tags, workspace links).
+func extractNpmVersion(version string) (string, bool) {
 	version = strings.TrimSpace(version)
 
-	if version == "" || version == "*" || version == "latest" || version == "next" {
-		return ""
+	if version == "" || version == "latest" || version == "next" {
+		return "", false
 	}
 
-	// Skip URL-based versions (git, http, file, etc.).
+	// Skip URL-based versions (git, http, file, etc.) and workspace/alias references.
 	if strings.Contains(version, "://") || strings.HasPrefix(version, "git+") ||
-		strings.HasPrefix(version, "file:") || strings.HasPrefix(version, "link:") {
-		return ""
+		strings.HasPrefix(version, "file:") || strings.HasPrefix(version, "link:") ||
+		strings.HasPrefix(version, "workspace:") || strings.HasPrefix(version, "npm:") {
+		return "", false
 	}
 
-	// Skip workspace references.
-	if strings.HasPrefix(version, "workspace:") {
-		return ""
-	}
-
-	// For range expressions with ||, take the first segment.
-	if idx := strings.Index(version, "||"); idx >= 0 {
-		version = strings.TrimSpace(version[:idx])
-	}
-
-	// For range expressions with space-separated bounds (e.g. ">=1.0.0 <2.0.0"),
-	// take the first part.
-	if idx := strings.Index(version, " "); idx >= 0 {
-		version = version[:idx]
-	}
-
-	// Strip semver range prefixes.
-	version = strings.TrimLeft(version, "^~>=<!")
-	version = strings.TrimSpace(version)
-
-	// Skip if nothing left or starts with non-digit (tag names like "beta").
-	if version == "" || (version[0] < '0' || version[0] > '9') {
-		return ""
-	}
-
-	return version
+	return splitSemverConstraint(version, false)
 }

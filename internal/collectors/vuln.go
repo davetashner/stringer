@@ -45,6 +45,7 @@ type VulnEntry struct {
 	Ecosystem    string
 	FilePath     string
 	Dev          bool
+	Constraint   string // declared range when Version is only a floor, else ""
 }
 
 // VulnCollector detects known vulnerabilities in Go module dependencies
@@ -223,12 +224,25 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 		// package at multiple versions — without the version, a dev-only
 		// and a production instance of the same CVE collapse into one
 		// signal with a misleading mix of both (stringer-kgr).
-		title := fmt.Sprintf("Vulnerable dependency: %s@%s [%s]", r.PackageName, r.Version, titleID)
-
-		var desc string
-		if r.FixedVersion != "" {
+		//
+		// A range/floor finding is titled by its declared constraint: the
+		// queried version is only the minimum the manifest allows, so the
+		// title must not claim it is installed (stringer-nxx.2).
+		var title, desc string
+		switch {
+		case r.IsRange:
+			title = fmt.Sprintf("Vulnerable dependency floor: %s allows %s", declaredSpec(r.PackageName, r.Constraint), titleID)
+			desc = fmt.Sprintf("%s\n\nThe declared minimum %s of %s is vulnerable; the installed version is not known without a lockfile.", r.Summary, r.Version, r.PackageName)
+			if r.FixedVersion != "" {
+				desc += fmt.Sprintf(" Raise the floor to %s.", r.FixedVersion)
+			} else {
+				desc += " No fixed version is available yet."
+			}
+		case r.FixedVersion != "":
+			title = fmt.Sprintf("Vulnerable dependency: %s@%s [%s]", r.PackageName, r.Version, titleID)
 			desc = fmt.Sprintf("%s\n\nUpgrade %s from %s to %s.", r.Summary, r.PackageName, r.Version, r.FixedVersion)
-		} else {
+		default:
+			title = fmt.Sprintf("Vulnerable dependency: %s@%s [%s]", r.PackageName, r.Version, titleID)
 			desc = fmt.Sprintf("%s\n\nNo fix available for %s %s.", r.Summary, r.PackageName, r.Version)
 		}
 
@@ -251,6 +265,12 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 			if confidence < 0.3 {
 				confidence = 0.3
 			}
+		}
+
+		// A declared floor is not an installed version: discount after the
+		// dev adjustment so the two effects compose (DR-023 amendment).
+		if r.IsRange {
+			confidence = applyRangeDiscount(confidence)
 		}
 
 		reachNote := "Reachability: production — this dependency ships with the built artifact."
@@ -298,6 +318,9 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 		if r.Dev {
 			tags = append(tags, "dev-only")
 		}
+		if r.IsRange {
+			tags = append(tags, "version-floor")
+		}
 
 		signals = append(signals, signal.RawSignal{
 			Source:      "vuln",
@@ -320,6 +343,7 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 			Ecosystem:    meta.ecosystem,
 			FilePath:     meta.filePath,
 			Dev:          r.Dev,
+			Constraint:   r.Constraint,
 		})
 	}
 
@@ -403,6 +427,7 @@ func parseGradleQueries(repoPath string) (string, []PackageQuery) {
 }
 
 // parseCargoQueries reads Cargo.toml and returns PackageQuery entries for OSV lookup.
+// Bare Cargo requirements are caret ranges and are queried at their floor.
 // Returns nil if no Cargo.toml exists or on parse error (non-fatal, logged as warning).
 func parseCargoQueries(repoPath string) []PackageQuery {
 	data, err := FS.ReadFile(filepath.Join(repoPath, "Cargo.toml"))

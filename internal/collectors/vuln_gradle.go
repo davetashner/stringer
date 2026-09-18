@@ -124,11 +124,8 @@ func parseCoordinates(coords string) *PackageQuery {
 	if len(parts) < 3 || parts[2] == "" {
 		return nil
 	}
-	return &PackageQuery{
-		Ecosystem: "Maven",
-		Name:      parts[0] + ":" + parts[1],
-		Version:   parts[2],
-	}
+	// Dynamic versions ("1.0+", "[1.0,2.0)") query their lower bound as a floor.
+	return mavenStyleQuery("Maven", parts[0]+":"+parts[1], parts[2])
 }
 
 // parseMapNotation extracts group, name, version from a map-style dependency declaration.
@@ -142,9 +139,5 @@ func parseMapNotation(line string) *PackageQuery {
 		return nil
 	}
 
-	return &PackageQuery{
-		Ecosystem: "Maven",
-		Name:      groupMatch[1] + ":" + nameMatch[1],
-		Version:   verMatch[1],
-	}
+	return mavenStyleQuery("Maven", groupMatch[1]+":"+nameMatch[1], verMatch[1])
 }

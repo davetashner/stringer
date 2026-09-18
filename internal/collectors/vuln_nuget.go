@@ -60,11 +60,12 @@ func parseCsprojDeps(data []byte) ([]PackageQuery, error) {
 			}
 			seen[ref.Include] = true
 
-			queries = append(queries, PackageQuery{
-				Ecosystem: "NuGet",
-				Name:      ref.Include,
-				Version:   version,
-			})
+			// Floating ("1.0.*") and bracket ("[1.0,2.0)") versions query
+			// their lower bound as a floor; a plain version resolves to
+			// itself under NuGet's lowest-applicable rule and counts as exact.
+			if q := mavenStyleQuery("NuGet", ref.Include, version); q != nil {
+				queries = append(queries, *q)
+			}
 		}
 	}
 

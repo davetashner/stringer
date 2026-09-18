@@ -30,6 +30,14 @@ Additionally, partial OSV failures (unfetchable details, unpaginated `querybatch
 
 Signal titles now include the package version (`image-size@0.7.5`): the pipeline deduplicates on Source+Kind+FilePath+Line+Title, so without the version a dev-only and a production instance of the same CVE collapsed into a single signal that carried the production confidence and the dev-only description. Titles are part of signal IDs; this changes IDs once.
 
+## Amendment (2026-09-18, stringer-nxx.2): range and floor semantics
+
+The September 2026 benchmark showed the collector reporting a declared *minimum* as the installed version: pyproject `click>=8.1.3` became "click@8.1.3" at 0.85 (all nine flask signals), Cargo's implicit caret `tokio = "1.2.0"` became "tokio@1.2.0", composer `^7.4.0 || ^8.0.0` became "@7.4.0", npm `^1.2.3` became "minimist@1.2.3" at 0.95. Each parser now records whether the declaration is an exact pin or a range (`PackageQuery.IsRange`, with the declaration kept in `Constraint`): Python `==`/`===` pin and every other operator floats; a bare Cargo requirement is a caret and only `=x.y.z` pins; npm/Composer `^ ~ > >= < <= || x * -` float and a bare or `=`-prefixed version pins; Maven/Gradle/sbt/NuGet bracket ranges, `1.0+` and `1.0.*` float while a plain version counts as exact (resolvers pick that version); Swift `from:`/`upToNext*`/`..<` float and `exact:` pins; Hex `~>`/`>=`/compound requirements float and `==` or a bare version pins. The floor stays the OSV query version (OSV needs a concrete version), so the set of advisories is unchanged.
+
+**Reporting.** A range finding is titled `Vulnerable dependency floor: click>=8.1.3 allows CVE-2026-7246` and its body says the declared minimum is vulnerable, that the installed version is not known without a lockfile, and which version to raise the floor to. Confidence is multiplied by **0.6** (chosen over a flat 0.5 cap so severity ordering survives: critical 0.95 → 0.57, high 0.85 → 0.51, medium 0.65 → 0.39), applied after the dev-only discount so the two compose; the `version-floor` tag marks these signals. Titles change for every range finding, so signal IDs change once.
+
+**Lockfiles win.** When a lockfile with resolved versions sits next to the manifest it is used instead and its versions are exact: package-lock.json today; Cargo.lock and composer.lock, workspace-member skipping and the dephealth counterpart land in the follow-up PR for the same bead. composer.json `require-dev` is now marked dev-only, matching npm.
+
 ## Consequences
 
 - npm gains full reachability awareness; other ecosystems with a dev distinction (Cargo `dev-dependencies`, Poetry/uv groups, Gemfile groups) parse as production until given the same treatment (follow-up bead).

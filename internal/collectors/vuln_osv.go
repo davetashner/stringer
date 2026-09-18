@@ -31,6 +31,12 @@ type PackageQuery struct {
 	Name      string
 	Version   string
 	Dev       bool // true when the dependency is development-only (not production-reachable)
+	// IsRange is true when Version is only the floor of a declared range
+	// (>=, ^, ~, ||, wildcards, bare Cargo versions) rather than an exact
+	// pin or a lockfile-resolved version. Constraint holds the declaration
+	// as written, for titles (e.g. ">=8.1.3", "^1.2.3").
+	IsRange    bool
+	Constraint string
 }
 
 // VulnDetail holds processed vulnerability information from OSV.dev.
@@ -44,6 +50,8 @@ type VulnDetail struct {
 	FixedVersion string
 	Severity     string // CVSS v3 score string, or ""
 	Dev          bool   // true when the affected dependency is development-only
+	IsRange      bool   // true when Version is a declared floor, not an installed version
+	Constraint   string // the declaration as written when IsRange is set
 }
 
 // OSVQueryResult holds vulnerability details plus coverage accounting so
@@ -207,6 +215,8 @@ func (c *realOSVClient) QueryBatch(ctx context.Context, queries []PackageQuery) 
 			FixedVersion: extractOSVFixVersion(vuln, h.query.Ecosystem, h.query.Name),
 			Severity:     extractOSVSeverity(vuln),
 			Dev:          h.query.Dev,
+			IsRange:      h.query.IsRange,
+			Constraint:   h.query.Constraint,
 		})
 	}
 

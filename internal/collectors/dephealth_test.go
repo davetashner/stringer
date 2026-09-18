@@ -1780,21 +1780,28 @@ func TestParseComposerDeps_Invalid(t *testing.T) {
 
 func TestExtractComposerVersion(t *testing.T) {
 	tests := []struct {
-		input string
-		want  string
+		input     string
+		want      string
+		wantRange bool
 	}{
-		{"^1.0", "1.0"},
-		{"~2.3.0", "2.3.0"},
-		{">=1.0,<2.0", "1.0"},
-		{"1.0.0", "1.0.0"},
-		{"*", ""},
-		{"dev-main", ""},
-		{"", ""},
-		{"v1.2.3", "1.2.3"},
+		{"^1.0", "1.0", true},
+		{"~2.3.0", "2.3.0", true},
+		{">=1.0,<2.0", "1.0", true},
+		{"1.0.0", "1.0.0", false},
+		{"*", "", true},
+		{"dev-main", "", false},
+		{"", "", false},
+		{"v1.2.3", "1.2.3", false},
+		{"^7.4.0 || ^8.0.0", "7.4.0", true},
+		{"7.4.*", "7.4", true},
+		{"1.0.x-dev", "", false},
+		{"^1.0@beta", "1.0", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			assert.Equal(t, tt.want, extractComposerVersion(tt.input))
+			got, isRange := extractComposerVersion(tt.input)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantRange, isRange)
 		})
 	}
 }
@@ -1907,18 +1914,22 @@ func TestParseMixDeps_Empty(t *testing.T) {
 
 func TestExtractMixVersion(t *testing.T) {
 	tests := []struct {
-		input string
-		want  string
+		input     string
+		want      string
+		wantRange bool
 	}{
-		{"~> 1.7.0", "1.7.0"},
-		{">= 1.0.0", "1.0.0"},
-		{"== 2.0.0", "2.0.0"},
-		{"1.0.0", "1.0.0"},
-		{"", ""},
+		{"~> 1.7.0", "1.7.0", true},
+		{">= 1.0.0", "1.0.0", true},
+		{"== 2.0.0", "2.0.0", false},
+		{"1.0.0", "1.0.0", false},
+		{"~> 1.2 and >= 1.2.3", "1.2", true},
+		{"", "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			assert.Equal(t, tt.want, extractMixVersion(tt.input))
+			got, isRange := extractMixVersion(tt.input)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantRange, isRange)
 		})
 	}
 }
