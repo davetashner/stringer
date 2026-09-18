@@ -163,7 +163,8 @@ func extendClones(groups []cloneGroup) []cloneGroup {
 					}
 				}
 			}
-			active = append(kept, m)
+			kept = append(kept, m)
+			active = kept
 		}
 	}
 

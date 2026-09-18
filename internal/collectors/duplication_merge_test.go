@@ -6,6 +6,7 @@ package collectors
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -45,7 +46,7 @@ func TestMergeCloneGroups_OverlappingWindowsBecomeOneGroup(t *testing.T) {
 		t.Error("all-exact members must stay an exact clone")
 	}
 	want := []cloneLocation{{Path: "a.go", StartLine: 10, EndLine: 19}, {Path: "b.go", StartLine: 40, EndLine: 49}}
-	if len(g.Locations) != 2 || g.Locations[0] != want[0] || g.Locations[1] != want[1] {
+	if !slices.Equal(g.Locations, want) {
 		t.Errorf("expected locations %+v, got %+v", want, g.Locations)
 	}
 }
