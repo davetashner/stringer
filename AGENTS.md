@@ -42,7 +42,12 @@ stringer/
 │   │   ├── todos.go            # TODO/FIXME/HACK/XXX/BUG/OPTIMIZE scanner; owns defaultExcludePatterns (vendor, node_modules, .beads, .stringer, .claude/worktrees, **/compiled/**, *.min.js, *.pb.go, zz_generated*.go, …) shared by all collectors; "!pattern" in user excludes opts a default back in
 │   │   ├── patterns_classify.go # shared file classification: isTestFile, isGeneratedFile (header markers in first 5 lines + minified heuristic: avg line > 400 chars over first 20 lines) used by every source-walking collector
 │   │   ├── gitlog.go           # Reverts, high-churn files, stale branches
-│   │   ├── patterns.go         # Large files, missing tests, low test coverage ratios (Go, JS/TS, Python, Ruby, Java, Kotlin, Rust, C#, PHP, Swift)
+│   │   ├── patterns*.go        # Large files, missing tests, low test coverage ratios (Go, JS/TS, Python, Ruby, Java, Kotlin, Rust, C#, PHP, Swift, Scala, Elixir).
+│   │   │                       # patterns_testindex.go: repo-wide test index built once per scan — a source file counts as tested when any test file anywhere matches its stem
+│   │   │                       # (<Name>Test(s)/Spec/Suite, Test<Name>, <name>_test/_spec, test_<name>, <Name>.test/.spec) or a <Name>Test(s) basename ends with it (NotificationDatabaseChannelTest → DatabaseChannel);
+│   │   │                       # covers Maven src/main↔src/test mirrors (any module depth) and tests/<Project>.Tests/ sibling projects. patterns_testlookup.go: path-based fallbacks (same dir, parallel test roots, Rust inline tests).
+│   │   │                       # patterns_classify.go: isNonSourceForTests excludes config (config/, *.config.*, settings.py, dotfiles), data-only classes in PHP/C#/Java/Kotlin/Scala (Events/, Contracts/, Exceptions/, Dto(s)/, Models/,
+│   │   │                       # Entities/, Interfaces/, *Exception/*Dto/*Interface), and doc/demo trees (docs_src/, docs/, examples/, extras/, samples/, tutorial*/ unless --include-demo-paths) from missing-tests AND DirectoryTestRatios
 │   │   ├── lotteryrisk*.go     # Lottery risk: core, ownership math, review analysis, minimum-substance + shallow-history rules (lotteryrisk_substance.go: >=3 source files and >=100 blamed lines, static/fixture dir names skipped; shallow clones capped at 0.5 confidence and tagged shallow-history, DR-006 amendment)
 │   │   ├── github.go           # GitHub issues, PRs, and review comments
 │   │   ├── dephealth*.go       # Dependency health: 10 ecosystems (Go, npm, Cargo, Maven, NuGet, PyPI, Packagist, SwiftPM, sbt, Hex)

@@ -140,6 +140,15 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 	}
 	dirMap := make(map[string]*dirStats)
 
+	// Source files that need a missing-test check once the walk has seen
+	// every test file in the repo.
+	type testCandidate struct {
+		absPath string
+		relPath string
+	}
+	var pending []testCandidate
+	index := newTestIndex()
+
 	err := FS.WalkDir(repoPath, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil // skip unreadable entries
@@ -213,32 +222,27 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 			dirMap[dir] = &dirStats{}
 		}
 
-		if isTestFile(relPath) {
+		// Every walked file feeds the repo-wide test index; add() ignores
+		// basenames without a recognised test affix.
+		index.add(relPath)
+
+		switch {
+		case isTestFile(relPath):
 			dirMap[dir].testFiles++
-		} else {
+		case isNonSourceForTests(relPath, opts.IncludeDemoPaths):
+			// Config, data-only classes, and doc/demo trees are neither
+			// source nor test for coverage purposes.
+		default:
 			dirMap[dir].sourceFiles++
 
 			// C3.2: Missing test detection — only for non-test source files
-			// with meaningful size. Suppressed in demo/example paths, test root
-			// dirs, and generated files by default.
+			// with meaningful size, outside test roots, and not generated.
+			// The lookup itself runs after the walk so the index is complete.
 			if lineCount >= minSourceLinesForTestCheck &&
 				!isUnderTestRoot(relPath, testRoots) &&
 				!isUnderMavenTestRoot(relPath) &&
 				!isGeneratedFile(path) {
-				if !hasTestCounterpart(path, relPath, repoPath, testRoots) {
-					if opts.IncludeDemoPaths || !isDemoPath(relPath) {
-						signals = append(signals, signal.RawSignal{
-							Source:      "patterns",
-							Kind:        "missing-tests",
-							FilePath:    relPath,
-							Line:        0,
-							Title:       fmt.Sprintf("No test file found for %s", relPath),
-							Description: "No corresponding test file was found using naming heuristics. Consider adding tests.",
-							Confidence:  missingTestConfidence,
-							Tags:        []string{"missing-tests"},
-						})
-					}
-				}
+				pending = append(pending, testCandidate{absPath: path, relPath: relPath})
 			}
 		}
 
@@ -252,6 +256,30 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 
 	if err != nil {
 		return nil, fmt.Errorf("walking repo: %w", err)
+	}
+
+	// C3.2: Missing test detection. A source file is covered when any test
+	// file anywhere in the repo matches its basename (repo-wide index) or a
+	// path-based heuristic finds a counterpart (same dir, parallel test tree,
+	// Maven layout, Rust inline tests, ...).
+	for _, cand := range pending {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if index.covers(filepath.Base(cand.relPath)) ||
+			hasTestCounterpart(cand.absPath, cand.relPath, repoPath, testRoots) {
+			continue
+		}
+		signals = append(signals, signal.RawSignal{
+			Source:      "patterns",
+			Kind:        "missing-tests",
+			FilePath:    cand.relPath,
+			Line:        0,
+			Title:       fmt.Sprintf("No test file found for %s", cand.relPath),
+			Description: "No corresponding test file was found using naming heuristics. Consider adding tests.",
+			Confidence:  missingTestConfidence,
+			Tags:        []string{"missing-tests"},
+		})
 	}
 
 	// C3.3: Test-to-source ratio per directory.
