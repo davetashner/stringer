@@ -51,14 +51,41 @@ var (
 	reMapNotation = regexp.MustCompile(
 		`(?im)^\s*` + configPattern + `[\s(]+.*group\s*:`,
 	)
+
+	// gradleAccessor matches a version-catalog accessor such as libs.foo.bar.
+	gradleAccessor = `([A-Za-z]\w*(?:\.\w+)+)`
+
+	// reCatalogNotation matches "implementation libs.foo.bar", optionally
+	// parenthesised, wrapped in (enforced)platform(), followed by a closure
+	// ("{ exclude ... }") or a trailing comma opening a multi-line list.
+	reCatalogNotation = regexp.MustCompile(
+		`(?im)^\s*` + configPattern + `\s*\(?\s*(?:(?:enforced)?platform\s*\(\s*)?` + gradleAccessor + `\s*\)*\s*(?:\{.*|,)?$`,
+	)
+
+	// reCatalogContinuation matches a bare accessor on a list continuation line.
+	reCatalogContinuation = regexp.MustCompile(`(?i)^\s*` + gradleAccessor + `\s*,?$`)
 )
 
-// parseGradleDeps reads a build.gradle or build.gradle.kts file and returns
-// PackageQuery entries for OSV lookup.
+// parseGradleDeps reads a build.gradle(.kts) file and returns PackageQuery
+// entries for OSV lookup from literal "g:a:v" coordinates only.
 func parseGradleDeps(data []byte) ([]PackageQuery, error) {
+	return parseGradleDepsWithCatalogs(data, nil)
+}
+
+// parseGradleDepsWithCatalogs is parseGradleDeps plus catalog accessors
+// (libs.foo.bar); comma-continued lists inherit the opening line's config.
+func parseGradleDepsWithCatalogs(data []byte, catalogs gradleCatalogs) ([]PackageQuery, error) {
 	lines := strings.Split(string(data), "\n")
 	var queries []PackageQuery
 	seen := make(map[string]bool)
+	pending := "" // config of an open comma-continued list
+
+	add := func(q *PackageQuery) {
+		if q != nil && !seen[q.Name+"@"+q.Version] {
+			seen[q.Name+"@"+q.Version] = true
+			queries = append(queries, *q)
+		}
+	}
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -69,17 +96,44 @@ func parseGradleDeps(data []byte) ([]PackageQuery, error) {
 			continue
 		}
 
+		// Accessor lines carry no string literals; drop a trailing "// comment".
+		code := strings.TrimSpace(strings.SplitN(trimmed, "//", 2)[0])
+
+		// Continuation line of a comma-separated list: "libs.foo,".
+		if pending != "" {
+			if m := reCatalogContinuation.FindStringSubmatch(code); m != nil {
+				if !isTestConfig(pending) {
+					add(parseCoordinates(catalogs.resolve(m[1])))
+				}
+				if !strings.HasSuffix(code, ",") {
+					pending = ""
+				}
+				continue
+			}
+			pending = ""
+		}
+
+		// Catalog accessor: implementation libs.foo.bar
+		if m := reCatalogNotation.FindStringSubmatch(code); m != nil {
+			config := extractConfig(code)
+			if strings.HasSuffix(code, ",") {
+				pending = config
+			}
+			if isTestConfig(config) {
+				continue
+			}
+			add(parseCoordinates(catalogs.resolve(m[1])))
+			continue
+		}
+
 		// Try string notation first (covers both Groovy and Kotlin DSL).
 		if m := reStringNotation.FindStringSubmatch(line); m != nil {
 			config := extractConfig(trimmed)
 			if isTestConfig(config) {
 				continue
 			}
-			q := parseCoordinates(m[1])
-			if q != nil && !seen[q.Name+"@"+q.Version] {
-				seen[q.Name+"@"+q.Version] = true
-				queries = append(queries, *q)
-			}
+			// "g:a:$versions.x" literals resolve through the Groovy ext maps.
+			add(parseCoordinates(catalogs.interpolate(m[1])))
 			continue
 		}
 
@@ -89,11 +143,7 @@ func parseGradleDeps(data []byte) ([]PackageQuery, error) {
 			if isTestConfig(config) {
 				continue
 			}
-			q := parseMapNotation(line)
-			if q != nil && !seen[q.Name+"@"+q.Version] {
-				seen[q.Name+"@"+q.Version] = true
-				queries = append(queries, *q)
-			}
+			add(parseMapNotation(line))
 		}
 	}
 
@@ -120,6 +170,9 @@ func isTestConfig(config string) bool {
 // parseCoordinates parses a "group:artifact:version" string into a PackageQuery.
 // Returns nil if the format is invalid or version is missing.
 func parseCoordinates(coords string) *PackageQuery {
+	if coords == "" {
+		return nil
+	}
 	parts := strings.Split(coords, ":")
 	if len(parts) < 3 || parts[2] == "" {
 		return nil
