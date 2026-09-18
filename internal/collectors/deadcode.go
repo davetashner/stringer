@@ -289,7 +289,7 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 	// declares it a library, exports its public symbols for downstream
 	// consumers the reference search cannot see (stringer-nxx.3).
 	libManifest, appManifest := manifestKind(repoPath)
-	isLibrary := libManifest || !(hasEntryPoint || appManifest)
+	isLibrary := libManifest || (!hasEntryPoint && !appManifest)
 
 	// Pass 2: Tokenize every file once into an inverted index, then resolve
 	// each symbol with a lookup instead of a regexp scan over every file.
