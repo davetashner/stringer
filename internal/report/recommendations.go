@@ -157,7 +157,7 @@ func (s *recommendationsSection) analyzeCoverage(result *signal.ScanResult) {
 
 	noTests := 0
 	for _, d := range m.DirectoryTestRatios {
-		if d.TestFiles == 0 {
+		if d.CoveredFiles == 0 {
 			noTests++
 		} else if d.Ratio < 0.1 {
 			s.recs = append(s.recs, Recommendation{
@@ -170,7 +170,7 @@ func (s *recommendationsSection) analyzeCoverage(result *signal.ScanResult) {
 	if noTests > 0 {
 		s.recs = append(s.recs, Recommendation{
 			Severity: SeverityHigh,
-			Message:  fmt.Sprintf("%d directory(ies) have no test files. Prioritize test coverage for critical paths.", noTests),
+			Message:  fmt.Sprintf("%d directory(ies) have no tests for any of their source files. Prioritize test coverage for critical paths.", noTests),
 		})
 	}
 }

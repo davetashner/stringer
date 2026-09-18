@@ -31,8 +31,9 @@ const minSourceLinesForTestCheck = 20
 // contain before we report a low-test-ratio signal.
 const minSourceFilesForRatio = 3
 
-// lowTestRatioThreshold is the minimum test-to-source file ratio. Directories
-// below this threshold are flagged.
+// lowTestRatioThreshold is the minimum fraction of source files in a
+// directory that must be covered by a test file (anywhere in the repo).
+// Directories below this threshold are flagged.
 const lowTestRatioThreshold = 0.1
 
 // missingTestConfidence is the confidence score for missing-test signals.
@@ -77,11 +78,19 @@ type PatternsMetrics struct {
 }
 
 // DirectoryTestRatio describes the test coverage ratio for a directory.
+//
+// Ratio is CoveredFiles / SourceFiles: the fraction of source files in the
+// directory that have a matching test file anywhere in the repository (the
+// same decision missing-tests makes), so a directory whose tests live in a
+// mirrored tree (src/main ↔ src/test, src/ ↔ tests/, <Project> ↔
+// <Project>.Tests) is credited for them. TestFiles is the raw number of test
+// files physically colocated in the directory and is kept for context.
 type DirectoryTestRatio struct {
-	Path        string
-	SourceFiles int
-	TestFiles   int
-	Ratio       float64
+	Path         string
+	SourceFiles  int
+	CoveredFiles int
+	TestFiles    int
+	Ratio        float64
 }
 
 // PatternsCollector detects structural code-quality patterns such as
@@ -135,16 +144,20 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 
 	// Track per-directory file counts for test-ratio analysis.
 	type dirStats struct {
-		sourceFiles int
-		testFiles   int
+		sourceFiles  int
+		coveredFiles int
+		testFiles    int
 	}
 	dirMap := make(map[string]*dirStats)
 
-	// Source files that need a missing-test check once the walk has seen
-	// every test file in the repo.
+	// Source files whose test coverage is resolved once the walk has seen
+	// every test file in the repo. Every source file feeds the directory
+	// ratio; only those with report set may produce a missing-tests signal.
 	type testCandidate struct {
 		absPath string
 		relPath string
+		dir     string
+		report  bool
 	}
 	var pending []testCandidate
 	index := newTestIndex()
@@ -229,21 +242,24 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 		switch {
 		case isTestFile(relPath):
 			dirMap[dir].testFiles++
+		case isUnderTestRoot(relPath, testRoots), isTestOnlyDir(relPath):
+			// Helpers, fixtures and base classes inside a test tree are test
+			// support code: neither source to be covered nor test files.
 		case isNonSourceForTests(relPath, opts.IncludeDemoPaths):
 			// Config, data-only classes, and doc/demo trees are neither
 			// source nor test for coverage purposes.
 		default:
 			dirMap[dir].sourceFiles++
 
-			// C3.2: Missing test detection — only for non-test source files
-			// with meaningful size, outside test roots, and not generated.
-			// The lookup itself runs after the walk so the index is complete.
-			if lineCount >= minSourceLinesForTestCheck &&
-				!isUnderTestRoot(relPath, testRoots) &&
-				!isUnderMavenTestRoot(relPath) &&
-				!isGeneratedFile(path) {
-				pending = append(pending, testCandidate{absPath: path, relPath: relPath})
-			}
+			// C3.2/C3.3: the coverage lookup runs after the walk so the
+			// index is complete. A missing-tests signal is only reported for
+			// files with meaningful size that are not generated.
+			pending = append(pending, testCandidate{
+				absPath: path,
+				relPath: relPath,
+				dir:     dir,
+				report:  lineCount >= minSourceLinesForTestCheck && !isGeneratedFile(path),
+			})
 		}
 
 		fileCount++
@@ -261,13 +277,18 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 	// C3.2: Missing test detection. A source file is covered when any test
 	// file anywhere in the repo matches its basename (repo-wide index) or a
 	// path-based heuristic finds a counterpart (same dir, parallel test tree,
-	// Maven layout, Rust inline tests, ...).
+	// Maven layout, Rust inline tests, ...). The same decision feeds the
+	// per-directory ratio so mirrored test trees are credited.
 	for _, cand := range pending {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		if index.covers(filepath.Base(cand.relPath)) ||
 			hasTestCounterpart(cand.absPath, cand.relPath, repoPath, testRoots) {
+			dirMap[cand.dir].coveredFiles++
+			continue
+		}
+		if !cand.report {
 			continue
 		}
 		signals = append(signals, signal.RawSignal{
@@ -282,7 +303,7 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 		})
 	}
 
-	// C3.3: Test-to-source ratio per directory.
+	// C3.3: Covered-to-source ratio per directory.
 	// Also build metrics from ALL directories (not just below-threshold).
 	largeFileCount := 0
 	for _, sig := range signals {
@@ -299,13 +320,17 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 
 		// Build metrics for every directory with source files,
 		// excluding non-source/demo directories.
-		if stats.sourceFiles > 0 && (opts.IncludeDemoPaths || !isDemoPath(dir)) {
-			ratio := float64(stats.testFiles) / float64(stats.sourceFiles)
+		if stats.sourceFiles == 0 {
+			continue
+		}
+		ratio := float64(stats.coveredFiles) / float64(stats.sourceFiles)
+		if opts.IncludeDemoPaths || !isDemoPath(dir) {
 			dirRatios = append(dirRatios, DirectoryTestRatio{
-				Path:        dir,
-				SourceFiles: stats.sourceFiles,
-				TestFiles:   stats.testFiles,
-				Ratio:       ratio,
+				Path:         dir,
+				SourceFiles:  stats.sourceFiles,
+				CoveredFiles: stats.coveredFiles,
+				TestFiles:    stats.testFiles,
+				Ratio:        ratio,
 			})
 		}
 
@@ -318,15 +343,14 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 			continue
 		}
 
-		ratio := float64(stats.testFiles) / float64(stats.sourceFiles)
 		if ratio < testRatioThreshold {
 			signals = append(signals, signal.RawSignal{
 				Source:      "patterns",
 				Kind:        "low-test-ratio",
 				FilePath:    dir,
 				Line:        0,
-				Title:       fmt.Sprintf("Low test ratio in %s: %d test files / %d source files", dir, stats.testFiles, stats.sourceFiles),
-				Description: fmt.Sprintf("Test-to-source ratio is %.1f%%, below the %.0f%% threshold. Consider adding more tests.", ratio*100, testRatioThreshold*100),
+				Title:       fmt.Sprintf("Low test ratio in %s: %d of %d source files have tests", dir, stats.coveredFiles, stats.sourceFiles),
+				Description: fmt.Sprintf("Only %.1f%% of source files have a matching test file (anywhere in the repository), below the %.0f%% threshold. Consider adding more tests.", ratio*100, testRatioThreshold*100),
 				Confidence:  lowTestRatioConfidence,
 				Tags:        []string{"low-test-ratio"},
 			})

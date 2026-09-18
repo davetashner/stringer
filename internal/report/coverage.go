@@ -16,7 +16,11 @@ func init() {
 	Register(&coverageSection{})
 }
 
-// coverageSection reports test coverage gaps by directory.
+// coverageSection reports test coverage gaps by directory. The ratio is the
+// fraction of a directory's source files that have a matching test file
+// anywhere in the repository, so tests kept in a mirrored tree (src/test/,
+// tests/, <Project>.Tests/) count; the Tests column is the number of test
+// files physically colocated in the directory.
 type coverageSection struct {
 	dirs []collectors.DirectoryTestRatio
 }
@@ -56,6 +60,7 @@ func (s *coverageSection) Render(w io.Writer) error {
 	tbl := NewTable(
 		Column{Header: "Directory"},
 		Column{Header: "Source", Align: AlignRight},
+		Column{Header: "Covered", Align: AlignRight},
 		Column{Header: "Tests", Align: AlignRight},
 		Column{Header: "Ratio", Align: AlignRight},
 		Column{Header: "Assessment", Color: ColorAssessment},
@@ -65,6 +70,7 @@ func (s *coverageSection) Render(w io.Writer) error {
 		tbl.AddRow(
 			d.Path,
 			fmt.Sprintf("%d", d.SourceFiles),
+			fmt.Sprintf("%d", d.CoveredFiles),
 			fmt.Sprintf("%d", d.TestFiles),
 			fmt.Sprintf("%.2f", d.Ratio),
 			coverageAssessment(d),
@@ -78,8 +84,11 @@ func (s *coverageSection) Render(w io.Writer) error {
 	return nil
 }
 
+// coverageAssessment labels a directory. NO TESTS means none of its source
+// files has a test anywhere in the repository, not merely that no test file
+// is colocated with them.
 func coverageAssessment(d collectors.DirectoryTestRatio) string {
-	if d.TestFiles == 0 {
+	if d.CoveredFiles == 0 {
 		return "NO TESTS"
 	}
 	switch {
