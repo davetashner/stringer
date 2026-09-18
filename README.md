@@ -114,22 +114,34 @@ Collectors run concurrently, then signals are deduplicated (content-based SHA-25
 
 ## Real-world results
 
-Runs against 10 popular open-source repositories, from a 131-file library to a 28k-file monorepo:
+Runs against 13 open-source repositories, from a 130-file library to a
+31k-file monorepo, on the v1.10.0 release binary. "High" is the share of
+signals at confidence 0.8 or above, the ones worth acting on first.
 
-| Repository | Language | Files | Signals | Time | Highlights |
-|------------|----------|------:|--------:|-----:|------------|
-| [gin](https://github.com/gin-gonic/gin) | Go | 131 | 83 | 5s | 5 toxic hotspots, 27 untested files, 4 TODOs |
-| [express](https://github.com/expressjs/express) | JS | 214 | 65 | 2s | 1 CVE found, 6 lottery risks, 45 complex functions |
-| [flask](https://github.com/pallets/flask) | Python | 236 | 111 | 6s | 7 vulnerable deps, 42 dead code hits, 9 git hygiene issues |
-| [rustlings](https://github.com/rust-lang/rustlings) | Rust | 282 | 312 | 23s | 139 TODOs, 92 coverage gaps, 64 lottery risks |
-| [tokio](https://github.com/tokio-rs/tokio) | Rust | 848 | 825 | 36s | 174 dead code hits, 443 coverage gaps, 13 vulnerable deps |
-| [fastapi](https://github.com/tiangolo/fastapi) | Python | 2,867 | 607 | 20s | 91 stale docs, 85 lottery risks, 65 complex functions |
-| [react](https://github.com/facebook/react) | JS/TS | 6,840 | 4,415 | 2m 23s | 1,060 TODOs, 493 dead code hits, 37 vulnerable deps |
-| [django](https://github.com/django/django) | Python | 7,014 | 3,254 | 2m 37s | 1,441 dead code hits, 558 coverage gaps, 81 git hygiene issues |
-| [next.js](https://github.com/vercel/next.js) | JS/TS | 27,366 | 10,334 | 26m | 6,574 complex functions, 1,756 coverage gaps, 34 vulnerable deps |
-| [kubernetes](https://github.com/kubernetes/kubernetes) | Go | 28,284 | 40,117 | 1h 23m | 19,961 complex functions, 3,585 TODOs, 78 vulnerable deps |
+| Repository | Language | Files | Signals | High | Scan | Highlights |
+|------------|----------|------:|--------:|-----:|-----:|------------|
+| [gin](https://github.com/gin-gonic/gin) | Go | 130 | 299 | 7% | 4s | 57 complex functions, 7 lottery risks, 1 CVE |
+| [express](https://github.com/expressjs/express) | JS | 214 | 259 | 5% | 6s | 2 CVEs, 6 lottery risks, 1 revert |
+| [flask](https://github.com/pallets/flask) | Python | 236 | 283 | 3% | 4s | 9 vulnerable deps, 43 dead code hits, 6 lottery risks |
+| [rustlings](https://github.com/rust-lang/rustlings) | Rust | 293 | 499 | 14% | 4s | 141 TODOs, 97 coverage gaps, 65 lottery risks |
+| [tokio](https://github.com/tokio-rs/tokio) | Rust | 874 | 1,834 | 1% | 36s | 15 vulnerable deps, 2 yanked crates, 30 reverts |
+| [jellyfin](https://github.com/jellyfin/jellyfin) | C# | 2,619 | 2,542 | 9% | 46s | 53 large files, 28 churn hotspots, 156 TODOs |
+| [fastapi](https://github.com/tiangolo/fastapi) | Python | 3,139 | 868 | 16% | 8s | 39 stale docs, 90 lottery risks, 7 vulnerable deps |
+| [laravel](https://github.com/laravel/framework) | PHP | 3,411 | 4,169 | 3% | 3m 29s | 34 vulnerable deps, 1,140 complex functions, 57 lottery risks |
+| [react](https://github.com/facebook/react) | JS/TS | 7,240 | 8,970 | 5% | 2m 48s | 1,020 TODOs, 86 vulnerable deps, 29 coupling issues |
+| [django](https://github.com/django/django) | Python | 7,091 | 4,297 | 10% | 2m 35s | 1,626 complex functions, 11 circular dependencies, 88 git hygiene issues |
+| [kafka](https://github.com/apache/kafka) | Java/Scala | 7,547 | 12,069 | 4% | 52m | 5,208 complex functions, 4,625 coverage gaps, 161 TODOs |
+| [next.js](https://github.com/vercel/next.js) | JS/TS | 32,471 | 14,027 | 17% | 35m | 8,262 complex functions, 1,012 churn hotspots, 88 vulnerable deps |
+| [kubernetes](https://github.com/kubernetes/kubernetes) | Go | 31,373 | 51,542 | 20% | 1h 57m | 24,140 complex functions, 3,531 TODOs, 169 vulnerable deps |
 
-<sub>Tested February 2026 on stringer dev build. Repos cloned with `--depth 100`. Times include both `scan` and `report`.</sub>
+<sub>Tested September 2026 with stringer 1.10.0 on a 10-core Apple Silicon laptop. Repos cloned with `--depth 100`, GitHub collector excluded. Scan is the collector phase of `stringer scan`; `stringer report` takes about the same. Lottery-risk counts are inflated by shallow clones (a full clone of flask reports 1, not 6). Method, per-collector counts, commit SHAs and the false-positive review are in [docs/research/benchmark-2026-09.md](docs/research/benchmark-2026-09.md).</sub>
+
+Signal counts are dominated by three collectors (complexity, missing tests,
+duplication) and the low "High" column is deliberate: most signals are
+low-confidence hints. Start with `--min-confidence 0.8`, or let the report
+rank them. The dead-code collector is the slow one on repos over a few
+thousand files; `--exclude-collectors deadcode` cuts Kafka from 52 minutes
+to 2m 20s.
 
 On a large repo, preview first and cap the output:
 
