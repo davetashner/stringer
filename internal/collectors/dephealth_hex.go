@@ -117,7 +117,7 @@ func checkHexDeps(ctx context.Context, client hexRegistryClient, deps []PackageQ
 			}
 			desc += ". Update to a non-retired version."
 
-			signals = append(signals, signal.RawSignal{
+			s := signal.RawSignal{
 				Source:      "dephealth",
 				Kind:        "deprecated-dependency",
 				FilePath:    filePath,
@@ -125,7 +125,16 @@ func checkHexDeps(ctx context.Context, client hexRegistryClient, deps []PackageQ
 				Description: desc,
 				Confidence:  0.8,
 				Tags:        []string{"deprecated-dependency", "dephealth", "elixir"},
-			})
+			}
+			// "~> x.y" resolves to the newest compatible release; only the
+			// declared minimum is known to be retired.
+			if dep.IsRange {
+				s.Title = fmt.Sprintf("Retired Hex package floor: %s", declaredSpec(dep.Name, dep.Constraint))
+				s.Description = fmt.Sprintf("The declared minimum %s of Hex package %s is retired; the installed version is not known without mix.lock. Raise the floor to a non-retired version.", dep.Version, dep.Name)
+				s.Confidence = applyRangeDiscount(s.Confidence)
+				s.Tags = append(s.Tags, "version-floor")
+			}
+			signals = append(signals, s)
 		}
 	}
 

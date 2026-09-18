@@ -121,7 +121,7 @@ func checkNuGetDeps(ctx context.Context, client nugetRegistryClient, deps []Pack
 
 		// Check if the latest version of the package is deprecated.
 		if isNuGetDeprecated(info, dep.Version) {
-			signals = append(signals, signal.RawSignal{
+			s := signal.RawSignal{
 				Source:      "dephealth",
 				Kind:        "deprecated-dependency",
 				FilePath:    filePath,
@@ -129,7 +129,16 @@ func checkNuGetDeps(ctx context.Context, client nugetRegistryClient, deps []Pack
 				Description: fmt.Sprintf("NuGet package %s version %s is deprecated. Consider migrating to an alternative.", dep.Name, dep.Version),
 				Confidence:  0.8,
 				Tags:        []string{"deprecated-dependency", "dephealth", "nuget"},
-			})
+			}
+			// Floating/bracket versions resolve above the floor; only the
+			// declared minimum is known to be deprecated.
+			if dep.IsRange {
+				s.Title = fmt.Sprintf("Deprecated NuGet package floor: %s", declaredSpec(dep.Name, dep.Constraint))
+				s.Description = fmt.Sprintf("The declared minimum %s of NuGet package %s is deprecated; the installed version is not known without packages.lock.json. Raise the floor or migrate to an alternative.", dep.Version, dep.Name)
+				s.Confidence = applyRangeDiscount(s.Confidence)
+				s.Tags = append(s.Tags, "version-floor")
+			}
+			signals = append(signals, s)
 		}
 	}
 

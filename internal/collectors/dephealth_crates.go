@@ -108,7 +108,7 @@ func checkCratesDeps(ctx context.Context, client cratesRegistryClient, deps []Pa
 		// Check if the specific version used is yanked.
 		for _, v := range info.Versions {
 			if v.Num == dep.Version && v.Yanked {
-				signals = append(signals, signal.RawSignal{
+				s := signal.RawSignal{
 					Source:      "dephealth",
 					Kind:        "yanked-dependency",
 					FilePath:    "Cargo.toml",
@@ -116,7 +116,16 @@ func checkCratesDeps(ctx context.Context, client cratesRegistryClient, deps []Pa
 					Description: fmt.Sprintf("Crate %s version %s has been yanked from crates.io. Yanked versions typically have critical bugs or security issues. Update to a non-yanked version.", dep.Name, dep.Version),
 					Confidence:  0.9,
 					Tags:        []string{"yanked-dependency", "dephealth", "rust"},
-				})
+				}
+				// A caret/floor requirement resolves to the newest compatible
+				// version; only the declared minimum is known to be yanked.
+				if dep.IsRange {
+					s.Title = fmt.Sprintf("Yanked crate floor: %s", declaredSpec(dep.Name, dep.Constraint))
+					s.Description = fmt.Sprintf("The declared minimum %s of crate %s has been yanked from crates.io; the installed version is not known without Cargo.lock. Raise the floor to a non-yanked version.", dep.Version, dep.Name)
+					s.Confidence = applyRangeDiscount(s.Confidence)
+					s.Tags = append(s.Tags, "version-floor")
+				}
+				signals = append(signals, s)
 				break
 			}
 		}

@@ -1275,11 +1275,115 @@ serde = "1.0.0"
 	require.NoError(t, err)
 	require.Len(t, signals, 1)
 	assert.Equal(t, "yanked-dependency", signals[0].Kind)
-	assert.Contains(t, signals[0].Title, "serde@1.0.0")
+	// A bare Cargo requirement is a caret range: without Cargo.lock only the
+	// floor is known to be yanked (stringer-nxx.2).
+	assert.Equal(t, "Yanked crate floor: serde^1.0.0", signals[0].Title)
+	assert.Contains(t, signals[0].Description, "declared minimum 1.0.0")
+	assert.InDelta(t, 0.54, signals[0].Confidence, 0.001)
+	assert.Contains(t, signals[0].Tags, "version-floor")
 
 	metrics := c.Metrics().(*DepHealthMetrics)
 	assert.Contains(t, metrics.Ecosystems, "cargo")
 	assert.Len(t, metrics.Yanked, 1)
+}
+
+// TestDepHealthCollector_CargoLockResolvesFloor verifies Cargo.lock's resolved
+// version replaces the manifest floor and the finding is reported as exact.
+func TestDepHealthCollector_CargoLockResolvesFloor(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte(`[package]
+name = "my-crate"
+version = "0.1.0"
+
+[dependencies]
+serde = "1.0.0"
+`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Cargo.lock"), []byte(`version = 3
+
+[[package]]
+name = "my-crate"
+version = "0.1.0"
+
+[[package]]
+name = "serde"
+version = "1.0.150"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "serde"
+version = "1.0.200"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+`), 0o600))
+
+	cratesClient := &mockCratesRegistryClient{
+		results: map[string]*crateInfo{
+			"serde": {Versions: []crateVersion{
+				{Num: "1.0.0", Yanked: true},
+				{Num: "1.0.200", Yanked: true},
+			}},
+		},
+	}
+
+	c := &DepHealthCollector{cratesClient: cratesClient}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+	require.Len(t, signals, 1)
+	assert.Equal(t, "Yanked crate: serde@1.0.200", signals[0].Title)
+	assert.Equal(t, 0.9, signals[0].Confidence)
+	assert.NotContains(t, signals[0].Tags, "version-floor")
+}
+
+// TestResolveCargoLock_SkipsWorkspaceMembers verifies a dependency on another
+// workspace crate (path or lockfile entry without a source) is never checked.
+func TestResolveCargoLock_SkipsWorkspaceMembers(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "crates", "util"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte(`[workspace]
+members = ["crates/*"]
+
+[package]
+name = "root"
+version = "0.1.0"
+
+[dependencies]
+util = "0.1.0"
+serde = "1.0"
+`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "crates", "util", "Cargo.toml"), []byte(`[package]
+name = "util"
+version = "0.1.0"
+`), 0o600))
+
+	deps, err := parseCargoDeps([]byte(`[dependencies]
+util = "0.1.0"
+serde = "1.0"
+other = "2.0"
+`))
+	require.NoError(t, err)
+
+	got := resolveCargoLock(dir, deps)
+	names := make([]string, 0, len(got))
+	for _, d := range got {
+		names = append(names, d.Name)
+		assert.True(t, d.IsRange, "no lockfile: %s must stay a range", d.Name)
+	}
+	assert.ElementsMatch(t, []string{"serde", "other"}, names)
+
+	// With a lockfile, an entry without a source is local too.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Cargo.lock"), []byte(`[[package]]
+name = "other"
+version = "2.0.0"
+
+[[package]]
+name = "serde"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+`), 0o600))
+	got = resolveCargoLock(dir, deps)
+	require.Len(t, got, 1)
+	assert.Equal(t, "serde", got[0].Name)
+	assert.Equal(t, "1.0.9", got[0].Version)
+	assert.False(t, got[0].IsRange)
 }
 
 func TestDepHealthCollector_MavenOnly(t *testing.T) {
