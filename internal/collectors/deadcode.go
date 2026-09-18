@@ -263,8 +263,10 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 		}
 	}
 
-	// Pass 2: Search for references to each symbol.
-	c.regexCache = make(map[string]*regexp.Regexp, len(symbols))
+	// Pass 2: Tokenize every file once into an inverted index, then resolve
+	// each symbol with a lookup instead of a regexp scan over every file.
+	c.regexCache = make(map[string]*regexp.Regexp)
+	idx := buildSymbolIndex(files, symbols)
 	var signals []signal.RawSignal
 	deadCount := 0
 
@@ -278,7 +280,7 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 			continue
 		}
 
-		dead, testOnly := c.isDeadSymbol(sym, files)
+		dead, testOnly := c.isDeadSymbol(sym, idx)
 		if !dead && !testOnly {
 			continue
 		}
@@ -412,46 +414,18 @@ func extractSymbols(content, relPath, ext string) []symbolDef {
 // isDeadSymbol checks if a symbol has no references outside its definition.
 // Returns (dead, testOnly) where testOnly means the only external references
 // are in test files.
-func (c *DeadCodeCollector) isDeadSymbol(sym *symbolDef, files []fileContents) (dead bool, testOnly bool) {
-	// Fast pre-filter: check if the name appears in any other file.
-	pat := c.wordBoundary(sym.Name)
-	foundInNonTest := false
-	foundInTest := false
-
-	for i := range files {
-		fc := &files[i]
-
-		// Fast pre-filter.
-		if !strings.Contains(fc.content, sym.Name) {
-			continue
-		}
-
-		if fc.relPath == sym.FilePath {
-			// Same file: count occurrences. If >1, it's used locally.
-			count := len(pat.FindAllStringIndex(fc.content, -1))
-			if count > 1 {
-				return false, false
-			}
-			continue
-		}
-
-		// Different file: any match means it's referenced.
-		if pat.MatchString(fc.content) {
-			if fc.isTest {
-				foundInTest = true
-			} else {
-				foundInNonTest = true
-			}
-		}
+//
+// Semantics are those of matching `\b<name>\b` against every file: more than
+// one match in the defining file means the symbol is used locally; any match
+// in another non-test file means it is referenced; matches only in test files
+// mean it is test-only. Word-only names (the common case) are resolved from
+// the token index; names with non-word bytes (Elixir "Foo.Bar", Ruby
+// "valid?") fall back to the regexp over index-bounded candidate files.
+func (c *DeadCodeCollector) isDeadSymbol(sym *symbolDef, idx *symbolIndex) (dead bool, testOnly bool) {
+	if isWordOnly(sym.Name) {
+		return idx.lookupToken(sym.Name, sym.FilePath)
 	}
-
-	if foundInNonTest {
-		return false, false
-	}
-	if foundInTest {
-		return false, true
-	}
-	return true, false
+	return idx.lookupRegex(c.wordBoundary(sym.Name), sym.Name, sym.FilePath)
 }
 
 // deadCodeConfidence returns the confidence score for a dead code signal
