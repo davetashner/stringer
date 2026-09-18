@@ -134,6 +134,16 @@ func (c *CouplingCollector) Collect(ctx context.Context, repoPath string, opts s
 		}
 
 		mod := moduleForFile(relPath, ext)
+		if ext == ".cs" {
+			// C# namespaces are declared, not derived from the path, so
+			// read the declaration; moduleForFile's directory form is the
+			// fallback for files that declare none.
+			if lines, readErr := readFileLines(path); readErr == nil {
+				if ns := csharpNamespace(lines); ns != "" {
+					mod = ns
+				}
+			}
+		}
 		files = append(files, fileInfo{relPath: relPath, ext: ext, module: mod})
 		moduleSet[mod] = true
 

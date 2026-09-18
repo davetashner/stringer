@@ -78,6 +78,11 @@ func (c *ComplexityCollector) Name() string { return "complexity" }
 type langSpec struct {
 	extensions []string
 	funcStart  *regexp.Regexp
+	// funcReject, when set, vetoes a funcStart match. Languages whose
+	// constructor syntax has no leading keyword (C#'s `Foo(int x)`) need it
+	// to keep `if (`, `return Foo(` and `record Foo(` out of the function
+	// list, since RE2 has no negative lookahead.
+	funcReject *regexp.Regexp
 	endMode    endDetection
 }
 
@@ -96,6 +101,18 @@ var branchPattern = regexp.MustCompile(
 
 // logicalOpPattern matches && and || operators for branch counting.
 var logicalOpPattern = regexp.MustCompile(`&&|\|\|`)
+
+// csharpBranchPattern adds C#'s `foreach` to the shared branch keywords.
+// `do` is deliberately absent: its trailing `while` already counts the
+// loop once, and counting both would double-charge every do-while.
+var csharpBranchPattern = regexp.MustCompile(`\bforeach\b`)
+
+// csharpConditionalOpPattern matches C#'s null-coalescing (`??`, `??=`),
+// null-conditional (`?.`) and ternary (` ? `) operators. Like && and ||
+// they count at depth-independent weight 1: conditions, not structure.
+// Ternary requires surrounding whitespace so nullable types (`int?`)
+// don't count.
+var csharpConditionalOpPattern = regexp.MustCompile(`\?\?=?|\?\.|\s\?\s`)
 
 // commentLinePattern matches lines that are purely comments.
 var commentLinePattern = regexp.MustCompile(
@@ -254,6 +271,23 @@ var langSpecs = []langSpec{
 		extensions: []string{".ex", ".exs"},
 		funcStart:  regexp.MustCompile(`^\s*(?:defp?|defmacrop?)\s+(\w+[?!]?)`),
 		endMode:    endKeyword,
+	},
+	{
+		// C#: methods and constructors. Modifiers, an optional generic /
+		// array / nullable / tuple return type, then `Name(` or `Name<T>(`. The
+		// return type is optional so constructors match; funcReject
+		// filters the keyword-led statements that otherwise look like
+		// constructor calls. Expression-bodied members (`=> expr;`) and
+		// abstract/interface signatures end on `;` before any brace, which
+		// extractBraceBody reads as an empty body (stringer-nxx.9).
+		extensions: []string{".cs"},
+		funcStart: regexp.MustCompile(
+			`^\s*(?:(?:public|private|protected|internal|static|async|override|virtual|abstract|partial|sealed|extern|unsafe|new|readonly)\s+)*` +
+				`(?:(?:[\w.]+(?:<[^()=;{}]*>)?(?:\[[,\s]*\])*|\((?:[^()]|\([^()]*\))*\))\??\s+)?(\w+)(?:<[^()=;{}]*>)?\s*\(`),
+		funcReject: regexp.MustCompile(
+			`^\s*(?:if|else|for|foreach|while|switch|catch|using|lock|fixed|return|new|throw|await|yield|case|do|namespace|delegate|event|get|set|init|add|remove|base|this)\b` +
+				`|^\s*(?:\w+\s+)*(?:class|struct|record|interface|enum)\s+\w+`),
+		endMode: endBraceDepth,
 	},
 }
 
@@ -514,7 +548,7 @@ func extractFunctions(lines []string, relPath string, spec *langSpec, minLines i
 
 		switch spec.endMode {
 		case endBraceDepth:
-			bodyLines, endIdx = extractBraceBody(lines, i)
+			bodyLines, endIdx = extractBraceBody(lines, i, ext)
 		case endDedent:
 			bodyLines, endIdx = extractDedentBody(lines, i)
 		case endKeyword:
@@ -558,6 +592,9 @@ func matchFuncStart(line string, spec *langSpec, lineNo int) (string, int) {
 	if matches == nil {
 		return "", 0
 	}
+	if spec.funcReject != nil && spec.funcReject.MatchString(line) {
+		return "", 0
+	}
 
 	// Return the first non-empty capture group.
 	for _, m := range matches[1:] {
@@ -570,12 +607,22 @@ func matchFuncStart(line string, spec *langSpec, lineNo int) (string, int) {
 
 // extractBraceBody extracts the function body using brace depth tracking.
 // startIdx is the index of the line containing the function signature.
-func extractBraceBody(lines []string, startIdx int) ([]string, int) {
+// Braces inside string literals and comments are ignored (except in
+// .jsx/.tsx, where apostrophes in JSX text would read as open quotes). A
+// signature that reaches `;` before any brace — an abstract or interface
+// method, a C# expression-bodied member, a JS `const f = x => x + 1;` — has
+// no body, so the scan stops there instead of swallowing the next
+// function's braces (stringer-nxx.9).
+func extractBraceBody(lines []string, startIdx int, ext string) ([]string, int) {
 	depth := 0
 	started := false
+	stripStrings := ext != ".jsx" && ext != ".tsx"
 
 	for i := startIdx; i < len(lines); i++ {
 		line := lines[i]
+		if stripStrings {
+			line = stripStringsAndComments(line, ext)
+		}
 		for _, ch := range line {
 			switch ch {
 			case '{':
@@ -592,6 +639,9 @@ func extractBraceBody(lines []string, startIdx int) ([]string, int) {
 				return nil, i
 			}
 			return lines[bodyStart:i], i
+		}
+		if !started && strings.HasSuffix(strings.TrimSpace(line), ";") {
+			return nil, i
 		}
 	}
 
@@ -773,6 +823,10 @@ func analyzeBody(lines []string, ext string) bodyAnalysis {
 
 		branches := len(branchPattern.FindAllString(cl.clean, -1))
 		logicals := len(logicalOpPattern.FindAllString(cl.clean, -1))
+		if ext == ".cs" {
+			branches += len(csharpBranchPattern.FindAllString(cl.clean, -1))
+			logicals += len(csharpConditionalOpPattern.FindAllString(cl.clean, -1))
+		}
 
 		out.Branches += branches + logicals
 		out.WeightedBranches += float64(branches*depth) + float64(logicals)*logicalWeight
@@ -826,17 +880,24 @@ func stripStringsAndComments(line, ext string) string {
 	runes := []rune(line)
 	var quote rune
 	escaped := false
+	// C# verbatim strings (@"...", $@"...", @$"...") have no backslash
+	// escapes and double a quote to embed one, so `@"C:\"` must close at
+	// the final quote and `@"say ""hi"""` must not close early.
+	verbatim := false
 
 	for i := 0; i < len(runes); i++ {
 		ch := runes[i]
 		if quote != 0 {
 			switch {
+			case verbatim && ch == '"' && i+1 < len(runes) && runes[i+1] == '"':
+				i++
 			case escaped:
 				escaped = false
-			case ch == '\\':
+			case ch == '\\' && !verbatim:
 				escaped = true
 			case ch == quote:
 				quote = 0
+				verbatim = false
 				b.WriteRune(ch)
 			}
 			continue
@@ -844,6 +905,7 @@ func stripStringsAndComments(line, ext string) string {
 		switch {
 		case ch == '"' || ch == '`' || (ch == '\'' && singleQuote):
 			quote = ch
+			verbatim = ext == ".cs" && ch == '"' && precededByVerbatimPrefix(runes, i)
 			b.WriteRune(ch)
 		case ch == '/' && i+1 < len(runes) && runes[i+1] == '/':
 			return b.String()
@@ -861,6 +923,16 @@ func stripStringsAndComments(line, ext string) string {
 		}
 	}
 	return b.String()
+}
+
+// precededByVerbatimPrefix reports whether the quote at runes[i] opens a C#
+// verbatim string: the character before it is `@`, or `$@` / `@$` for
+// interpolated verbatim strings.
+func precededByVerbatimPrefix(runes []rune, i int) bool {
+	if i >= 1 && runes[i-1] == '@' {
+		return true
+	}
+	return i >= 2 && runes[i-1] == '$' && runes[i-2] == '@'
 }
 
 // countNonBlank counts non-blank lines.

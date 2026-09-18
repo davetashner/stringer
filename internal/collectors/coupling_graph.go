@@ -42,6 +42,14 @@ var phpUse = regexp.MustCompile(`^\s*use\s+([\w\\]+)`)
 // C/C++: #include "path" (project-local only, not <system>)
 var cLocalInclude = regexp.MustCompile(`^\s*#\s*include\s+"([^"]+)"`)
 
+// C#: using Foo.Bar; / global using Foo.Bar; / using static Foo.Bar.Baz; /
+// using Alias = Foo.Bar.Baz; — the trailing `;` keeps `using (var x = ...)`
+// resource statements out.
+var csharpUsing = regexp.MustCompile(`^\s*(?:global\s+)?using\s+(?:static\s+)?(?:\w+\s*=\s*)?([\w.]+)\s*;`)
+
+// C#: namespace Foo.Bar { ... } or file-scoped namespace Foo.Bar;
+var csharpNamespaceDecl = regexp.MustCompile(`^\s*namespace\s+([\w.]+)`)
+
 // importExtractor maps file extensions to their extraction function.
 type importExtractor func(lines []string, relPath string, modulePath string, allModules map[string]bool) []string
 
@@ -60,6 +68,7 @@ var importExtractors = map[string]importExtractor{
 	".cpp":  extractCImports,
 	".h":    extractCImports,
 	".hpp":  extractCImports,
+	".cs":   extractCSharpImports,
 }
 
 // extractGoImports extracts Go package imports, filtering to intra-project only.
@@ -294,6 +303,46 @@ func extractCImports(lines []string, _ string, _ string, allModules map[string]b
 	return imports
 }
 
+// extractCSharpImports extracts C# using directives and resolves them to
+// project namespaces. A directive naming a type rather than a namespace
+// (`using static Foo.Bar.Helpers;`, `using Alias = Foo.Bar.Widget;`) is
+// retried one segment up, the way Python retries the parent module.
+func extractCSharpImports(lines []string, _ string, _ string, allModules map[string]bool) []string {
+	var imports []string
+
+	for _, line := range lines {
+		m := csharpUsing.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+
+		full := m[1]
+		if allModules[full] {
+			imports = append(imports, full)
+			continue
+		}
+		if idx := strings.LastIndex(full, "."); idx > 0 {
+			if parent := full[:idx]; allModules[parent] {
+				imports = append(imports, parent)
+			}
+		}
+	}
+
+	return imports
+}
+
+// csharpNamespace returns the first namespace declared in a C# file's
+// lines, or "" when the file declares none (top-level statements, global
+// using files).
+func csharpNamespace(lines []string) string {
+	for _, line := range lines {
+		if m := csharpNamespaceDecl.FindStringSubmatch(line); m != nil {
+			return m[1]
+		}
+	}
+	return ""
+}
+
 // --- Module identity resolution ---
 
 // moduleForFile returns the module identity for a file given its relative path
@@ -338,6 +387,12 @@ func moduleForFile(relPath string, ext string) string {
 	case ".c", ".cpp", ".h", ".hpp":
 		// C/C++: include path (the file's relative path).
 		return relPath
+	case ".cs":
+		// C#: namespace granularity. Collect prefers the namespace the
+		// file declares; this directory-derived form is the fallback for
+		// files without one and mirrors the .NET convention that folders
+		// track namespaces (Jellyfin.Api/Controllers → Jellyfin.Api.Controllers).
+		return strings.ReplaceAll(filepath.ToSlash(filepath.Dir(relPath)), "/", ".")
 	}
 	return relPath
 }

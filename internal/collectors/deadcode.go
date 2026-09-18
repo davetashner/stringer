@@ -70,6 +70,7 @@ var typePatterns = map[string]*regexp.Regexp{
 	".swift": regexp.MustCompile(`^\s*(?:(?:public|private|fileprivate|internal|open|final)\s+)*(?:class|struct|enum|protocol)\s+(\w+)`),
 	".scala": regexp.MustCompile(`^\s*(?:(?:private|protected|abstract|sealed|final|case)\s+)*(?:class|object|trait)\s+(\w+)`),
 	".ex":    regexp.MustCompile(`^\s*defmodule\s+([\w.]+)`),
+	".cs":    regexp.MustCompile(`^\s*(?:(?:public|private|protected|internal|static|abstract|sealed|partial|readonly|ref|unsafe|new)\s+)*(?:class|struct|interface|enum|record(?:\s+(?:class|struct))?)\s+(\w+)`),
 }
 
 // skipNames are symbol names that should never be flagged as dead code.
@@ -368,6 +369,12 @@ func extractSymbols(content, relPath, ext string) []symbolDef {
 			if ext == ".rs" {
 				exported = strings.Contains(line, "pub ")
 			}
+			if ext == ".cs" {
+				if csharpNeverDead(name, lines, i) {
+					continue
+				}
+				exported = csharpExported(line)
+			}
 			syms = append(syms, symbolDef{
 				Name:       name,
 				FilePath:   relPath,
@@ -395,6 +402,12 @@ func extractSymbols(content, relPath, ext string) []symbolDef {
 			exported := isExported(name, ext)
 			if ext == ".rs" {
 				exported = strings.Contains(line, "pub ")
+			}
+			if ext == ".cs" {
+				if csharpNeverDead(name, lines, i) {
+					continue
+				}
+				exported = csharpExported(line)
 			}
 			syms = append(syms, symbolDef{
 				Name:       name,
