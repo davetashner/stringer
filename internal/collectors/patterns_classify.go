@@ -114,12 +114,14 @@ func isTestFile(relPath string) bool {
 }
 
 // isUnderMavenTestRoot returns true if relPath is under a Maven/Gradle test
-// source tree (src/test/{java,kotlin,scala}/). Files in these directories
-// are test files regardless of their naming convention.
+// source tree (src/test/{java,kotlin,scala}/), either at the repo root or
+// inside a module of a multi-module build (core/src/test/java/...). Files in
+// these directories are test files regardless of their naming convention.
 func isUnderMavenTestRoot(relPath string) bool {
 	norm := filepath.ToSlash(relPath)
 	for _, lang := range []string{"java", "kotlin", "scala"} {
-		if strings.HasPrefix(norm, "src/test/"+lang+"/") {
+		root := "src/test/" + lang + "/"
+		if strings.HasPrefix(norm, root) || strings.Contains(norm, "/"+root) {
 			return true
 		}
 	}
@@ -222,4 +224,139 @@ func isMinifiedContent(content []byte) bool {
 		return false
 	}
 	return total/lines > minifiedAvgLineLen
+}
+
+// nonSourceDirSegments are directory names (matched case-insensitively at any
+// depth) that hold documentation, tutorials, or demo code where tests are not
+// expected. They extend defaultDemoPatterns for the patterns collector and
+// are honoured unless IncludeDemoPaths is set.
+var nonSourceDirSegments = map[string]bool{
+	"docs_src": true,
+	"docs":     true,
+	"doc":      true,
+	"examples": true,
+	"example":  true,
+	"extras":   true,
+	"samples":  true,
+	"sample":   true,
+	"demos":    true,
+	"demo":     true,
+}
+
+// configDirSegments are directory names whose files are configuration rather
+// than source code.
+var configDirSegments = map[string]bool{
+	"config":   true,
+	"configs":  true,
+	"settings": true,
+}
+
+// configFileNames are file basenames that are configuration, not source.
+var configFileNames = map[string]bool{
+	"settings.py": true,
+	"conf.py":     true,
+	"setup.py":    true,
+}
+
+// dataClassDirSegments are directory names that, in class-per-file languages,
+// conventionally hold pure data carriers (events, DTOs, models, entities),
+// interfaces/contracts, or exception classes — none of which warrant a
+// dedicated test file.
+var dataClassDirSegments = map[string]bool{
+	"events":     true,
+	"contracts":  true,
+	"exceptions": true,
+	"dto":        true,
+	"dtos":       true,
+	"models":     true,
+	"entities":   true,
+	"interfaces": true,
+}
+
+// dataClassExtensions are the class-per-file languages where the directory
+// and class-name checks in isDataClassPath are reliable.
+var dataClassExtensions = map[string]bool{
+	".php":   true,
+	".cs":    true,
+	".java":  true,
+	".kt":    true,
+	".scala": true,
+}
+
+// dirSegments splits the directory part of relPath into its components.
+func dirSegments(relPath string) []string {
+	dir := filepath.ToSlash(filepath.Dir(relPath))
+	if dir == "." || dir == "" {
+		return nil
+	}
+	return strings.Split(dir, "/")
+}
+
+// isDocOrDemoTree returns true if relPath sits under a documentation, example,
+// tutorial, or demo directory (docs_src/, docs/, examples/, extras/, samples/,
+// tutorial*/, ...) at any depth, or under one of defaultDemoPatterns.
+func isDocOrDemoTree(relPath string) bool {
+	if isDemoPath(relPath) {
+		return true
+	}
+	for _, seg := range dirSegments(relPath) {
+		lower := strings.ToLower(seg)
+		if nonSourceDirSegments[lower] || strings.HasPrefix(lower, "tutorial") {
+			return true
+		}
+	}
+	return false
+}
+
+// isConfigPath returns true if relPath is a configuration file: anything under
+// a config/, configs/ or settings/ directory, dotfiles (.eslintrc.js),
+// *.config.* files (webpack.config.js, jest.config.ts), and well-known names
+// such as settings.py, conf.py and setup.py.
+func isConfigPath(relPath string) bool {
+	for _, seg := range dirSegments(relPath) {
+		if configDirSegments[strings.ToLower(seg)] {
+			return true
+		}
+	}
+	base := filepath.Base(relPath)
+	if strings.HasPrefix(base, ".") || configFileNames[base] {
+		return true
+	}
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	return strings.HasSuffix(strings.ToLower(stem), ".config")
+}
+
+// isDataClassPath returns true for class-per-file languages (PHP, C#, Java,
+// Kotlin, Scala) when relPath lives under an Events/, Contracts/, Exceptions/,
+// Dto(s)/, Models/, Entities/ or Interfaces/ directory, or the class name ends
+// in Exception, Dto, DTO or Interface. These are data carriers or declarations
+// that do not warrant a dedicated test file.
+func isDataClassPath(relPath string) bool {
+	ext := filepath.Ext(relPath)
+	if !dataClassExtensions[ext] {
+		return false
+	}
+	for _, seg := range dirSegments(relPath) {
+		if dataClassDirSegments[strings.ToLower(seg)] {
+			return true
+		}
+	}
+	stem := strings.TrimSuffix(filepath.Base(relPath), ext)
+	for _, suf := range []string{"Exception", "Dto", "DTO", "Interface"} {
+		if strings.HasSuffix(stem, suf) && len(stem) > len(suf) {
+			return true
+		}
+	}
+	return false
+}
+
+// isNonSourceForTests returns true if relPath should be left out of
+// missing-tests detection and the per-directory test-ratio metric: config
+// files, data-only class files, and (unless includeDemo is set) documentation
+// and demo trees.
+func isNonSourceForTests(relPath string, includeDemo bool) bool {
+	if isConfigPath(relPath) || isDataClassPath(relPath) {
+		return true
+	}
+	return !includeDemo && isDocOrDemoTree(relPath)
 }
