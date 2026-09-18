@@ -94,6 +94,10 @@ public class ItemServiceTests
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "tests"), 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "src", "ItemService.cs"), []byte(service), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "tests", "ItemServiceTests.cs"), []byte(tests), 0o600))
+	// An entry point marks the fixture as an application, so public symbols keep the 0.4 tier
+	// rather than the library public-api cap.
+	program := "namespace App;\n\npublic static class Program\n{\n    public static void Main() { }\n}\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "src", "Program.cs"), []byte(program), 0o600))
 
 	c := &DeadCodeCollector{}
 	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
