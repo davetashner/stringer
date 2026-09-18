@@ -18,12 +18,21 @@ const defaultWindowSize = 6
 type cloneLocation struct {
 	Path      string
 	StartLine int // 1-based line number in original file
+	EndLine   int // 1-based inclusive end line in original file
+}
+
+// span returns the number of original lines the location covers.
+func (l cloneLocation) span() int {
+	if l.EndLine < l.StartLine {
+		return 1
+	}
+	return l.EndLine - l.StartLine + 1
 }
 
 // cloneGroup represents a set of identical (or near-identical) code blocks.
 type cloneGroup struct {
-	Lines     int             // number of lines in the duplicated block
-	Locations []cloneLocation // 2+ locations where this block appears
+	Lines     int             // original-line span of the largest location
+	Locations []cloneLocation // 2+ distinct, non-overlapping locations
 	NearClone bool            // true if detected via Type 2 normalization
 }
 
@@ -125,7 +134,8 @@ func hashWindow(lines []normalizedLine, start, winSize int) uint64 {
 type windowEntry struct {
 	hash      uint64
 	path      string
-	startLine int // original 1-based line number
+	startLine int // original 1-based line number of the first window line
+	endLine   int // original 1-based line number of the last window line
 	normIdx   int // index into normalized lines
 }
 
@@ -146,14 +156,17 @@ func buildWindowHashes(ctx context.Context, normalized []normalizedLine, path st
 			hash:      hashWindow(normalized, i, winSize),
 			path:      path,
 			startLine: normalized[i].origLine,
+			endLine:   normalized[i+winSize-1].origLine,
 			normIdx:   i,
 		})
 	}
 	return entries, nil
 }
 
-// groupClones groups window entries by hash, then extends adjacent matching
-// windows into larger blocks. Returns clone groups with 2+ locations.
+// groupClones groups window entries by hash and returns one clone group
+// per hash with 2+ distinct (path, startLine) locations. Groups are
+// single-window (winSize normalized lines); mergeCloneGroups extends
+// overlapping windows into larger blocks.
 // It checks for context cancellation every 1000 hash buckets.
 func groupClones(ctx context.Context, entries []windowEntry, winSize int) ([]cloneGroup, error) {
 	// Group by hash.
@@ -196,7 +209,11 @@ func groupClones(ctx context.Context, entries []windowEntry, winSize int) ([]clo
 
 		locs := make([]cloneLocation, len(unique))
 		for i, u := range unique {
-			locs[i] = cloneLocation{Path: u.path, StartLine: u.startLine}
+			end := u.endLine
+			if end < u.startLine {
+				end = u.startLine + winSize - 1
+			}
+			locs[i] = cloneLocation{Path: u.path, StartLine: u.startLine, EndLine: end}
 		}
 		groups = append(groups, cloneGroup{
 			Lines:     winSize,
@@ -204,200 +221,7 @@ func groupClones(ctx context.Context, entries []windowEntry, winSize int) ([]clo
 		})
 	}
 
-	return mergeAdjacentGroups(groups, winSize), nil
-}
-
-// mergeAdjacentGroups merges clone groups whose locations are adjacent
-// (consecutive starting lines with winSize offset) into larger blocks.
-func mergeAdjacentGroups(groups []cloneGroup, winSize int) []cloneGroup {
-	if len(groups) == 0 {
-		return nil
-	}
-
-	// Build a map of (path, startLine) → group index for fast adjacency lookup.
-	type locKey struct {
-		path string
-		line int
-	}
-
-	// For each location, track which group it belongs to.
-	locToGroup := make(map[locKey]int)
-	for i, g := range groups {
-		for _, loc := range g.Locations {
-			locToGroup[locKey{loc.Path, loc.StartLine}] = i
-		}
-	}
-
-	// Merge groups that share adjacent windows. We use a union-find approach.
-	parent := make([]int, len(groups))
-	for i := range parent {
-		parent[i] = i
-	}
-	var find func(int) int
-	find = func(x int) int {
-		if parent[x] != x {
-			parent[x] = find(parent[x])
-		}
-		return parent[x]
-	}
-	union := func(a, b int) {
-		ra, rb := find(a), find(b)
-		if ra != rb {
-			parent[ra] = rb
-		}
-	}
-
-	// For each group, check if there's a group with locations shifted by 1 line.
-	// This handles the case where window at line N and window at line N+1 both
-	// appear in the same set of files — they should be merged into a larger block.
-	for i, g := range groups {
-		for _, loc := range g.Locations {
-			// Check if a window starting 1 line after this one (in normalized space)
-			// exists in another group with the same set of paths.
-			for delta := 1; delta <= winSize; delta++ {
-				nextKey := locKey{loc.Path, loc.StartLine + delta}
-				if j, ok := locToGroup[nextKey]; ok && j != i {
-					// Verify the other group has matching paths.
-					if samePathSet(groups[i].Locations, groups[j].Locations) {
-						union(i, j)
-					}
-				}
-			}
-		}
-	}
-
-	// Collect merged groups.
-	merged := make(map[int]*cloneGroup)
-	for i, g := range groups {
-		root := find(i)
-		if existing, ok := merged[root]; ok {
-			// Extend: take min startLine per path, max endLine per path.
-			existing.Lines = maxLines(existing, &g)
-			mergeLocations(existing, g.Locations)
-		} else {
-			cp := g
-			merged[root] = &cp
-		}
-	}
-
-	result := make([]cloneGroup, 0, len(merged))
-	for _, g := range merged {
-		// Recalculate line count from location spans.
-		g.Lines = calcGroupLines(g)
-		result = append(result, *g)
-	}
-	return result
-}
-
-// samePathSet returns true if both location slices contain the same set of paths.
-func samePathSet(a, b []cloneLocation) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	paths := make(map[string]bool, len(a))
-	for _, loc := range a {
-		paths[loc.Path] = true
-	}
-	for _, loc := range b {
-		if !paths[loc.Path] {
-			return false
-		}
-	}
-	return true
-}
-
-// mergeLocations merges new locations into an existing group, keeping the
-// minimum start line per path.
-func mergeLocations(g *cloneGroup, locs []cloneLocation) {
-	byPath := make(map[string]*cloneLocation)
-	for i := range g.Locations {
-		byPath[g.Locations[i].Path] = &g.Locations[i]
-	}
-	for _, loc := range locs {
-		if existing, ok := byPath[loc.Path]; ok {
-			if loc.StartLine < existing.StartLine {
-				existing.StartLine = loc.StartLine
-			}
-		} else {
-			g.Locations = append(g.Locations, loc)
-			byPath[loc.Path] = &g.Locations[len(g.Locations)-1]
-		}
-	}
-}
-
-// maxLines returns the larger line count from two groups.
-func maxLines(a, b *cloneGroup) int {
-	if a.Lines > b.Lines {
-		return a.Lines
-	}
-	return b.Lines
-}
-
-// calcGroupLines estimates the line span of a merged group.
-// For merged adjacent windows, the span is winSize + (number of merged windows - 1).
-func calcGroupLines(g *cloneGroup) int {
-	if len(g.Locations) == 0 {
-		return g.Lines
-	}
-	// Find max span across all paths.
-	maxSpan := g.Lines
-	byPath := make(map[string][]int)
-	for _, loc := range g.Locations {
-		byPath[loc.Path] = append(byPath[loc.Path], loc.StartLine)
-	}
-	for _, lines := range byPath {
-		if len(lines) <= 1 {
-			continue
-		}
-		// For intra-file clones, each entry is a separate location.
-		// The span is just the window size (they don't merge across locations).
-	}
-	return maxSpan
-}
-
-// subtractType1Ranges removes Type 2 clone groups that overlap with
-// Type 1 clone groups (exact matches take precedence).
-func subtractType1Ranges(type2Groups []cloneGroup, type1Groups []cloneGroup) []cloneGroup {
-	if len(type1Groups) == 0 {
-		return type2Groups
-	}
-
-	// Build a set of covered ranges from Type 1.
-	type lineRange struct {
-		path string
-		line int
-	}
-	covered := make(map[lineRange]bool)
-	for _, g := range type1Groups {
-		for _, loc := range g.Locations {
-			for l := loc.StartLine; l < loc.StartLine+g.Lines; l++ {
-				covered[lineRange{loc.Path, l}] = true
-			}
-		}
-	}
-
-	var result []cloneGroup
-	for _, g := range type2Groups {
-		// Check if all locations of this group overlap with Type 1.
-		allCovered := true
-		for _, loc := range g.Locations {
-			locCovered := true
-			for l := loc.StartLine; l < loc.StartLine+g.Lines; l++ {
-				if !covered[lineRange{loc.Path, l}] {
-					locCovered = false
-					break
-				}
-			}
-			if !locCovered {
-				allCovered = false
-				break
-			}
-		}
-		if !allCovered {
-			result = append(result, g)
-		}
-	}
-	return result
+	return groups, nil
 }
 
 // isBlankOrWhitespace returns true if a string is empty or only whitespace.

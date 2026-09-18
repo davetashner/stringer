@@ -551,52 +551,6 @@ func TestCollectName(t *testing.T) {
 }
 
 // TestSubtractType1Ranges verifies deduplication between Type 1 and Type 2.
-func TestSubtractType1Ranges(t *testing.T) {
-	type1 := []cloneGroup{
-		{
-			Lines: 6,
-			Locations: []cloneLocation{
-				{Path: "a.go", StartLine: 10},
-				{Path: "b.go", StartLine: 20},
-			},
-		},
-	}
-
-	type2Overlapping := []cloneGroup{
-		{
-			Lines:     6,
-			NearClone: true,
-			Locations: []cloneLocation{
-				{Path: "a.go", StartLine: 10},
-				{Path: "b.go", StartLine: 20},
-			},
-		},
-	}
-
-	type2Different := []cloneGroup{
-		{
-			Lines:     6,
-			NearClone: true,
-			Locations: []cloneLocation{
-				{Path: "c.go", StartLine: 5},
-				{Path: "d.go", StartLine: 15},
-			},
-		},
-	}
-
-	// Overlapping should be removed.
-	result := subtractType1Ranges(type2Overlapping, type1)
-	if len(result) != 0 {
-		t.Errorf("expected overlapping Type 2 to be removed, got %d groups", len(result))
-	}
-
-	// Non-overlapping should be kept.
-	result = subtractType1Ranges(type2Different, type1)
-	if len(result) != 1 {
-		t.Errorf("expected non-overlapping Type 2 to be kept, got %d groups", len(result))
-	}
-}
-
 // TestNormalizeType1EmptyInput verifies empty input handling.
 func TestNormalizeType1EmptyInput(t *testing.T) {
 	result := normalizeType1(nil)
@@ -725,24 +679,6 @@ func TestDuplicationConfidenceMonotonic(t *testing.T) {
 			t.Errorf("confidence decreased at %d lines: %f < %f", lines, c, prev)
 		}
 		prev = c
-	}
-}
-
-// TestSamePathSet verifies path set comparison.
-func TestSamePathSet(t *testing.T) {
-	a := []cloneLocation{{Path: "a.go"}, {Path: "b.go"}}
-	b := []cloneLocation{{Path: "b.go"}, {Path: "a.go"}}
-	c := []cloneLocation{{Path: "a.go"}, {Path: "c.go"}}
-	d := []cloneLocation{{Path: "a.go"}}
-
-	if !samePathSet(a, b) {
-		t.Error("same paths in different order should match")
-	}
-	if samePathSet(a, c) {
-		t.Error("different paths should not match")
-	}
-	if samePathSet(a, d) {
-		t.Error("different length should not match")
 	}
 }
 

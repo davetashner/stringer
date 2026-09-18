@@ -95,6 +95,9 @@ func Merge(fileCfg *Config, cliCfg signal.ScanConfig) signal.ScanConfig {
 			if co.DuplicationMaxFiles == 0 && fc.DuplicationMaxFiles > 0 {
 				co.DuplicationMaxFiles = fc.DuplicationMaxFiles
 			}
+			if co.DuplicationMinTestLines == 0 && fc.DuplicationMinTestLines > 0 {
+				co.DuplicationMinTestLines = fc.DuplicationMinTestLines
+			}
 			if co.DeadcodeMaxFiles == 0 && fc.DeadcodeMaxFiles > 0 {
 				co.DeadcodeMaxFiles = fc.DeadcodeMaxFiles
 			}

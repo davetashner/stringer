@@ -323,6 +323,7 @@ func TestCollectorsInfo_ThresholdsSection_Duplication(t *testing.T) {
 	assert.Contains(t, out, "duplication_window_size")
 	assert.Contains(t, out, "duplication_signal_cap")
 	assert.Contains(t, out, "duplication_max_files")
+	assert.Contains(t, out, "duplication_min_test_lines")
 	assert.Contains(t, out, "collectors.duplication.duplication_window_size")
 	// Defaults should appear.
 	assert.Contains(t, out, "6")
@@ -390,7 +391,7 @@ func TestCollectorsInfo_JSONOutput(t *testing.T) {
 
 	thresholds, ok := result["thresholds"].([]interface{})
 	require.True(t, ok, "thresholds should be an array")
-	assert.Len(t, thresholds, 3)
+	assert.Len(t, thresholds, 4)
 
 	first := thresholds[0].(map[string]interface{})
 	assert.Equal(t, "duplication_window_size", first["name"])

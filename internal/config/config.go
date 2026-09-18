@@ -62,9 +62,10 @@ type CollectorConfig struct {
 	IncludeTests       *bool   `yaml:"include_tests,omitempty"`
 
 	// Duplication collector settings.
-	DuplicationWindowSize int `yaml:"duplication_window_size,omitempty"`
-	DuplicationSignalCap  int `yaml:"duplication_signal_cap,omitempty"`
-	DuplicationMaxFiles   int `yaml:"duplication_max_files,omitempty"`
+	DuplicationWindowSize   int `yaml:"duplication_window_size,omitempty"`
+	DuplicationSignalCap    int `yaml:"duplication_signal_cap,omitempty"`
+	DuplicationMaxFiles     int `yaml:"duplication_max_files,omitempty"`
+	DuplicationMinTestLines int `yaml:"duplication_min_test_lines,omitempty"`
 
 	// Dead code collector settings.
 	DeadcodeMaxFiles int `yaml:"deadcode_max_files,omitempty"`
