@@ -550,3 +550,203 @@ func TestStringLiteralPattern(t *testing.T) {
 	matches = stringLiteralPattern.FindAllStringSubmatch(line, -1)
 	assert.Empty(t, matches)
 }
+
+// ---------------------------------------------------------------------------
+// Context-aware suppression (stringer-nxx.7). All values below are
+// deliberately fake fixture strings, never real credential formats.
+// ---------------------------------------------------------------------------
+
+func TestNewSecretScanContext_DocFiles(t *testing.T) {
+	docs := []string{
+		"README.md", "docs/config.rst", "notes.txt", "guide.adoc", "index.html",
+		"docs/tutorial/deploy.rst", "doc/settings.py", "documentation/x.py",
+		"examples/app/config.py", "samples/settings.yaml", "docs_site/page.md",
+		"docs_src/security/tutorial.py", "docs-site/src/config.js",
+	}
+	for _, p := range docs {
+		assert.True(t, newSecretScanContext(p).docFile, "expected doc file: %s", p)
+	}
+	notDocs := []string{"src/app/config.py", "config.yaml", "docstore/config.go", "settings.py"}
+	for _, p := range notDocs {
+		assert.False(t, newSecretScanContext(p).docFile, "expected non-doc file: %s", p)
+	}
+}
+
+func TestNewSecretScanContext_TemplateFiles(t *testing.T) {
+	tpls := []string{
+		"settings.py-tpl", "config.tpl", "nginx.conf.tmpl", "env.j2",
+		".env.example", "config.yaml.sample", "phpunit.xml.dist", "app.config.template",
+	}
+	for _, p := range tpls {
+		assert.True(t, newSecretScanContext(p).templateFile, "expected template: %s", p)
+	}
+	assert.False(t, newSecretScanContext("config.yaml").templateFile)
+	assert.False(t, newSecretScanContext("template.go").templateFile)
+}
+
+func TestNewSecretScanContext_TestFiles(t *testing.T) {
+	tests := []string{
+		"tests/conftest.py", "conftest.py", "tests/settings.py", "test/helpers.rb",
+		"src/__tests__/setup.js", "spec/support/env.rb", "pkg/testdata/config.yaml",
+		"fixtures/users.json", "app/config_test.go", "test_settings.py",
+	}
+	for _, p := range tests {
+		assert.True(t, newSecretScanContext(p).testFile, "expected test file: %s", p)
+	}
+	assert.False(t, newSecretScanContext("src/app/config.py").testFile)
+	assert.False(t, newSecretScanContext("contest.py").testFile)
+}
+
+func TestSecretCommentMarkers(t *testing.T) {
+	assert.Equal(t, []string{"#"}, secretCommentMarkers("app.py", ".py"))
+	assert.Equal(t, []string{"#", ";"}, secretCommentMarkers("app.ini", ".ini"))
+	assert.Equal(t, []string{"//", "/*", "*"}, secretCommentMarkers("main.go", ".go"))
+	assert.Equal(t, []string{"//", "#", "/*", "*"}, secretCommentMarkers("index.php", ".php"))
+	assert.Equal(t, []string{"--"}, secretCommentMarkers("schema.sql", ".sql"))
+	assert.Equal(t, []string{"<!--"}, secretCommentMarkers("pom.xml", ".xml"))
+	assert.Equal(t, []string{"%"}, secretCommentMarkers("paper.tex", ".tex"))
+	assert.Equal(t, []string{"#"}, secretCommentMarkers("dockerfile", ""))
+	assert.Equal(t, []string{"#"}, secretCommentMarkers("makefile", ""))
+	assert.Equal(t, []string{"#", "//"}, secretCommentMarkers("unknownfile", ".zzz"))
+}
+
+func TestSecretScanContext_SkipGeneric_DocAndTemplate(t *testing.T) {
+	line := `SECRET_KEY = 'development key'`
+	assert.True(t, newSecretScanContext("docs/config.rst").skipGeneric(line))
+	assert.True(t, newSecretScanContext("settings.py-tpl").skipGeneric(line))
+	assert.False(t, newSecretScanContext("src/settings.py").skipGeneric(line))
+}
+
+func TestSecretScanContext_SkipGeneric_Comments(t *testing.T) {
+	py := newSecretScanContext("src/settings.py")
+	assert.True(t, py.skipGeneric(`# SECRET_KEY = 'development key'`))
+	assert.True(t, py.skipGeneric(`    # password = "example fixture"`))
+	assert.False(t, py.skipGeneric(`SECRET_KEY = 'development key'`))
+
+	goFile := newSecretScanContext("cmd/main.go")
+	assert.True(t, goFile.skipGeneric(`// password = "example fixture"`))
+	assert.True(t, goFile.skipGeneric(`/* password = "example fixture" */`))
+	assert.True(t, goFile.skipGeneric(` * password = "example fixture"`))
+	assert.False(t, goFile.skipGeneric(`# password = "example fixture"`), "hash is not a Go comment")
+	assert.False(t, goFile.skipGeneric(`password := "example fixture"`))
+
+	sql := newSecretScanContext("db/schema.sql")
+	assert.True(t, sql.skipGeneric(`-- password = 'example fixture'`))
+	assert.False(t, sql.skipGeneric(`SET password = 'example fixture'`))
+}
+
+func TestSecretScanContext_SkipGeneric_PythonDocstring(t *testing.T) {
+	sc := newSecretScanContext("src/flask/config.py")
+	lines := []struct {
+		text string
+		skip bool
+	}{
+		{`class Config:`, false},
+		{`    """Configuration example.`, true}, // opens docstring
+		{``, true},
+		{`    SECRET_KEY = 'development key'`, true},  // inside docstring
+		{`    """`, true},                             // closes docstring (still inside at line start)
+		{`    SECRET_KEY = 'development key'`, false}, // real code again
+		{`    """single line docstring"""`, false},    // opens and closes
+		{`    x = '''`, false},                        // opens mid-line: code precedes the delimiter
+		{`    password = "example fixture"`, true},
+		{`    '''`, true},
+		{`    password = "example fixture"`, false},
+	}
+	for i, l := range lines {
+		assert.Equal(t, l.skip, sc.skipGeneric(l.text), "line %d: %q", i+1, l.text)
+	}
+}
+
+func TestSecretScanContext_DocstringNotTrackedForNonPython(t *testing.T) {
+	sc := newSecretScanContext("main.go")
+	assert.False(t, sc.skipGeneric(`s := """`))
+	assert.False(t, sc.skipGeneric(`password = "example fixture"`))
+}
+
+func TestIsPlaceholderSecretValue(t *testing.T) {
+	placeholders := []string{
+		"{{ secret_key }}", "${SECRET_KEY}", "<your-api-key>", "<YOUR_KEY>",
+		`ALTER USER %(user)s IDENTIFIED BY "%(password)s"`, "user=%s pass=%s",
+		"changeme-please", "example-not-a-real-key", "placeholder-value",
+		"xxxxxxxxxxxx", "abc...", "ChangeMe",
+	}
+	for _, v := range placeholders {
+		assert.True(t, isPlaceholderSecretValue(v), "expected placeholder: %q", v)
+	}
+	notPlaceholders := []string{"development key", "test key", "supersecretvalue123456"}
+	for _, v := range notPlaceholders {
+		assert.False(t, isPlaceholderSecretValue(v), "expected non-placeholder: %q", v)
+	}
+}
+
+func TestIsFakeSecretValue(t *testing.T) {
+	fakes := []string{
+		"short", "1234567", "test key", "development key", "dummy", "fake-secret",
+		"secret", "password", "changeme", "key", "test_password", "dev.key",
+		"Test Key", "        ",
+	}
+	for _, v := range fakes {
+		assert.True(t, isFakeSecretValue(v), "expected fake: %q", v)
+	}
+	real := []string{"supersecretvalue123456", "test key 9f8e7d", "keyboard cat", "development-2026-rotate"}
+	for _, v := range real {
+		assert.False(t, isFakeSecretValue(v), "expected real-looking: %q", v)
+	}
+}
+
+func TestAdjustGenericSecret(t *testing.T) {
+	prod := newSecretScanContext("src/settings.py")
+	testCtx := newSecretScanContext("tests/conftest.py")
+
+	// Placeholder values are dropped.
+	_, _, keep := prod.adjustGenericSecret(`SECRET_KEY = "{{ secret_key }}"`, 0.6)
+	assert.False(t, keep)
+	_, _, keep = prod.adjustGenericSecret(`password = "<your-password-here>"`, 0.6)
+	assert.False(t, keep)
+
+	// Fake values drop to 0.2.
+	conf, tags, keep := prod.adjustGenericSecret(`SECRET_KEY = "development key"`, 0.6)
+	assert.True(t, keep)
+	assert.Equal(t, secretFakeConfidence, conf)
+	assert.Equal(t, []string{"likely-placeholder"}, tags)
+
+	// Real-looking values in production code keep their confidence.
+	conf, tags, keep = prod.adjustGenericSecret(`api_key = "supersecretvalue123456"`, 0.6)
+	assert.True(t, keep)
+	assert.Equal(t, 0.6, conf)
+	assert.Empty(t, tags)
+
+	// Test files are capped at 0.3.
+	conf, tags, keep = testCtx.adjustGenericSecret(`api_key = "supersecretvalue123456"`, 0.6)
+	assert.True(t, keep)
+	assert.Equal(t, secretTestFileMaxConfidence, conf)
+	assert.Equal(t, []string{"test-file"}, tags)
+
+	// Fake value in a test file: min of both.
+	conf, tags, keep = testCtx.adjustGenericSecret(`SECRET_KEY = "test key"`, 0.6)
+	assert.True(t, keep)
+	assert.Equal(t, secretFakeConfidence, conf)
+	assert.Equal(t, []string{"likely-placeholder", "test-file"}, tags)
+
+	// Lines where the value cannot be extracted keep the original confidence.
+	conf, _, keep = prod.adjustGenericSecret(`something unrelated`, 0.6)
+	assert.True(t, keep)
+	assert.Equal(t, 0.6, conf)
+}
+
+func TestSecretRegistry_Match_GenericFlag(t *testing.T) {
+	matches := defaultSecretRegistry.Match(`api_key = "supersecretvalue123456"`)
+	require.Len(t, matches, 1)
+	assert.True(t, matches[0].Generic)
+
+	matches = defaultSecretRegistry.Match("const awsKey = \"AKIAIOSFODNN7EXAMPLE\"")
+	require.Len(t, matches, 1)
+	assert.False(t, matches[0].Generic)
+
+	// A JWT-shaped example token is context-dependent as well.
+	matches = defaultSecretRegistry.Match("token = eyJabc.eyJdef.notarealsignature")
+	require.Len(t, matches, 1)
+	assert.Equal(t, "jwt-token", matches[0].PatternID)
+	assert.True(t, matches[0].Generic)
+}
