@@ -132,7 +132,7 @@ signals at confidence 0.8 or above, the ones worth acting on first.
 | [django](https://github.com/django/django) | Python | 7,091 | 4,297 | 10% | 2m 35s | 1,626 complex functions, 11 circular dependencies, 88 git hygiene issues |
 | [kafka](https://github.com/apache/kafka) | Java/Scala | 7,547 | 12,069 | 4% | 52m | 5,208 complex functions, 4,625 coverage gaps, 161 TODOs |
 | [next.js](https://github.com/vercel/next.js) | JS/TS | 32,471 | 14,027 | 17% | 35m | 8,262 complex functions, 1,012 churn hotspots, 88 vulnerable deps |
-| [kubernetes](https://github.com/kubernetes/kubernetes) | Go | 31,373 | K8S_SIGNALS | K8S_HIGH | K8S_SCAN | K8S_HIGHLIGHTS |
+| [kubernetes](https://github.com/kubernetes/kubernetes) | Go | 31,373 | 51,542 | 20% | 1h 57m | 24,140 complex functions, 3,531 TODOs, 169 vulnerable deps |
 
 <sub>Tested September 2026 with stringer 1.10.0 on a 10-core Apple Silicon laptop. Repos cloned with `--depth 100`, GitHub collector excluded. Scan is the collector phase of `stringer scan`; `stringer report` takes about the same. Lottery-risk counts are inflated by shallow clones (a full clone of flask reports 1, not 6). Method, per-collector counts, commit SHAs and the false-positive review are in [docs/research/benchmark-2026-09.md](docs/research/benchmark-2026-09.md).</sub>
 
