@@ -40,7 +40,7 @@ golangci-lint run ./...
 ## Current Focus
 1. **L1 Language Support Expansion (`stringer-043`)** — complete; PHP, Swift, Scala, Elixir landed in PR #310.
 2. **Deep-scan follow-ups**: `ds1`/`ds2`/`ds3` closed in PR #326 (bounded registry reads, ctx cancellation in dephealth check loops, L1 registry test coverage). `ds4` (configurable registry timeout) deliberately deferred as low-value; `ds5` open if applicable — check `bd ready`.
-3. **Benchmark follow-ups (`stringer-nxx`)**: 13 accuracy/perf beads from the September 2026 README benchmark (`docs/research/benchmark-2026-09.md`). Start with `nxx.1` (deadcode superlinear) and `nxx.13` (exclude compiled/generated files).
+3. **Benchmark follow-ups (`stringer-nxx`)** — complete; all 16 beads landed in PRs #431–#448 (deadcode index, version floors, duplication window merging, test-aware complexity/deadcode/secrets, shallow-history lottery risk, repo-wide test lookup, C# L1, NuGet CPM + Gradle catalogs, docstale site links, per-collector progress logging). Next: re-run `eval/bench.sh` under `caffeinate -i` to refresh `docs/research/benchmark-2026-09.md` and the README table; consider `stringer-ds4` (registry timeout) now that Gradle repos hit Maven Central.
 4. **Quick wins**: P3/P4 unblocked tasks — run `bd ready`
 
 ## Post-Release Checklist
