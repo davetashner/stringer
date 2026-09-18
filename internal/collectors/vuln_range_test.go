@@ -340,3 +340,219 @@ func TestVulnCollector_ExactPinUnchanged(t *testing.T) {
 	assert.Equal(t, 0.95, signals[0].Confidence)
 	assert.NotContains(t, signals[0].Tags, "version-floor")
 }
+
+// --- lockfiles ---
+
+func TestParseCargoLock(t *testing.T) {
+	queries, local, err := parseCargoLock([]byte(`version = 3
+
+[[package]]
+name = "my-crate"
+version = "0.1.0"
+dependencies = ["serde"]
+
+[[package]]
+name = "serde"
+version = "1.0.200"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "serde"
+version = "1.0.200"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "gitdep"
+version = "0.3.0"
+source = "git+https://github.com/x/gitdep#abc"
+`))
+	require.NoError(t, err)
+	assert.True(t, local["my-crate"], "an entry without a source is a workspace crate")
+	require.Len(t, queries, 2, "duplicates collapse: %v", queries)
+	for _, q := range queries {
+		assert.Equal(t, "crates.io", q.Ecosystem)
+		assert.False(t, q.IsRange, "lockfile versions are exact")
+	}
+
+	_, _, err = parseCargoLock([]byte("[[package"))
+	assert.Error(t, err)
+}
+
+func TestParseComposerLock(t *testing.T) {
+	queries, err := parseComposerLock([]byte(`{
+		"packages": [
+			{"name": "symfony/routing", "version": "v7.4.2"},
+			{"name": "vendor/branch", "version": "dev-main"}
+		],
+		"packages-dev": [{"name": "phpunit/phpunit", "version": "10.5.0"}]
+	}`))
+	require.NoError(t, err)
+	require.Len(t, queries, 2, "dev-* versions are skipped")
+	assert.Equal(t, "symfony/routing", queries[0].Name)
+	assert.Equal(t, "7.4.2", queries[0].Version, "leading v is stripped")
+	assert.False(t, queries[0].Dev)
+	assert.Equal(t, "phpunit/phpunit", queries[1].Name)
+	assert.True(t, queries[1].Dev)
+	assert.False(t, queries[1].IsRange)
+
+	_, err = parseComposerLock([]byte("{"))
+	assert.Error(t, err)
+}
+
+// TestParseCargoQueries_PrefersLock verifies the resolved lockfile version
+// replaces the manifest floor and is reported as exact.
+func TestParseCargoQueries_PrefersLock(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte(`[package]
+name = "app"
+version = "0.1.0"
+
+[dependencies]
+tokio = "1.2.0"
+`), 0o600))
+
+	file, queries := parseCargoQueries(dir)
+	assert.Equal(t, "Cargo.toml", file)
+	require.Len(t, queries, 1)
+	assert.True(t, queries[0].IsRange)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Cargo.lock"), []byte(`[[package]]
+name = "app"
+version = "0.1.0"
+
+[[package]]
+name = "tokio"
+version = "1.38.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+`), 0o600))
+
+	file, queries = parseCargoQueries(dir)
+	assert.Equal(t, "Cargo.lock", file)
+	require.Len(t, queries, 1)
+	assert.Equal(t, "tokio", queries[0].Name)
+	assert.Equal(t, "1.38.0", queries[0].Version)
+	assert.False(t, queries[0].IsRange)
+
+	// A malformed lockfile is non-fatal but yields nothing.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Cargo.lock"), []byte("[[package"), 0o600))
+	_, queries = parseCargoQueries(dir)
+	assert.Empty(t, queries)
+}
+
+func TestParseComposerQueries_PrefersLock(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "composer.json"), []byte(`{
+		"require": {"symfony/routing": "^7.4.0 || ^8.0.0"}
+	}`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "composer.lock"), []byte(`{
+		"packages": [{"name": "symfony/routing", "version": "v7.4.9"}]
+	}`), 0o600))
+
+	file, queries := parseComposerQueries(dir)
+	assert.Equal(t, "composer.lock", file)
+	require.Len(t, queries, 1)
+	assert.Equal(t, "7.4.9", queries[0].Version)
+	assert.False(t, queries[0].IsRange)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "composer.lock"), []byte("{"), 0o600))
+	_, queries = parseComposerQueries(dir)
+	assert.Empty(t, queries)
+}
+
+// --- workspaces ---
+
+func TestExpandMemberDirs(t *testing.T) {
+	dir := t.TempDir()
+	for _, d := range []string{"crates/a", "crates/b", "tools/c", "crates/a/nested"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, d), 0o750))
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "crates", "file.txt"), []byte("x"), 0o600))
+
+	got := expandMemberDirs(dir, []string{"crates/*", "./tools/c/", "!crates/b", "", "deep/**/x"})
+	assert.ElementsMatch(t, []string{
+		filepath.Join(dir, "crates", "a"),
+		filepath.Join(dir, "crates", "b"),
+		filepath.Join(dir, "tools", "c"),
+	}, got)
+}
+
+func TestParseCargoQueries_SkipsWorkspaceMembers(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "tokio-test"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte(`[workspace]
+members = ["tokio-test", "missing"]
+
+[package]
+name = "tokio"
+version = "1.0.0"
+
+[dependencies]
+tokio-test = "0.4.0"
+bytes = "1.0"
+`), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "tokio-test", "Cargo.toml"), []byte(`[package]
+name = "tokio-test"
+version = "0.4.0"
+`), 0o600))
+
+	_, queries := parseCargoQueries(dir)
+	require.Len(t, queries, 1)
+	assert.Equal(t, "bytes", queries[0].Name)
+}
+
+func TestParseNpmQueries_SkipsWorkspaceMembers(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "packages", "ui"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "packages", "ui", "package.json"),
+		[]byte(`{"name": "@acme/ui"}`), 0o600))
+
+	for _, workspaces := range []string{`["packages/*"]`, `{"packages": ["packages/*"]}`} {
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{
+			"workspaces": `+workspaces+`,
+			"dependencies": {"@acme/ui": "^1.0.0", "minimist": "^1.2.3"}
+		}`), 0o600))
+
+		file, queries := parseNpmQueries(dir)
+		assert.Equal(t, "package.json", file)
+		require.Len(t, queries, 1, "workspaces=%s", workspaces)
+		assert.Equal(t, "minimist", queries[0].Name)
+	}
+
+	// Unparseable workspaces field: nothing is dropped.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{
+		"workspaces": 42,
+		"dependencies": {"@acme/ui": "^1.0.0"}
+	}`), 0o600))
+	_, queries := parseNpmQueries(dir)
+	assert.Len(t, queries, 1)
+}
+
+func TestParseGoModQueries_SkipsWorkMembersAndLocalReplaces(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "lib"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lib", "go.mod"), []byte("module example.com/lib\n\ngo 1.22\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.work"), []byte("go 1.22\n\nuse (\n\t.\n\t./lib\n\t./absent\n)\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte(`module example.com/app
+
+go 1.22
+
+require (
+	example.com/lib v0.0.0
+	example.com/sibling v1.0.0
+	github.com/foo/bar v1.0.0
+)
+
+replace example.com/sibling => ../sibling
+`), 0o600))
+
+	queries, err := parseGoModQueries(dir)
+	require.NoError(t, err)
+	require.Len(t, queries, 1)
+	assert.Equal(t, "github.com/foo/bar", queries[0].Name)
+
+	// A malformed go.work is ignored rather than fatal.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.work"), []byte("use (\n"), 0o600))
+	queries, err = parseGoModQueries(dir)
+	require.NoError(t, err)
+	assert.Len(t, queries, 2)
+}

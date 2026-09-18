@@ -36,7 +36,9 @@ The September 2026 benchmark showed the collector reporting a declared *minimum*
 
 **Reporting.** A range finding is titled `Vulnerable dependency floor: click>=8.1.3 allows CVE-2026-7246` and its body says the declared minimum is vulnerable, that the installed version is not known without a lockfile, and which version to raise the floor to. Confidence is multiplied by **0.6** (chosen over a flat 0.5 cap so severity ordering survives: critical 0.95 → 0.57, high 0.85 → 0.51, medium 0.65 → 0.39), applied after the dev-only discount so the two compose; the `version-floor` tag marks these signals. Titles change for every range finding, so signal IDs change once.
 
-**Lockfiles win.** When a lockfile with resolved versions sits next to the manifest it is used instead and its versions are exact: package-lock.json today; Cargo.lock and composer.lock, workspace-member skipping and the dephealth counterpart land in the follow-up PR for the same bead. composer.json `require-dev` is now marked dev-only, matching npm.
+**Lockfiles win.** When a lockfile with resolved versions sits next to the manifest it is used instead and its versions are exact: package-lock.json (existing), plus Cargo.lock and composer.lock (new; composer.lock `packages-dev` and composer.json `require-dev` are now marked dev-only). yarn.lock, pnpm-lock.yaml, poetry.lock, uv.lock, mix.lock and packages.lock.json are not parsed yet.
+
+**Workspace members are skipped.** A dependency on another member of the same Cargo workspace, npm workspace or go.work (or a go.mod module with a local `replace`) is source in this repository, not a published artifact, and is never queried. The same range treatment applies to dephealth's version-specific checks (crates.io yanked, Hex retired, NuGet deprecated), and dephealth resolves Cargo.toml floors through Cargo.lock before checking crates.io.
 
 ## Consequences
 
