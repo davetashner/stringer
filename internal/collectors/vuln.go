@@ -417,28 +417,44 @@ func parsePomQueries(repoPath string) []PackageQuery {
 	return queries
 }
 
-// parseGradleQueries reads build.gradle or build.gradle.kts and returns the
-// chosen filename and PackageQuery entries for OSV lookup.
-// Returns "", nil if no Gradle build file exists or on parse error (non-fatal).
+// parseGradleQueries reads the root build.gradle or build.gradle.kts plus
+// the build files of subprojects included from settings.gradle, resolving
+// version-catalog references (gradle/*.versions.toml, gradle/*.gradle ext
+// maps) to coordinates. Returns the root build file name and the combined
+// PackageQuery entries (deduplicated by name@version), or "", nil if no
+// Gradle build file exists.
 func parseGradleQueries(repoPath string) (string, []PackageQuery) {
-	for _, name := range []string{"build.gradle", "build.gradle.kts"} {
+	files := findGradleBuildFiles(repoPath)
+	if len(files) == 0 {
+		return "", nil
+	}
+
+	catalogs := loadGradleCatalogs(repoPath)
+	seen := make(map[string]bool)
+	var queries []PackageQuery
+
+	for _, name := range files {
 		data, err := FS.ReadFile(filepath.Join(repoPath, name))
 		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
 			slog.Warn("vuln: reading manifest", "file", name, "error", err)
-			return "", nil
+			continue
 		}
+		// Root scripts may define ext { versions = [...] } maps themselves.
+		catalogs.addGroovy(data)
 
-		queries, err := parseGradleDeps(data)
+		parsed, err := parseGradleDepsWithCatalogs(data, catalogs)
 		if err != nil {
 			slog.Warn("vuln: parsing manifest", "file", name, "error", err)
-			return "", nil
+			continue
 		}
-		return name, queries
+		for _, q := range parsed {
+			if !seen[q.Name+"@"+q.Version] {
+				seen[q.Name+"@"+q.Version] = true
+				queries = append(queries, q)
+			}
+		}
 	}
-	return "", nil
+	return files[0], queries
 }
 
 // parseCargoQueries reads Cargo.lock (preferred: resolved versions) or

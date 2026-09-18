@@ -46,7 +46,7 @@ Stringer runs fifteen collectors in one command, scores each finding by confiden
 |-----------|---------------|
 | `todos` | `TODO`, `FIXME`, `HACK`, `XXX`, `BUG`, `OPTIMIZE` comments, enriched with git blame author and age |
 | `vuln` | Known CVEs via [OSV.dev](https://osv.dev/) across 11 ecosystems (Go, npm, Maven, Gradle, Cargo, .NET incl. Central Package Management, Python, Composer, Swift, sbt, Mix) — no language toolchains required |
-| `dephealth` | Archived, deprecated, and stale dependencies across 10 ecosystems |
+| `dephealth` | Archived, deprecated, and stale dependencies across 11 ecosystems |
 | `lotteryrisk` | Directories where one author owns most of the code, weighted by recency |
 | `complexity` | Complex functions via Go AST analysis (or heuristics for other languages), cross-referenced with churn |
 | `deadcode` | Unused functions and types |

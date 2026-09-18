@@ -62,7 +62,7 @@ type ModuleRetract struct {
 }
 
 // DepHealthCollector parses dependency manifests (go.mod, package.json,
-// Cargo.toml, pom.xml, *.csproj, requirements.txt, pyproject.toml,
+// Cargo.toml, pom.xml, build.gradle, *.csproj, requirements.txt, pyproject.toml,
 // composer.json, Package.swift, build.sbt, mix.exs) to extract dependency
 // information and emits signals for deprecated, yanked, archived, and stale
 // dependencies across multiple ecosystems.
@@ -108,6 +108,10 @@ func (c *DepHealthCollector) Collect(ctx context.Context, repoPath string, opts 
 	// --- Java/Maven ecosystem (pom.xml) ---
 	mavenSignals := c.collectMavenHealth(ctx, repoPath, metrics)
 	signals = append(signals, mavenSignals...)
+
+	// --- Java/Gradle ecosystem (build.gradle, build.gradle.kts) ---
+	gradleSignals := c.collectGradleHealth(ctx, repoPath, metrics)
+	signals = append(signals, gradleSignals...)
 
 	// --- C#/NuGet ecosystem (*.csproj) ---
 	nugetSignals := c.collectNuGetHealth(ctx, repoPath, metrics)
@@ -429,6 +433,30 @@ func (c *DepHealthCollector) collectMavenHealth(ctx context.Context, repoPath st
 		metrics.Stale = append(metrics.Stale, s.Title)
 	}
 	return mavenSignals
+}
+
+// collectGradleHealth parses build.gradle(.kts) files (root plus settings.gradle
+// subprojects, with version-catalog references resolved) and checks Maven
+// Central for stale artifacts. Gradle artifacts live on Maven Central, so the
+// Maven client and its lookup cap are reused.
+func (c *DepHealthCollector) collectGradleHealth(ctx context.Context, repoPath string, metrics *DepHealthMetrics) []signal.RawSignal {
+	filePath, deps := parseGradleQueries(repoPath)
+	if len(deps) == 0 {
+		return nil
+	}
+
+	metrics.Ecosystems = append(metrics.Ecosystems, "gradle")
+
+	client := c.mavenClient
+	if client == nil {
+		client = &realMavenRegistryClient{}
+	}
+
+	gradleSignals := checkMavenDeps(ctx, client, deps, filePath)
+	for _, s := range gradleSignals {
+		metrics.Stale = append(metrics.Stale, s.Title)
+	}
+	return gradleSignals
 }
 
 // collectNuGetHealth parses .csproj files and checks NuGet for deprecated packages.
