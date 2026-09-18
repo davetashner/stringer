@@ -183,7 +183,7 @@ public record struct Eta(int X);
 public abstract partial class Theta { }
 private class Iota { }
 `
-	syms := extractSymbols(content, "A.cs", ".cs")
+	syms := extractSymbols(content, "A.cs", ".cs", false)
 	var types []string
 	exported := map[string]bool{}
 	for _, s := range syms {
