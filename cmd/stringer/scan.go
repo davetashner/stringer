@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -247,6 +248,7 @@ func (sc *scanContext) runPipeline() error {
 			sc.collectorNames = cn
 		}
 		slog.Info("scanning", "collectors", len(cn))
+		p.SetProgress(collectorProgressLogger(ws.Name))
 
 		wsResult, err := p.Run(sc.cmd.Context())
 		if err != nil {
@@ -268,13 +270,9 @@ func (sc *scanContext) runPipeline() error {
 		}
 	}
 
-	for _, cr := range sc.result.Results {
-		if cr.Err != nil {
-			slog.Error("collector failed", "name", cr.Collector, "error", cr.Err, "duration", cr.Duration)
-		} else {
-			slog.Info("collector complete", "name", cr.Collector, "signals", len(cr.Signals), "duration", cr.Duration)
-		}
-	}
+	// Per-collector completion is logged as each collector finishes (see
+	// collectorProgressLogger); only the aggregate is summarised here.
+	slog.Debug("collectors finished", "count", len(sc.result.Results))
 
 	// Warn when an explicitly requested collector produced no signals and no error.
 	if scanCollectors != "" {
@@ -293,6 +291,37 @@ func (sc *scanContext) runPipeline() error {
 	}
 
 	return nil
+}
+
+// collectorProgressLogger returns pipeline progress callbacks that log each
+// collector's completion the moment it finishes (INFO, or ERROR on failure)
+// and a DEBUG heartbeat listing collectors still running, so a single slow
+// collector in a long scan is visible rather than hidden until errgroup.Wait
+// returns. workspace, when non-empty, is attached to every line so
+// multi-workspace scans stay attributable.
+func collectorProgressLogger(workspace string) pipeline.Progress {
+	withWS := func(kv ...any) []any {
+		if workspace != "" {
+			kv = append(kv, "workspace", workspace)
+		}
+		return kv
+	}
+	return pipeline.Progress{
+		OnCollectorDone: func(cr signal.CollectorResult) {
+			if cr.Err != nil {
+				slog.Error("collector failed", withWS("name", cr.Collector, "error", cr.Err, "duration", cr.Duration)...)
+				return
+			}
+			slog.Info("collector complete", withWS("name", cr.Collector, "signals", len(cr.Signals), "duration", cr.Duration)...)
+		},
+		OnHeartbeat: func(running []pipeline.RunningCollector) {
+			names := make([]string, len(running))
+			for i, r := range running {
+				names[i] = fmt.Sprintf("%s(%s)", r.Name, r.Elapsed.Round(time.Second))
+			}
+			slog.Debug("collectors still running", withWS("count", len(running), "running", strings.Join(names, ","))...)
+		},
+	}
 }
 
 // runLLMAnalysis runs optional LLM-based priority inference and dependency
