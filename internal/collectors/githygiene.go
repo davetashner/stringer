@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -240,6 +241,10 @@ func scanTextFileHygiene(path, relPath string, minConfidence float64, registry *
 
 	var signals []signal.RawSignal
 
+	// Classify the file once so generic (low-precision) secret detectors can
+	// stay quiet in docs, templates, comments, docstrings and test fixtures.
+	secretCtx := newSecretScanContext(relPath)
+
 	// Split into lines for pattern matching.
 	lines := strings.Split(string(rawBytes), "\n")
 	conflictReported := false
@@ -265,49 +270,21 @@ func scanTextFileHygiene(path, relPath string, minConfidence float64, registry *
 			}
 		}
 
+		// Track docstring/comment state for every line, even when no
+		// pattern matches, so multi-line docstrings are followed correctly.
+		skipGeneric := secretCtx.skipGeneric(line)
+
 		// Check for committed secrets using the registry.
 		secretFound := false
-		if matches := registry.Match(line); len(matches) > 0 {
-			// Use the first match (one secret signal per line).
-			m := matches[0]
-			if m.Confidence >= minConfidence {
-				signals = append(signals, signal.RawSignal{
-					Source:     "githygiene",
-					Kind:       "committed-secret",
-					FilePath:   relPath,
-					Line:       lineNo + 1,
-					Title:      fmt.Sprintf("Possible %s in %s:%d", m.Name, relPath, lineNo+1),
-					Confidence: m.Confidence,
-					Tags:       []string{"git-hygiene", "security", "secret"},
-				})
-				secretFound = true
-			}
+		if sig, ok := secretSignalForLine(secretCtx, registry, line, relPath, lineNo+1, skipGeneric, minConfidence); ok {
+			signals = append(signals, sig)
+			secretFound = true
 		}
 
 		// Entropy-based detection (only if enabled and no pattern match already).
-		if entropyEnabled && !secretFound {
-			if secretAssignmentPattern.MatchString(line) {
-				for _, lit := range stringLiteralPattern.FindAllStringSubmatch(line, -1) {
-					if len(lit) < 2 {
-						continue
-					}
-					val := lit[1]
-					if len(val) >= 16 && shannonEntropy(val) >= 4.0 {
-						conf := 0.4
-						if conf >= minConfidence {
-							signals = append(signals, signal.RawSignal{
-								Source:     "githygiene",
-								Kind:       "committed-secret",
-								FilePath:   relPath,
-								Line:       lineNo + 1,
-								Title:      fmt.Sprintf("Possible high-entropy secret in %s:%d", relPath, lineNo+1),
-								Confidence: conf,
-								Tags:       []string{"git-hygiene", "security", "secret", "entropy-based"},
-							})
-						}
-						break // one signal per line
-					}
-				}
+		if entropyEnabled && !secretFound && !skipGeneric {
+			if sig, ok := entropySignalForLine(secretCtx, line, relPath, lineNo+1, minConfidence); ok {
+				signals = append(signals, sig)
 			}
 		}
 	}
@@ -396,3 +373,79 @@ func (c *GitHygieneCollector) Metrics() any { return c.metrics }
 // Compile-time interface checks.
 var _ collector.Collector = (*GitHygieneCollector)(nil)
 var _ collector.MetricsProvider = (*GitHygieneCollector)(nil)
+
+// secretSignalForLine runs the pattern registry on a line and returns the
+// first reportable match as a signal. Generic matches are dropped on lines
+// where skipGeneric is set (docs, templates, comments, docstrings) and are
+// down-weighted for placeholder values and test files (stringer-nxx.7).
+func secretSignalForLine(sc *secretScanContext, registry *secretRegistry, line, relPath string, lineNo int, skipGeneric bool, minConfidence float64) (signal.RawSignal, bool) {
+	for _, m := range registry.Match(line) {
+		conf := m.Confidence
+		tags := []string{"git-hygiene", "security", "secret"}
+		if m.Generic {
+			if skipGeneric {
+				continue
+			}
+			adjusted, extra, keep := sc.adjustGenericSecret(line, conf)
+			if !keep {
+				continue
+			}
+			conf = adjusted
+			tags = append(tags, extra...)
+		}
+		if conf < minConfidence {
+			return signal.RawSignal{}, false
+		}
+		// Use the first reportable match (one secret signal per line).
+		return signal.RawSignal{
+			Source:     "githygiene",
+			Kind:       "committed-secret",
+			FilePath:   relPath,
+			Line:       lineNo,
+			Title:      fmt.Sprintf("Possible %s in %s:%d", m.Name, relPath, lineNo),
+			Confidence: conf,
+			Tags:       tags,
+		}, true
+	}
+	return signal.RawSignal{}, false
+}
+
+// entropySignalForLine reports a high-entropy string literal assigned to a
+// secret-like variable name. Placeholder values are ignored and test-file
+// hits are capped like generic pattern matches.
+func entropySignalForLine(sc *secretScanContext, line, relPath string, lineNo int, minConfidence float64) (signal.RawSignal, bool) {
+	if !secretAssignmentPattern.MatchString(line) {
+		return signal.RawSignal{}, false
+	}
+	for _, lit := range stringLiteralPattern.FindAllStringSubmatch(line, -1) {
+		if len(lit) < 2 {
+			continue
+		}
+		val := lit[1]
+		if len(val) < 16 || shannonEntropy(val) < 4.0 {
+			continue
+		}
+		if isPlaceholderSecretValue(val) {
+			return signal.RawSignal{}, false
+		}
+		conf := 0.4
+		tags := []string{"git-hygiene", "security", "secret", "entropy-based"}
+		if sc.testFile {
+			conf = math.Min(conf, secretTestFileMaxConfidence)
+			tags = append(tags, "test-file")
+		}
+		if conf < minConfidence {
+			return signal.RawSignal{}, false
+		}
+		return signal.RawSignal{
+			Source:     "githygiene",
+			Kind:       "committed-secret",
+			FilePath:   relPath,
+			Line:       lineNo,
+			Title:      fmt.Sprintf("Possible high-entropy secret in %s:%d", relPath, lineNo),
+			Confidence: conf,
+			Tags:       tags,
+		}, true // one signal per line
+	}
+	return signal.RawSignal{}, false
+}

@@ -389,3 +389,176 @@ func TestGitHygiene_NonRepoFallsBackToFullScan(t *testing.T) {
 	}
 	assert.True(t, found, "non-repo scan should still flag large binaries")
 }
+
+// ---------------------------------------------------------------------------
+// Context-aware secret suppression (stringer-nxx.7). Fixture values are
+// obviously fake; none resemble a real credential format.
+// ---------------------------------------------------------------------------
+
+// collectSecrets writes files into a temp dir and returns committed-secret
+// signals from a default githygiene collector.
+func collectSecrets(t *testing.T, files map[string]string, opts signal.CollectorOpts) []signal.RawSignal {
+	t.Helper()
+	dir := t.TempDir()
+	for name, content := range files {
+		full := filepath.Join(dir, filepath.FromSlash(name))
+		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o750))
+		require.NoError(t, os.WriteFile(full, []byte(content), 0o600))
+	}
+	c := &GitHygieneCollector{}
+	signals, err := c.Collect(context.Background(), dir, opts)
+	require.NoError(t, err)
+	return filterByKind(signals, "committed-secret")
+}
+
+func TestGitHygiene_Secrets_SkipsDocumentationForGeneric(t *testing.T) {
+	secrets := collectSecrets(t, map[string]string{
+		"docs/config.rst":          "    SECRET_KEY = 'supersecretvalue123456'\n",
+		"README.md":                "    password = \"supersecretvalue123456\"\n",
+		"docs/tutorial/deploy.md":  "SECRET_KEY = 'supersecretvalue123456'\n",
+		"docs/de/docs/oauth2.md":   "eyJabc.eyJdef.notarealsignature\n",
+		"docs_src/security/t4.py":  "SECRET_KEY = 'supersecretvalue123456'\n",
+		"examples/app/settings.py": "SECRET_KEY = 'supersecretvalue123456'\n",
+		"templates/admin/login.html": `<input name="password" value="supersecretvalue123456">` + "\n" +
+			`password = "supersecretvalue123456"` + "\n",
+	}, signal.CollectorOpts{})
+	assert.Empty(t, secrets)
+}
+
+func TestGitHygiene_Secrets_HighPrecisionStillFiresInDocs(t *testing.T) {
+	secrets := collectSecrets(t, map[string]string{
+		"docs/setup.md":    "const awsKey = \"AKIAIOSFODNN7EXAMPLE\"\n",
+		"examples/key.pem": "-----BEGIN RSA PRIVATE KEY-----\nexample-not-a-real-key\n-----END RSA PRIVATE KEY-----\n",
+		"settings.py-tpl":  "const awsKey = \"AKIAIOSFODNN7EXAMPLE\"\n",
+		"src/settings.py":  "# const awsKey = \"AKIAIOSFODNN7EXAMPLE\"\n",
+	}, signal.CollectorOpts{})
+	require.Len(t, secrets, 4)
+	for _, s := range secrets {
+		assert.NotContains(t, s.Tags, "likely-placeholder")
+		assert.GreaterOrEqual(t, s.Confidence, 0.7)
+	}
+}
+
+func TestGitHygiene_Secrets_SkipsTemplateFilesAndPlaceholders(t *testing.T) {
+	secrets := collectSecrets(t, map[string]string{
+		"project_name/settings.py-tpl": "SECRET_KEY = 'supersecretvalue123456'\n",
+		"config/app.yaml.example":      "password: \"supersecretvalue123456\"\n",
+		"deploy/values.tmpl":           "password: \"supersecretvalue123456\"\n",
+		"ansible/vars.j2":              "password: \"supersecretvalue123456\"\n",
+		"src/settings.py": "SECRET_KEY = '{{ secret_key }}'\n" +
+			"API_KEY = \"${API_KEY_FROM_ENV}\"\n" +
+			"PASSWORD = '<your-password-here>'\n" +
+			"PASSWORD = 'changeme-now-please'\n" +
+			"API_KEY = 'example-not-a-real-key'\n" +
+			"API_KEY = 'placeholder-value-here'\n" +
+			"API_KEY = 'xxxxxxxxxxxxxxxx'\n" +
+			"API_KEY = 'abcdef...'\n" +
+			"SET_PASSWORD = 'ALTER USER %(user)s IDENTIFIED BY \"%(password)s\"'\n",
+	}, signal.CollectorOpts{})
+	assert.Empty(t, secrets)
+}
+
+func TestGitHygiene_Secrets_SkipsCommentsAndDocstrings(t *testing.T) {
+	secrets := collectSecrets(t, map[string]string{
+		"src/flask/config.py": "class Config:\n" +
+			"    \"\"\"Example usage::\n\n" +
+			"        SECRET_KEY = 'supersecretvalue123456'\n" +
+			"    \"\"\"\n\n" +
+			"    # SECRET_KEY = 'supersecretvalue123456'\n" +
+			"    SECRET_KEY = 'supersecretvalue999999'\n",
+		"cmd/main.go": "// password = \"supersecretvalue123456\"\n" +
+			"/* password = \"supersecretvalue123456\" */\n" +
+			" * password = \"supersecretvalue123456\"\n" +
+			"var password = \"supersecretvalue777777\"\n",
+	}, signal.CollectorOpts{})
+	require.Len(t, secrets, 2)
+	files := map[string]int{}
+	for _, s := range secrets {
+		files[filepath.ToSlash(s.FilePath)] = s.Line
+		assert.Equal(t, 0.6, s.Confidence)
+	}
+	assert.Equal(t, 8, files["src/flask/config.py"])
+	assert.Equal(t, 4, files["cmd/main.go"])
+}
+
+func TestGitHygiene_Secrets_FakeValuesDownweighted(t *testing.T) {
+	secrets := collectSecrets(t, map[string]string{
+		"src/settings.py": "SECRET_KEY = 'development key'\n" +
+			"PASSWORD = 'dummy'\n" +
+			"API_KEY = 'supersecretvalue123456'\n",
+	}, signal.CollectorOpts{})
+	require.Len(t, secrets, 2, "'dummy' is shorter than the generic pattern minimum")
+	byLine := map[int]signal.RawSignal{}
+	for _, s := range secrets {
+		byLine[s.Line] = s
+	}
+	assert.Equal(t, 0.2, byLine[1].Confidence)
+	assert.Contains(t, byLine[1].Tags, "likely-placeholder")
+	assert.Equal(t, 0.6, byLine[3].Confidence)
+	assert.NotContains(t, byLine[3].Tags, "likely-placeholder")
+}
+
+func TestGitHygiene_Secrets_TestFilesCapped(t *testing.T) {
+	secrets := collectSecrets(t, map[string]string{
+		"tests/conftest.py":      "app.config.update(SECRET_KEY=\"test key\")\n",
+		"tests/settings.py":      "SECRET_KEY = 'supersecretvalue123456'\n",
+		"pkg/config_test.go":     "password = \"supersecretvalue123456\"\n",
+		"src/__tests__/setup.js": "const apiKey = { api_key: 'supersecretvalue123456' };\n",
+	}, signal.CollectorOpts{})
+	require.Len(t, secrets, 4)
+	for _, s := range secrets {
+		assert.Contains(t, s.Tags, "test-file", s.FilePath)
+		assert.LessOrEqual(t, s.Confidence, 0.3, s.FilePath)
+	}
+	for _, s := range secrets {
+		if strings.HasSuffix(s.FilePath, "conftest.py") {
+			assert.Equal(t, 0.2, s.Confidence)
+			assert.Contains(t, s.Tags, "likely-placeholder")
+		}
+	}
+}
+
+func TestGitHygiene_Secrets_MinConfidenceDropsDownweighted(t *testing.T) {
+	secrets := collectSecrets(t, map[string]string{
+		"tests/conftest.py": "SECRET_KEY = \"test key\"\n",
+		"src/settings.py":   "SECRET_KEY = 'supersecretvalue123456'\n",
+	}, signal.CollectorOpts{MinConfidence: 0.5})
+	require.Len(t, secrets, 1)
+	assert.Equal(t, "src/settings.py", filepath.ToSlash(secrets[0].FilePath))
+}
+
+func TestGitHygiene_Secrets_EntropyRespectsContext(t *testing.T) {
+	// Mixed-case alphanumerics with digits reach the 4.0 bit entropy floor
+	// without resembling any provider key format.
+	highEntropy := "aB3dE6gH9jK2mN5pQ8sT1vW4yZ7xC0fL"
+	secrets := collectSecrets(t, map[string]string{
+		"docs/auth.md":       "token = \"" + highEntropy + "\"\n",
+		"src/auth.py":        "# token = \"" + highEntropy + "\"\n" + "token = \"" + highEntropy + "\"\n",
+		"tests/test_auth.py": "token = \"" + highEntropy + "\"\n",
+		"src/tpl.py":         "token = \"{{ " + highEntropy + " }}\"\n",
+	}, signal.CollectorOpts{EntropyDetection: true})
+	require.Len(t, secrets, 2)
+	for _, s := range secrets {
+		assert.Contains(t, s.Tags, "entropy-based")
+		switch filepath.ToSlash(s.FilePath) {
+		case "src/auth.py":
+			assert.Equal(t, 2, s.Line)
+			assert.Equal(t, 0.4, s.Confidence)
+		case "tests/test_auth.py":
+			assert.Equal(t, 0.3, s.Confidence)
+			assert.Contains(t, s.Tags, "test-file")
+		default:
+			t.Errorf("unexpected entropy signal in %s", s.FilePath)
+		}
+	}
+}
+
+func TestGitHygiene_Secrets_EntropyMinConfidence(t *testing.T) {
+	highEntropy := "aB3dE6gH9jK2mN5pQ8sT1vW4yZ7xC0fL"
+	secrets := collectSecrets(t, map[string]string{
+		"tests/test_auth.py": "token = \"" + highEntropy + "\"\n",
+		"src/auth.py":        "token = \"" + highEntropy + "\"\n",
+	}, signal.CollectorOpts{EntropyDetection: true, MinConfidence: 0.35})
+	require.Len(t, secrets, 1, "test-file hit capped at 0.3 falls below the 0.35 floor")
+	assert.Equal(t, "src/auth.py", filepath.ToSlash(secrets[0].FilePath))
+}
