@@ -168,7 +168,7 @@ process only. "High conf" is the share of signals with confidence >= 0.8.
 | django/django | Python | 7,091 | 4,297 | 10% | 2m 35s | 2m 37s | 2m 35s / 16m 17s* | 419 MB | 3,254 | 2m 37s |
 | apache/kafka (new) | Java/Scala | 7,547 | 12,069 | 4% | 52m 32s | 52m 18s | 1h 10m* / 1h 12m* | 1,077 MB | - | - |
 | vercel/next.js | JS/TS | 32,471 | 14,027 | 17% | 34m 59s | 35m 05s | 2h 10m* / 4h 49m* | 660 MB | 10,334 | 26m |
-| kubernetes/kubernetes | Go | 31,373 | K8S_SIGNALS | K8S_HIGH | K8S_SCAN | K8S_REPORT | K8S_WALL* | K8S_RSS | 40,117 | 1h 23m |
+| kubernetes/kubernetes | Go | 31,373 | 51,542 | 20% | 1h 57m | 1h 50m | 3h 06m* / 1h 50m | 2,152 MB | 40,117 | 1h 23m |
 
 \* Host slept during the run; wall time is not meaningful for these.
 
@@ -211,7 +211,7 @@ one collector (see Performance). Future runs should use `caffeinate -i`.
 | django/django | 1,626 | 15 | 1,491 | 0 | 2 | 200 | 88 | 2 | 236 | 563 | 68 | 6 |
 | apache/kafka | 5,208 | 0 | 1,186 | 0 | 530 | 200 | 63 | 0 | 96 | 4,625 | 161 | 0 |
 | vercel/next.js | 8,262 | 79 | 145 | 0 | 20 | 1,564 | 3 | 1,012 | 1 | 2,051 | 802 | 88 |
-| kubernetes/kubernetes | K8S_ROW |
+| kubernetes/kubernetes | 24,140 | 102 | 952 | 187 | 72 | 5,166 | 199 | 4,998 | 89 | 11,937 | 3,531 | 169 |
 
 Observations:
 
@@ -225,6 +225,9 @@ Observations:
   `packages/next/src/compiled/`, which holds vendored precompiled bundles.
 - C# produced zero complexity, deadcode and coupling signals: the language
   is not in those collectors' tables.
+- Kubernetes: 11,030 signals (21%) are in generated files (`zz_generated*`,
+  `*.pb.go`), and 39,390 (76%) are under `staging/`, the published library
+  modules of the go.work workspace.
 - Kafka and Jellyfin produced zero vuln and dephealth signals because their
   dependency declarations (Gradle `libs.*` references, NuGet Central Package
   Management) are not parsed.
@@ -249,6 +252,7 @@ sample showed, not a measured precision.
 | django | complexity and dead code plausible in `django/` | deadcode 1,153/1,491 in `tests/`; secrets 77/88 in tests and templates | test directories in deadcode and githygiene |
 | kafka | top complexity hits are real (700-line generators, coordinator methods) | complex-function: 3,137 of 5,208 below 0.5 confidence | 1,305 of 3,677 flagged `src/main/java` files have `src/test/java/.../<Name>Test.java`; Gradle deps unparsed; 528 doc links with `{version}` placeholders |
 | next.js | vuln and BUG markers real | complex-function: 6,463 of 8,262 in `compiled/` | vendored bundles not excluded |
+| kubernetes | vuln (169) and dephealth (187) fire on the 34 go.work modules; churn (4,862) is per-workspace | complex-function: 8,622 of 24,140 in `_test.go`, 5,774 in generated files | 11,030 signals (21%) in `zz_generated*` / `*.pb.go`; 76% of all signals under `staging/` |
 
 ### Performance
 
@@ -263,7 +267,7 @@ Slowest collector per repo, monotonic, summed across workspaces:
 | facebook/react | gitlog | 1m 49s | 64% |
 | apache/kafka | deadcode | 52m 32s | 100% |
 | vercel/next.js | deadcode | 24m 14s | 69% |
-| kubernetes/kubernetes | K8S_SLOWEST |
+| kubernetes/kubernetes | deadcode | 1h 27m | 47% |
 
 **The deadcode collector is superlinear in file count and dominates every
 repo over 3k files.** 3m on Laravel (3.4k files), 52m on Kafka (7.5k),
@@ -280,8 +284,7 @@ Second tier: gitlog on monorepos (react 1m 49s over 40 workspaces,
 kubernetes 42m over 34) re-reads the same shared history per workspace;
 patterns on Jellyfin (46s for 2.6k files) is slow for a file walk.
 
-Memory stays modest: 1.1 GB peak on Kafka, K8S_RSS on kubernetes, 660 MB
-on next.js.
+Memory: 2.2 GB peak on kubernetes, 1.1 GB on Kafka, 660 MB on next.js.
 
 ### Side experiment: shallow versus full history
 
