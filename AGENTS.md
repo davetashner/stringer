@@ -43,7 +43,7 @@ stringer/
 │   │   ├── patterns_classify.go # shared file classification: isTestFile, isGeneratedFile (header markers in first 5 lines + minified heuristic: avg line > 400 chars over first 20 lines) used by every source-walking collector
 │   │   ├── gitlog.go           # Reverts, high-churn files, stale branches
 │   │   ├── patterns.go         # Large files, missing tests, low test coverage ratios (Go, JS/TS, Python, Ruby, Java, Kotlin, Rust, C#, PHP, Swift)
-│   │   ├── lotteryrisk*.go     # Lottery risk: core, ownership math, review analysis
+│   │   ├── lotteryrisk*.go     # Lottery risk: core, ownership math, review analysis, minimum-substance + shallow-history rules (lotteryrisk_substance.go: >=3 source files and >=100 blamed lines, static/fixture dir names skipped; shallow clones capped at 0.5 confidence and tagged shallow-history, DR-006 amendment)
 │   │   ├── github.go           # GitHub issues, PRs, and review comments
 │   │   ├── dephealth*.go       # Dependency health: 10 ecosystems (Go, npm, Cargo, Maven, NuGet, PyPI, Packagist, SwiftPM, sbt, Hex)
 │   │   ├── vuln*.go            # Vuln scanner: 11 ecosystems via OSV.dev (+ PHP, Swift, Scala, Elixir parsers); CVSS v3 base-score severity, npm dev/prod reachability, paginated OSV queries with partial-coverage accounting, versioned signal titles (DR-023)
