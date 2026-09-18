@@ -26,6 +26,19 @@ func writeSourceFile(t *testing.T, dir, relPath string) {
 	require.NoError(t, os.WriteFile(full, []byte(content), 0o600))
 }
 
+// writeLaravelConfig creates relPath under dir as a Laravel-style PHP config
+// file: `<?php`, a use import, then `return [` with enough entries to pass
+// the minimum-size gate if it were mistaken for source.
+func writeLaravelConfig(t *testing.T, dir, relPath string) {
+	t.Helper()
+	full := filepath.Join(dir, filepath.FromSlash(relPath))
+	require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o750))
+	content := "<?php\n\nuse Illuminate\\Support\\Str;\n\nreturn [\n" +
+		strings.Repeat("    'key' => env('KEY', 'value'),\n", minSourceLinesForTestCheck+5) +
+		"];\n"
+	require.NoError(t, os.WriteFile(full, []byte(content), 0o600))
+}
+
 // missingTestPaths runs the patterns collector and returns the FilePath of
 // every missing-tests signal.
 func missingTestPaths(t *testing.T, dir string, opts signal.CollectorOpts) []string {
@@ -250,12 +263,20 @@ func TestPatterns_GoTestSameDirStillDetectedAndMissingReported(t *testing.T) {
 // --- Non-source exclusions ---
 
 func TestIsConfigPath(t *testing.T) {
+	// Path-only rules: dotfiles, *.config.*, well-known names, and
+	// configuration formats under a config/-style directory.
 	yes := []string{
-		"config/app.php",
-		"src/config/database.js",
-		"Config/Routes.cs",
-		"configs/dev.py",
-		"app/settings/base.py",
+		"config/database.yml",
+		"config/app.json",
+		"src/config/queue.yaml",
+		"configs/dev.toml",
+		"app/settings/base.ini",
+		"Config/Web.xml",
+		"config/app.properties",
+		"config/app.cfg",
+		"settings/nginx.conf",
+		"config/.env",
+		"config/.env.local",
 		"webpack.config.js",
 		"packages/ui/jest.config.ts",
 		"vite.Config.ts",
@@ -265,17 +286,75 @@ func TestIsConfigPath(t *testing.T) {
 		"setup.py",
 	}
 	for _, p := range yes {
-		assert.True(t, isConfigPath(filepath.FromSlash(p)), p)
+		assert.True(t, isConfigPath("", filepath.FromSlash(p)), p)
 	}
+	// Source languages keep their package semantics under config/: a Go,
+	// Java, C#, Python, Rust or JS module named config is still source. A
+	// PHP file that does not exist (or is not a returned array) is source too.
 	no := []string{
+		"internal/config/keypath.go",
+		"src/config/Loader.java",
+		"src/config/Loader.kt",
+		"Config/Routes.cs",
+		"src/config/mod.rs",
+		"configs/dev.py",
+		"app/settings/base.py",
+		"src/config/database.js",
+		"config/Kernel.php",
 		"src/configuration.go",
 		"src/ConfigLoader.java",
 		"app/models.py",
 		"config-stubs/app.php",
+		"config/database.yml.bak",
 	}
 	for _, p := range no {
-		assert.False(t, isConfigPath(filepath.FromSlash(p)), p)
+		assert.False(t, isConfigPath("", filepath.FromSlash(p)), p)
 	}
+}
+
+func TestIsPHPConfigArray(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, content string) string {
+		t.Helper()
+		full := filepath.Join(dir, name)
+		require.NoError(t, os.WriteFile(full, []byte(content), 0o600))
+		return full
+	}
+
+	yes := map[string]string{
+		"plain.php":    "<?php\n\nreturn [\n    'a' => 1,\n];\n",
+		"use.php":      "<?php\n\nuse Illuminate\\Support\\Str;\n\nreturn [\n];\n",
+		"declare.php":  "<?php\ndeclare(strict_types=1);\n\nreturn [];\n",
+		"comments.php": "<?php\n// header\n# hash\n/*\n * block\n */\n/* one line */\nreturn [\n];\n",
+		"array.php":    "<?php\n\nreturn array(\n    'a' => 1,\n);\n",
+		"bom.php":      "\xEF\xBB\xBF<?php\nreturn [];\n",
+		"nonl.php":     "<?php return [",
+	}
+	for name, content := range yes {
+		assert.True(t, isPHPConfigArray(write(name, content)), name)
+	}
+
+	class := "<?php\n\nnamespace App;\n\nclass Kernel\n{\n    public function handle() { return [1]; }\n}\n"
+	longHeader := "<?php\n" + strings.Repeat("// comment\n", phpConfigMaxLines) + "return [\n];\n"
+	no := map[string]string{
+		"class.php":      class,
+		"html.php":       "<html><?php return [] ?>",
+		"empty.php":      "",
+		"longheader.php": longHeader,
+		"openblock.php":  "<?php\n/*\n unterminated\n",
+		"usereturn.php":  "<?php\nuse Foo;\nfunction x() {}\nreturn [];\n",
+	}
+	for name, content := range no {
+		assert.False(t, isPHPConfigArray(write(name, content)), name)
+	}
+	assert.False(t, isPHPConfigArray(filepath.Join(dir, "missing.php")))
+
+	// The same rule applies through isConfigPath and isNonSourceForTests.
+	cfg := write("app.php", "<?php\n\nreturn [\n];\n")
+	assert.True(t, isConfigPath(cfg, filepath.FromSlash("config/app.php")))
+	assert.True(t, isNonSourceForTests(cfg, filepath.FromSlash("config/app.php"), true))
+	// ...but only under a config directory.
+	assert.False(t, isConfigPath(cfg, filepath.FromSlash("routes/app.php")))
 }
 
 func TestIsDataClassPath(t *testing.T) {
@@ -338,22 +417,24 @@ func TestIsDocOrDemoTree(t *testing.T) {
 
 func TestIsNonSourceForTests_DemoGate(t *testing.T) {
 	demo := filepath.FromSlash("docs_src/tutorial/main.py")
-	assert.True(t, isNonSourceForTests(demo, false))
-	assert.False(t, isNonSourceForTests(demo, true))
+	assert.True(t, isNonSourceForTests("", demo, false))
+	assert.False(t, isNonSourceForTests("", demo, true))
 
 	// Config and data-class exclusions are not gated by IncludeDemoPaths.
-	cfg := filepath.FromSlash("config/app.php")
-	assert.True(t, isNonSourceForTests(cfg, true))
+	cfg := filepath.FromSlash("config/database.yml")
+	assert.True(t, isNonSourceForTests("", cfg, true))
 	dto := filepath.FromSlash("src/Events/Login.php")
-	assert.True(t, isNonSourceForTests(dto, true))
+	assert.True(t, isNonSourceForTests("", dto, true))
 
-	assert.False(t, isNonSourceForTests(filepath.FromSlash("src/Cache/Store.php"), false))
+	assert.False(t, isNonSourceForTests("", filepath.FromSlash("src/Cache/Store.php"), false))
+	// A Go package named config is source (stringer-nxx.16).
+	assert.False(t, isNonSourceForTests("", filepath.FromSlash("internal/config/keypath.go"), false))
 }
 
 func TestPatterns_ConfigAndDataClassesNotFlagged(t *testing.T) {
 	dir := t.TempDir()
-	writeSourceFile(t, dir, "config/app.php")
-	writeSourceFile(t, dir, "config/cache.php")
+	writeLaravelConfig(t, dir, "config/app.php")
+	writeLaravelConfig(t, dir, "config/cache.php")
 	writeSourceFile(t, dir, "webpack.config.js")
 	writeSourceFile(t, dir, "proj/settings.py")
 	writeSourceFile(t, dir, "src/Illuminate/Auth/Events/Login.php")
@@ -392,13 +473,13 @@ func TestPatterns_DirectoryRatiosExcludeNonSourceDirs(t *testing.T) {
 		"extras/profiling/bench.py",
 		"extras/scripts/tool.py",
 		"docs_src/tutorial/main.py",
-		"config/app.php",
 		"src/Events/Login.php",
 		"src/core/engine.py",
 		"src/core/test_engine.py",
 	} {
 		writeSourceFile(t, dir, p)
 	}
+	writeLaravelConfig(t, dir, "config/app.php")
 
 	c := &PatternsCollector{}
 	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
@@ -415,7 +496,7 @@ func TestPatterns_DirectoryRatiosExcludeNonSourceDirs(t *testing.T) {
 func TestPatterns_DirectoryRatiosIncludeDemoOptIn(t *testing.T) {
 	dir := t.TempDir()
 	writeSourceFile(t, dir, "docs_src/tutorial/main.py")
-	writeSourceFile(t, dir, "config/app.php")
+	writeLaravelConfig(t, dir, "config/app.php")
 
 	c := &PatternsCollector{}
 	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{IncludeDemoPaths: true})
@@ -431,7 +512,7 @@ func TestPatterns_DirectoryRatiosIncludeDemoOptIn(t *testing.T) {
 func TestPatterns_LowTestRatioSkipsConfigDirs(t *testing.T) {
 	dir := t.TempDir()
 	for _, p := range []string{"config/a.php", "config/b.php", "config/c.php", "config/d.php"} {
-		writeSourceFile(t, dir, p)
+		writeLaravelConfig(t, dir, p)
 	}
 
 	c := &PatternsCollector{}
@@ -441,6 +522,46 @@ func TestPatterns_LowTestRatioSkipsConfigDirs(t *testing.T) {
 		assert.NotEqual(t, "low-test-ratio", s.Kind)
 		assert.NotEqual(t, "missing-tests", s.Kind)
 	}
+}
+
+// A source package named config (Go, Java, ...) is real code with its own
+// test conventions and must stay in missing-tests and the directory ratios;
+// only configuration formats and Laravel-style PHP arrays under config/ are
+// excluded (stringer-nxx.16).
+func TestPatterns_SourcePackagesNamedConfigAreSource(t *testing.T) {
+	dir := t.TempDir()
+	writeSourceFile(t, dir, "internal/config/keypath.go")
+	writeSourceFile(t, dir, "internal/config/global.go")
+	writeSourceFile(t, dir, "internal/config/global_test.go")
+	writeSourceFile(t, dir, "src/config/Loader.java")
+	writeLaravelConfig(t, dir, "config/app.php")
+	writeSourceFile(t, dir, "config/Kernel.php")
+
+	c := &PatternsCollector{}
+	_, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	require.NoError(t, err)
+
+	got := missingTestPaths(t, dir, signal.CollectorOpts{})
+	assert.Equal(t, []string{
+		filepath.FromSlash("config/Kernel.php"),
+		filepath.FromSlash("internal/config/keypath.go"),
+		filepath.FromSlash("src/config/Loader.java"),
+	}, got)
+
+	m, ok := c.Metrics().(*PatternsMetrics)
+	require.True(t, ok)
+	ratios := map[string]DirectoryTestRatio{}
+	for _, r := range m.DirectoryTestRatios {
+		ratios[filepath.ToSlash(r.Path)] = r
+	}
+	require.Contains(t, ratios, "internal/config")
+	assert.Equal(t, 2, ratios["internal/config"].SourceFiles)
+	assert.Equal(t, 1, ratios["internal/config"].TestFiles)
+	require.Contains(t, ratios, "src/config")
+	assert.Equal(t, 1, ratios["src/config"].SourceFiles)
+	// config/ holds one Laravel array (excluded) and one class (source).
+	require.Contains(t, ratios, "config")
+	assert.Equal(t, 1, ratios["config"].SourceFiles)
 }
 
 func TestPatterns_ContextCancelledDuringMissingTestLookup(t *testing.T) {
