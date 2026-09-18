@@ -4,6 +4,8 @@
 package collectors
 
 import (
+	"strings"
+
 	"github.com/BurntSushi/toml"
 )
 
@@ -49,11 +51,21 @@ func parseCargoDeps(data []byte) ([]PackageQuery, error) {
 			continue
 		}
 
-		queries = append(queries, PackageQuery{
-			Ecosystem: "crates.io",
-			Name:      name,
-			Version:   version,
-		})
+		// A bare Cargo requirement ("1.2.0") is a caret range; only "=1.2.0"
+		// pins. The floor is queried and the finding marked as a range.
+		floor, isRange := splitSemverConstraint(version, true)
+		if floor == "" {
+			continue
+		}
+		q := PackageQuery{Ecosystem: "crates.io", Name: name, Version: floor}
+		if isRange {
+			q.IsRange = true
+			q.Constraint = strings.TrimSpace(version)
+			if q.Constraint[0] >= '0' && q.Constraint[0] <= '9' {
+				q.Constraint = "^" + q.Constraint // make the implicit caret visible
+			}
+		}
+		queries = append(queries, q)
 	}
 
 	return queries, nil

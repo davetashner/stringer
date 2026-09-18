@@ -40,11 +40,14 @@ func parseSwiftPackageDeps(data []byte) []PackageQuery {
 		}
 		seen[url] = true
 
-		// Extract version from whichever capture group matched.
+		// Extract version from whichever capture group matched. Every form
+		// except exact: declares a range starting at the captured floor.
 		var version string
-		for _, group := range match[2:] {
+		isRange := false
+		for i, group := range match[2:] {
 			if len(group) > 0 {
 				version = string(group)
+				isRange = i != 5
 				break
 			}
 		}
@@ -52,11 +55,16 @@ func parseSwiftPackageDeps(data []byte) []PackageQuery {
 		// Normalize the URL: strip .git suffix for consistent naming.
 		name := strings.TrimSuffix(url, ".git")
 
-		queries = append(queries, PackageQuery{
+		q := PackageQuery{
 			Ecosystem: "SwiftURL",
 			Name:      name,
 			Version:   version,
-		})
+		}
+		if isRange && version != "" {
+			q.IsRange = true
+			q.Constraint = ">=" + version
+		}
+		queries = append(queries, q)
 	}
 
 	return queries

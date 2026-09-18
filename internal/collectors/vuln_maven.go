@@ -99,11 +99,10 @@ func parseMavenDeps(data []byte) ([]PackageQuery, error) {
 		}
 		seen[name] = true
 
-		queries = append(queries, PackageQuery{
-			Ecosystem: "Maven",
-			Name:      name,
-			Version:   version,
-		})
+		// Bracket ranges ("[1.0,2.0)") query their lower bound as a floor.
+		if q := mavenStyleQuery("Maven", name, version); q != nil {
+			queries = append(queries, *q)
+		}
 	}
 
 	return queries, nil

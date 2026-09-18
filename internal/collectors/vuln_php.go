@@ -26,8 +26,12 @@ func parseComposerDeps(data []byte) ([]PackageQuery, error) {
 	seen := make(map[string]bool)
 	var queries []PackageQuery
 
-	for _, deps := range []map[string]string{pkg.Require, pkg.RequireDev} {
-		for name, version := range deps {
+	// require first, require-dev second: a package in both is production.
+	for _, group := range []struct {
+		deps map[string]string
+		dev  bool
+	}{{pkg.Require, false}, {pkg.RequireDev, true}} {
+		for name, version := range group.deps {
 			if seen[name] {
 				continue
 			}
@@ -42,65 +46,47 @@ func parseComposerDeps(data []byte) ([]PackageQuery, error) {
 				continue
 			}
 
-			v := extractComposerVersion(version)
+			v, isRange := extractComposerVersion(version)
 			if v == "" {
 				continue
 			}
 
 			seen[name] = true
-			queries = append(queries, PackageQuery{
+			q := PackageQuery{
 				Ecosystem: "Packagist",
 				Name:      name,
 				Version:   v,
-			})
+				Dev:       group.dev,
+			}
+			if isRange {
+				q.IsRange = true
+				q.Constraint = strings.TrimSpace(version)
+			}
+			queries = append(queries, q)
 		}
 	}
 
 	return queries, nil
 }
 
-// extractComposerVersion strips Composer semver constraint prefixes and returns the base version.
-// Returns "" for versions that can't be meaningfully queried (wildcards, aliases, branches).
-func extractComposerVersion(version string) string {
+// extractComposerVersion reduces a Composer constraint to a concrete query
+// version and reports whether the constraint is a range (^, ~, >=, ||, *)
+// rather than an exact pin. Returns "" for versions that can't be
+// meaningfully queried (wildcards, aliases, branches, dev versions).
+func extractComposerVersion(version string) (string, bool) {
 	version = strings.TrimSpace(version)
 
-	if version == "" || version == "*" {
-		return ""
+	// Skip branch aliases ("dev-main"), inline aliases ("1.0.x-dev as 1.0.0")
+	// and dev branches ("1.0.x-dev").
+	if version == "" || strings.HasPrefix(version, "dev-") ||
+		strings.Contains(version, " as ") || strings.Contains(version, "-dev") {
+		return "", false
 	}
 
-	// Skip branch aliases (e.g., "dev-main", "dev-master").
-	if strings.HasPrefix(version, "dev-") {
-		return ""
-	}
-
-	// Skip inline aliases (e.g., "1.0.x-dev as 1.0.0").
-	if strings.Contains(version, " as ") {
-		return ""
-	}
-
-	// For OR constraints (e.g., "^1.0 || ^2.0"), take the first segment.
-	if idx := strings.Index(version, "||"); idx >= 0 {
-		version = strings.TrimSpace(version[:idx])
-	}
-
-	// For AND constraints with comma (e.g., ">=1.0,<2.0"), take the first part.
-	if idx := strings.Index(version, ","); idx >= 0 {
+	// Drop stability flags ("^1.0@beta").
+	if idx := strings.Index(version, "@"); idx >= 0 {
 		version = version[:idx]
 	}
 
-	// For space-separated bounds (e.g., ">=1.0 <2.0"), take the first part.
-	if idx := strings.Index(version, " "); idx >= 0 {
-		version = version[:idx]
-	}
-
-	// Strip semver constraint prefixes.
-	version = strings.TrimLeft(version, "^~>=<!v")
-	version = strings.TrimSpace(version)
-
-	// Skip if nothing left or starts with non-digit.
-	if version == "" || (version[0] < '0' || version[0] > '9') {
-		return ""
-	}
-
-	return version
+	return splitSemverConstraint(version, false)
 }

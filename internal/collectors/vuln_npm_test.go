@@ -379,33 +379,43 @@ func TestParseNpmLockDeps_DevDeps(t *testing.T) {
 
 func TestExtractNpmVersion(t *testing.T) {
 	tests := []struct {
-		name  string
-		input string
-		want  string
+		name      string
+		input     string
+		want      string
+		wantRange bool
 	}{
-		{"exact", "4.18.2", "4.18.2"},
-		{"caret", "^18.2.0", "18.2.0"},
-		{"tilde", "~4.3.4", "4.3.4"},
-		{"gte", ">=2.6.7", "2.6.7"},
-		{"lte", "<=1.0.0", "1.0.0"},
-		{"gt", ">3.0.0", "3.0.0"},
-		{"lt", "<5.0.0", "5.0.0"},
-		{"wildcard", "*", ""},
-		{"latest", "latest", ""},
-		{"next", "next", ""},
-		{"empty", "", ""},
-		{"git url", "git+https://github.com/user/repo.git", ""},
-		{"file ref", "file:../local", ""},
-		{"link ref", "link:../other", ""},
-		{"workspace", "workspace:*", ""},
-		{"range with space", ">=1.0.0 <2.0.0", "1.0.0"},
-		{"or range", "^4.2.0 || ^3.0.0", "4.2.0"},
-		{"tag name", "beta", ""},
+		{"exact", "4.18.2", "4.18.2", false},
+		{"exact with equals", "=4.18.2", "4.18.2", false},
+		{"exact with v", "v4.18.2", "4.18.2", false},
+		{"caret", "^18.2.0", "18.2.0", true},
+		{"tilde", "~4.3.4", "4.3.4", true},
+		{"gte", ">=2.6.7", "2.6.7", true},
+		{"gte with space", ">= 2.6.7", "2.6.7", true},
+		{"lte", "<=1.0.0", "1.0.0", true},
+		{"gt", ">3.0.0", "3.0.0", true},
+		{"lt", "<5.0.0", "5.0.0", true},
+		{"wildcard", "*", "", true},
+		{"x-range", "1.x", "1", true},
+		{"star minor", "1.2.*", "1.2", true},
+		{"hyphen range", "1.2.3 - 2.3.4", "1.2.3", true},
+		{"latest", "latest", "", false},
+		{"next", "next", "", false},
+		{"empty", "", "", false},
+		{"git url", "git+https://github.com/user/repo.git", "", false},
+		{"file ref", "file:../local", "", false},
+		{"link ref", "link:../other", "", false},
+		{"workspace", "workspace:*", "", false},
+		{"alias", "npm:other@^1.0.0", "", false},
+		{"range with space", ">=1.0.0 <2.0.0", "1.0.0", true},
+		{"or range", "^4.2.0 || ^3.0.0", "4.2.0", true},
+		{"tag name", "beta", "", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, extractNpmVersion(tt.input))
+			got, isRange := extractNpmVersion(tt.input)
+			assert.Equal(t, tt.want, got)
+			assert.Equal(t, tt.wantRange, isRange, "range flag")
 		})
 	}
 }
