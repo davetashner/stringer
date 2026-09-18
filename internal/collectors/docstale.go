@@ -4,12 +4,10 @@
 package collectors
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/davetashner/stringer/internal/collector"
@@ -65,19 +63,6 @@ var rootDocPrefixes = []string{
 
 // docDirs are directory names that contain documentation.
 var docDirs = []string{"docs", "doc"}
-
-// mdLinkPattern matches markdown links: [text](target)
-var mdLinkPattern = regexp.MustCompile(`\[(?:[^\]]*)\]\(([^)]+)\)`)
-
-// uriSchemePattern matches a scheme-like prefix (person:, tel:, vscode:,
-// 1914:, …) — RFC 3986 schemes plus digit-led variants used as entity-ID
-// namespaces in content systems. A colon in the first path segment of a
-// markdown link target essentially never denotes a relative file, so such
-// targets are not checked against the working tree (stringer-rd7).
-var uriSchemePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9+.-]*:`)
-
-// fencePattern matches a code-fence delimiter line (``` or ~~~).
-var fencePattern = regexp.MustCompile("^\\s*(```|~~~)")
 
 // Collect walks the repository looking for stale documentation, co-change
 // drift, and broken internal links.
@@ -138,32 +123,38 @@ func (c *DocStaleCollector) Collect(ctx context.Context, repoPath string, opts s
 
 		metrics.DocsScanned++
 		docFiles = append(docFiles, relPath)
-
-		// Signal 3: broken internal links (markdown only).
-		if strings.HasSuffix(strings.ToLower(relPath), ".md") {
-			broken := findBrokenLinks(repoPath, relPath)
-			for _, bl := range broken {
-				conf := 0.6
-				if conf >= opts.MinConfidence {
-					signals = append(signals, signal.RawSignal{
-						Source:     "docstale",
-						Kind:       "broken-doc-link",
-						FilePath:   relPath,
-						Line:       bl.line,
-						Title:      fmt.Sprintf("Broken link in %s:%d → %s", relPath, bl.line, bl.target),
-						Confidence: conf,
-						Tags:       []string{"documentation", "broken-link"},
-					})
-					metrics.BrokenLinks++
-				}
-			}
-		}
-
 		return nil
 	})
 
 	if err != nil {
 		return nil, fmt.Errorf("walking repo for docs: %w", err)
+	}
+
+	// Signal 3: broken internal links (markdown only), resolved against the
+	// static-site layout detected from the discovered docs (stringer-nxx.11).
+	resolver := newLinkResolver(repoPath, docFiles)
+	for _, relPath := range docFiles {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !strings.HasSuffix(strings.ToLower(relPath), ".md") {
+			continue
+		}
+		for _, bl := range resolver.findBrokenLinks(relPath) {
+			conf := 0.6
+			if conf >= opts.MinConfidence {
+				signals = append(signals, signal.RawSignal{
+					Source:     "docstale",
+					Kind:       "broken-doc-link",
+					FilePath:   relPath,
+					Line:       bl.line,
+					Title:      fmt.Sprintf("Broken link in %s:%d → %s", relPath, bl.line, bl.target),
+					Confidence: conf,
+					Tags:       []string{"documentation", "broken-link"},
+				})
+				metrics.BrokenLinks++
+			}
+		}
 	}
 
 	// Signal 1: stale-doc — compare doc age vs associated source age.
@@ -297,91 +288,6 @@ func staleConfidence(driftDays int) float64 {
 	default: // 6mo+
 		return 0.3
 	}
-}
-
-// brokenLink describes a broken internal link in a markdown file.
-type brokenLink struct {
-	target string
-	line   int
-}
-
-// findBrokenLinks scans a markdown file for internal links that point to
-// non-existent files.
-func findBrokenLinks(repoPath, relPath string) []brokenLink {
-	absPath := filepath.Join(repoPath, relPath)
-	f, err := FS.Open(absPath)
-	if err != nil {
-		return nil
-	}
-	defer f.Close() //nolint:errcheck // read-only file
-
-	docDir := filepath.Dir(absPath)
-	var broken []brokenLink
-
-	scanner := bufio.NewScanner(f)
-	lineNo := 0
-	inFence := false
-	for scanner.Scan() {
-		lineNo++
-		line := scanner.Text()
-
-		// Link-shaped text inside fenced code blocks is sample code, not a
-		// link (stringer-rd7).
-		if fencePattern.MatchString(line) {
-			inFence = !inFence
-			continue
-		}
-		if inFence {
-			continue
-		}
-
-		matches := mdLinkPattern.FindAllStringSubmatch(line, -1)
-		for _, m := range matches {
-			target := m[1]
-
-			// Skip any target with a URI scheme (http:, mailto:, but also
-			// person:, tel:, vscode:, …) — schemes are not paths.
-			if uriSchemePattern.MatchString(target) {
-				continue
-			}
-
-			// Strip anchor fragments.
-			if idx := strings.Index(target, "#"); idx >= 0 {
-				target = target[:idx]
-			}
-
-			// Skip pure anchor links.
-			if target == "" {
-				continue
-			}
-
-			// Skip placeholder targets that are not plausible paths.
-			if isPlaceholderLinkTarget(target) {
-				continue
-			}
-
-			// Resolve relative to the markdown file's directory.
-			resolved := filepath.Join(docDir, target)
-			if _, statErr := FS.Stat(resolved); statErr != nil {
-				broken = append(broken, brokenLink{target: target, line: lineNo})
-			}
-		}
-	}
-
-	return broken
-}
-
-// isPlaceholderLinkTarget reports whether a link target is documentation
-// filler rather than a checkable path: ellipses, bracketed placeholders.
-func isPlaceholderLinkTarget(target string) bool {
-	t := strings.TrimSpace(target)
-	if t == "…" || t == "..." || t == ".." || t == "." {
-		return true
-	}
-	if strings.HasPrefix(t, "<") && strings.HasSuffix(t, ">") {
-		return true
-	}
-	return false
 }
 
 // detectDocCodeDrift analyzes commit history to find source dirs with many
