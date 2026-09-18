@@ -507,8 +507,9 @@ func findCsprojFiles(repoPath string) []string {
 }
 
 // parseCsprojQueries discovers .csproj files in repoPath, parses each for
-// NuGet package references, and returns an aggregate display filename and
-// combined queries (deduplicated by package name).
+// NuGet package references (resolving Central Package Management versions
+// from Directory.Packages.props), and returns an aggregate display filename
+// and combined queries (deduplicated by package name).
 func parseCsprojQueries(repoPath string) (string, []PackageQuery) {
 	csprojFiles := findCsprojFiles(repoPath)
 	if len(csprojFiles) == 0 {
@@ -517,6 +518,7 @@ func parseCsprojQueries(repoPath string) (string, []PackageQuery) {
 
 	seen := make(map[string]bool)
 	var queries []PackageQuery
+	central := newNuGetCentralResolver(repoPath)
 
 	for _, f := range csprojFiles {
 		data, err := FS.ReadFile(filepath.Join(repoPath, f))
@@ -525,7 +527,9 @@ func parseCsprojQueries(repoPath string) (string, []PackageQuery) {
 			continue
 		}
 
-		parsed, err := parseCsprojDeps(data)
+		// Central Package Management props and packages.lock.json supply
+		// versions for version-less <PackageReference Include=""/> entries.
+		parsed, err := resolveCsprojDeps(data, central.forProject(f))
 		if err != nil {
 			slog.Warn("vuln: parsing csproj", "file", f, "error", err)
 			continue
