@@ -73,7 +73,7 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 	gradleFile, gradleQueries := parseGradleQueries(repoPath)
 
 	// Gather queries from Rust manifest (non-fatal on parse error).
-	cargoQueries := parseCargoQueries(repoPath)
+	cargoFile, cargoQueries := parseCargoQueries(repoPath)
 
 	// Gather queries from .NET manifests (non-fatal on parse error).
 	csprojFile, csprojQueries := parseCsprojQueries(repoPath)
@@ -129,7 +129,7 @@ func (c *VulnCollector) Collect(ctx context.Context, repoPath string, _ signal.C
 	for _, q := range cargoQueries {
 		key := q.Ecosystem + "|" + q.Name + "|" + q.Version
 		if _, exists := fileMap[key]; !exists {
-			fileMap[key] = queryMeta{filePath: "Cargo.toml", ecosystem: "crates.io"}
+			fileMap[key] = queryMeta{filePath: cargoFile, ecosystem: "crates.io"}
 			queries = append(queries, q)
 		}
 	}
@@ -372,13 +372,28 @@ func parseGoModQueries(repoPath string) ([]PackageQuery, error) {
 		return nil, nil
 	}
 
-	queries := make([]PackageQuery, len(f.Require))
-	for i, req := range f.Require {
-		queries[i] = PackageQuery{
+	// Modules that resolve to source in this repository (go.work members,
+	// local replace directives) are never fetched at the required version.
+	local := goWorkMembers(repoPath)
+	for _, rep := range f.Replace {
+		if isLocalPath(rep.New.Path) {
+			if local == nil {
+				local = make(map[string]bool)
+			}
+			local[rep.Old.Path] = true
+		}
+	}
+
+	queries := make([]PackageQuery, 0, len(f.Require))
+	for _, req := range f.Require {
+		if local[req.Mod.Path] {
+			continue
+		}
+		queries = append(queries, PackageQuery{
 			Ecosystem: "Go",
 			Name:      req.Mod.Path,
 			Version:   req.Mod.Version,
-		}
+		})
 	}
 	return queries, nil
 }
@@ -426,24 +441,40 @@ func parseGradleQueries(repoPath string) (string, []PackageQuery) {
 	return "", nil
 }
 
-// parseCargoQueries reads Cargo.toml and returns PackageQuery entries for OSV lookup.
-// Bare Cargo requirements are caret ranges and are queried at their floor.
-// Returns nil if no Cargo.toml exists or on parse error (non-fatal, logged as warning).
-func parseCargoQueries(repoPath string) []PackageQuery {
-	data, err := FS.ReadFile(filepath.Join(repoPath, "Cargo.toml"))
+// parseCargoQueries reads Cargo.lock (preferred: resolved versions) or
+// Cargo.toml and returns the chosen filename and PackageQuery entries for OSV
+// lookup. Without a lockfile, bare Cargo requirements are caret ranges and
+// are queried at their floor; workspace members are never queried.
+// Returns "", nil if no Rust manifest exists or on parse error (non-fatal).
+func parseCargoQueries(repoPath string) (string, []PackageQuery) {
+	data, err := FS.ReadFile(filepath.Join(repoPath, "Cargo.lock"))
+	if err == nil {
+		queries, _, parseErr := parseCargoLock(data)
+		if parseErr != nil {
+			slog.Warn("vuln: parsing Cargo.lock", "error", parseErr)
+			return "", nil
+		}
+		if len(queries) > 0 {
+			return "Cargo.lock", queries
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		slog.Warn("vuln: reading Cargo.lock", "error", err)
+	}
+
+	data, err = FS.ReadFile(filepath.Join(repoPath, "Cargo.toml"))
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			slog.Warn("vuln: reading Cargo.toml", "error", err)
 		}
-		return nil
+		return "", nil
 	}
 
 	queries, err := parseCargoDeps(data)
 	if err != nil {
 		slog.Warn("vuln: parsing Cargo.toml", "error", err)
-		return nil
+		return "", nil
 	}
-	return queries
+	return "Cargo.toml", dropMembers(queries, cargoWorkspaceMembers(repoPath))
 }
 
 // findCsprojFiles walks repoPath up to depth 2 and returns relative paths
@@ -587,7 +618,7 @@ func parseNpmQueries(repoPath string) (string, []PackageQuery) {
 			return "", nil
 		}
 		if len(queries) > 0 {
-			return "package.json", queries
+			return "package.json", dropMembers(queries, npmWorkspaceMembers(repoPath))
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		slog.Warn("vuln: reading package.json", "error", err)
@@ -681,10 +712,25 @@ func confidenceForSeverity(severity string) float64 {
 	}
 }
 
-// parseComposerQueries reads composer.json and returns the filename and PackageQuery
-// entries for OSV lookup. Returns "", nil if no composer.json exists or on parse error.
+// parseComposerQueries reads composer.lock (preferred: resolved versions) or
+// composer.json and returns the filename and PackageQuery entries for OSV
+// lookup. Returns "", nil if no PHP manifest exists or on parse error.
 func parseComposerQueries(repoPath string) (string, []PackageQuery) {
-	data, err := FS.ReadFile(filepath.Join(repoPath, "composer.json"))
+	data, err := FS.ReadFile(filepath.Join(repoPath, "composer.lock"))
+	if err == nil {
+		queries, parseErr := parseComposerLock(data)
+		if parseErr != nil {
+			slog.Warn("vuln: parsing composer.lock", "error", parseErr)
+			return "", nil
+		}
+		if len(queries) > 0 {
+			return "composer.lock", queries
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		slog.Warn("vuln: reading composer.lock", "error", err)
+	}
+
+	data, err = FS.ReadFile(filepath.Join(repoPath, "composer.json"))
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			slog.Warn("vuln: reading composer.json", "error", err)

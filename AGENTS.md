@@ -44,8 +44,8 @@ stringer/
 │   │   ├── patterns.go         # Large files, missing tests, low test coverage ratios (Go, JS/TS, Python, Ruby, Java, Kotlin, Rust, C#, PHP, Swift)
 │   │   ├── lotteryrisk*.go     # Lottery risk: core, ownership math, review analysis
 │   │   ├── github.go           # GitHub issues, PRs, and review comments
-│   │   ├── dephealth*.go       # Dependency health: 10 ecosystems (Go, npm, Cargo, Maven, NuGet, PyPI, Packagist, SwiftPM, sbt, Hex)
-│   │   ├── vuln*.go            # Vuln scanner: 11 ecosystems via OSV.dev (+ PHP, Swift, Scala, Elixir parsers); CVSS v3 base-score severity, npm dev/prod reachability, paginated OSV queries with partial-coverage accounting, versioned signal titles (DR-023); range/floor semantics (`PackageQuery.IsRange`/`Constraint` from every parser, "Vulnerable dependency floor" titles at 0.6× confidence, helpers in vuln_range.go)
+│   │   ├── dephealth*.go       # Dependency health: 10 ecosystems (Go, npm, Cargo, Maven, NuGet, PyPI, Packagist, SwiftPM, sbt, Hex); version-specific checks (crates.io yanked, Hex retired, NuGet deprecated) report range floors as "… floor: name^x.y" at 0.6× confidence; Cargo.toml floors resolve through Cargo.lock and workspace members are skipped
+│   │   ├── vuln*.go            # Vuln scanner: 11 ecosystems via OSV.dev (+ PHP, Swift, Scala, Elixir parsers); CVSS v3 base-score severity, npm dev/prod reachability, paginated OSV queries with partial-coverage accounting, versioned signal titles (DR-023); range/floor semantics (`PackageQuery.IsRange`/`Constraint`, "Vulnerable dependency floor" titles at 0.6× confidence), lockfile preference (package-lock.json, Cargo.lock, composer.lock in vuln_lock.go), workspace-member skipping (Cargo/npm workspaces, go.work, local replaces)
 │   │   ├── configdrift.go       # Config drift: env var drift, dead keys, inconsistent defaults
 │   │   ├── apidrift.go         # API drift: undocumented routes, unimplemented spec paths, stale versions
 │   │   ├── docstale.go         # Doc staleness: stale docs, co-change drift, broken links (URI-scheme targets and fenced code blocks are skipped)

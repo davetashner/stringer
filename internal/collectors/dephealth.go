@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/go-github/v68/github"
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/semver"
 
 	"github.com/davetashner/stringer/internal/collector"
 	"github.com/davetashner/stringer/internal/signal"
@@ -339,6 +340,7 @@ func (c *DepHealthCollector) collectCargoHealth(ctx context.Context, repoPath st
 		slog.Warn("dephealth: parsing Cargo.toml", "error", err)
 		return nil
 	}
+	deps = resolveCargoLock(repoPath, deps)
 	if len(deps) == 0 {
 		return nil
 	}
@@ -355,6 +357,45 @@ func (c *DepHealthCollector) collectCargoHealth(ctx context.Context, repoPath st
 		metrics.Yanked = append(metrics.Yanked, s.Title)
 	}
 	return cargoSignals
+}
+
+// resolveCargoLock drops workspace members from deps and, when Cargo.lock
+// exists, replaces each range floor with the version Cargo actually resolved
+// (the highest one when a crate is locked at several versions), so registry
+// checks run against installed versions rather than declared minimums
+// (stringer-nxx.2). Without a lockfile the floors are kept and stay marked
+// as ranges.
+func resolveCargoLock(repoPath string, deps []PackageQuery) []PackageQuery {
+	deps = dropMembers(deps, cargoWorkspaceMembers(repoPath))
+
+	data, err := FS.ReadFile(filepath.Join(repoPath, "Cargo.lock"))
+	if err != nil {
+		return deps
+	}
+	locked, local, err := parseCargoLock(data)
+	if err != nil {
+		slog.Warn("dephealth: parsing Cargo.lock", "error", err)
+		return deps
+	}
+
+	resolved := make(map[string]string, len(locked))
+	for _, l := range locked {
+		if cur, ok := resolved[l.Name]; !ok || semver.Compare("v"+l.Version, "v"+cur) > 0 {
+			resolved[l.Name] = l.Version
+		}
+	}
+
+	out := make([]PackageQuery, 0, len(deps))
+	for _, d := range deps {
+		if local[d.Name] {
+			continue
+		}
+		if v, ok := resolved[d.Name]; ok {
+			d.Version, d.IsRange, d.Constraint = v, false, ""
+		}
+		out = append(out, d)
+	}
+	return out
 }
 
 // collectMavenHealth parses pom.xml and checks Maven Central for stale artifacts.
