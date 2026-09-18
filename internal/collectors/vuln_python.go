@@ -59,17 +59,29 @@ func parseRequirementLine(line string) *PackageQuery {
 		line = strings.TrimSpace(line[:idx])
 	}
 
-	// Find the first version operator.
-	var name, version string
-	for _, op := range []string{"~=", "==", ">=", "<=", "!=", ">", "<"} {
+	// Find the first version operator. Only "==" pins a version; every other
+	// operator (and a multi-constraint spec) declares a range whose floor is
+	// queried (stringer-nxx.2).
+	var name, version, constraint string
+	isRange := false
+	for _, op := range []string{"~=", "===", "==", ">=", "<=", "!=", ">", "<"} {
 		if idx := strings.Index(line, op); idx >= 0 {
 			name = strings.TrimSpace(line[:idx])
+			constraint = strings.ReplaceAll(strings.TrimSpace(line[idx:]), " ", "")
 			// Take the version after the operator, up to a comma (multi-constraint).
 			rest := line[idx+len(op):]
 			if comma := strings.Index(rest, ","); comma >= 0 {
 				rest = rest[:comma]
+				isRange = true
 			}
 			version = strings.TrimSpace(rest)
+			if op != "==" && op != "===" {
+				isRange = true
+			}
+			if wild := strings.Index(version, ".*"); wild >= 0 {
+				version = version[:wild]
+				isRange = true
+			}
 			break
 		}
 	}
@@ -83,11 +95,16 @@ func parseRequirementLine(line string) *PackageQuery {
 		name = name[:idx]
 	}
 
-	return &PackageQuery{
+	q := &PackageQuery{
 		Ecosystem: "PyPI",
 		Name:      name,
 		Version:   version,
 	}
+	if isRange {
+		q.IsRange = true
+		q.Constraint = constraint
+	}
+	return q
 }
 
 // pyprojectFile represents the subset of pyproject.toml we need for dependency extraction.

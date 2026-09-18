@@ -51,7 +51,7 @@ stringer/
 │   │   ├── lotteryrisk*.go     # Lottery risk: core, ownership math, review analysis, minimum-substance + shallow-history rules (lotteryrisk_substance.go: >=3 source files and >=100 blamed lines, static/fixture dir names skipped; shallow clones capped at 0.5 confidence and tagged shallow-history, DR-006 amendment)
 │   │   ├── github.go           # GitHub issues, PRs, and review comments
 │   │   ├── dephealth*.go       # Dependency health: 10 ecosystems (Go, npm, Cargo, Maven, NuGet, PyPI, Packagist, SwiftPM, sbt, Hex)
-│   │   ├── vuln*.go            # Vuln scanner: 11 ecosystems via OSV.dev (+ PHP, Swift, Scala, Elixir parsers); CVSS v3 base-score severity, npm dev/prod reachability, paginated OSV queries with partial-coverage accounting, versioned signal titles (DR-023)
+│   │   ├── vuln*.go            # Vuln scanner: 11 ecosystems via OSV.dev (+ PHP, Swift, Scala, Elixir parsers); CVSS v3 base-score severity, npm dev/prod reachability, paginated OSV queries with partial-coverage accounting, versioned signal titles (DR-023); range/floor semantics (`PackageQuery.IsRange`/`Constraint` from every parser, "Vulnerable dependency floor" titles at 0.6× confidence, helpers in vuln_range.go)
 │   │   ├── configdrift.go       # Config drift: env var drift, dead keys, inconsistent defaults
 │   │   ├── apidrift.go         # API drift: undocumented routes, unimplemented spec paths, stale versions
 │   │   ├── docstale.go         # Doc staleness: stale docs, co-change drift, broken links (URI-scheme targets and fenced code blocks are skipped)
