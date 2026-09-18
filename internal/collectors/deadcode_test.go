@@ -734,6 +734,8 @@ fn private_unused() -> i32 {
 }
 `
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "lib.rs"), []byte(rsCode), 0o600))
+	// A [[bin]] manifest makes this an application, so pub is not public API.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte("[package]\nname = \"x\"\n[[bin]]\nname = \"x\"\n"), 0o600))
 
 	c := &DeadCodeCollector{}
 	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
@@ -742,6 +744,7 @@ fn private_unused() -> i32 {
 	for _, sig := range signals {
 		if strings.Contains(sig.Title, "public_unused") {
 			assert.InDelta(t, 0.4, sig.Confidence, 0.01, "pub Rust func should have 0.4 confidence")
+			assert.NotContains(t, sig.Tags, "public-api")
 		}
 		if strings.Contains(sig.Title, "private_unused") {
 			assert.InDelta(t, 0.6, sig.Confidence, 0.01, "non-pub Rust func should have 0.6 confidence")
@@ -787,7 +790,7 @@ type myPrivate struct {
 	x int
 }
 `
-	syms := extractSymbols(content, "types.go", ".go")
+	syms := extractSymbols(content, "types.go", ".go", false)
 
 	names := make(map[string]bool)
 	for _, s := range syms {
@@ -807,7 +810,7 @@ func (s *Server) method() {}
 
 func privateFunc() {}
 `
-	syms := extractSymbols(content, "funcs.go", ".go")
+	syms := extractSymbols(content, "funcs.go", ".go", false)
 
 	names := make(map[string]bool)
 	for _, s := range syms {
@@ -836,7 +839,7 @@ trait MyTrait {
     fn method(&self);
 }
 `
-	syms := extractSymbols(content, "lib.rs", ".rs")
+	syms := extractSymbols(content, "lib.rs", ".rs", false)
 
 	symMap := make(map[string]symbolDef)
 	for _, s := range syms {

@@ -117,8 +117,10 @@ func buildSymbolIndex(files []fileContents, symbols []symbolDef) *symbolIndex {
 }
 
 // lookupToken resolves a word-only symbol name against the index.
-// Returns (dead, testOnly) with the same semantics as isDeadSymbol.
-func (idx *symbolIndex) lookupToken(name, filePath string) (dead bool, testOnly bool) {
+// Returns (dead, testOnly) with the same semantics as isDeadSymbol. When
+// defInTest is set (the symbol itself lives in a test file) references from
+// test files count as real references.
+func (idx *symbolIndex) lookupToken(name, filePath string, defInTest bool) (dead bool, testOnly bool) {
 	foundInTest := false
 	for _, o := range idx.occ[name] {
 		fc := &idx.files[o.file]
@@ -130,7 +132,7 @@ func (idx *symbolIndex) lookupToken(name, filePath string) (dead bool, testOnly 
 			continue
 		}
 		// Different file: any occurrence means it is referenced.
-		if !fc.isTest {
+		if !fc.isTest || defInTest {
 			return false, false
 		}
 		foundInTest = true
@@ -198,7 +200,7 @@ func hasFile(occ []fileOcc, file int) bool {
 
 // lookupRegex resolves a symbol name containing non-word bytes by running
 // the word-boundary regexp over the candidate files only.
-func (idx *symbolIndex) lookupRegex(pat *regexp.Regexp, name, filePath string) (dead bool, testOnly bool) {
+func (idx *symbolIndex) lookupRegex(pat *regexp.Regexp, name, filePath string, defInTest bool) (dead bool, testOnly bool) {
 	foundInTest := false
 	for _, fi := range idx.candidateFiles(name) {
 		fc := &idx.files[fi]
@@ -211,7 +213,7 @@ func (idx *symbolIndex) lookupRegex(pat *regexp.Regexp, name, filePath string) (
 		if !pat.MatchString(fc.content) {
 			continue
 		}
-		if !fc.isTest {
+		if !fc.isTest || defInTest {
 			return false, false
 		}
 		foundInTest = true
