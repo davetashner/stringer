@@ -199,7 +199,7 @@ func TestExtractBraceBody(t *testing.T) {
 	return sum
 }`, "\n")
 
-	body, endIdx := extractBraceBody(lines, 0)
+	body, endIdx := extractBraceBody(lines, 0, ".go")
 	assert.Equal(t, 7, len(body), "expected 7 body lines")
 	assert.Equal(t, 8, endIdx)
 }
