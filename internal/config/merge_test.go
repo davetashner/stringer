@@ -463,9 +463,10 @@ func TestMerge_ConfigurableThresholdsFromFile(t *testing.T) {
 	fileCfg := &Config{
 		Collectors: map[string]CollectorConfig{
 			"duplication": {
-				DuplicationWindowSize: 10,
-				DuplicationSignalCap:  50,
-				DuplicationMaxFiles:   5000,
+				DuplicationWindowSize:   10,
+				DuplicationSignalCap:    50,
+				DuplicationMaxFiles:     5000,
+				DuplicationMinTestLines: 20,
 			},
 			"deadcode": {
 				DeadcodeMaxFiles: 8000,
@@ -494,6 +495,7 @@ func TestMerge_ConfigurableThresholdsFromFile(t *testing.T) {
 	assert.Equal(t, 10, result.CollectorOpts["duplication"].DuplicationWindowSize)
 	assert.Equal(t, 50, result.CollectorOpts["duplication"].DuplicationSignalCap)
 	assert.Equal(t, 5000, result.CollectorOpts["duplication"].DuplicationMaxFiles)
+	assert.Equal(t, 20, result.CollectorOpts["duplication"].DuplicationMinTestLines)
 	assert.Equal(t, 8000, result.CollectorOpts["deadcode"].DeadcodeMaxFiles)
 	assert.Equal(t, 15, result.CollectorOpts["coupling"].CouplingFanOutThreshold)
 	assert.Equal(t, 7000, result.CollectorOpts["coupling"].CouplingMaxFiles)

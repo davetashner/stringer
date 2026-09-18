@@ -130,6 +130,11 @@ type CollectorOpts struct {
 	// 0 uses default (10000).
 	DuplicationMaxFiles int
 
+	// DuplicationMinTestLines is the minimum block span for clone groups whose
+	// locations are all test files; shorter test-only clones are dropped.
+	// 0 uses default (12).
+	DuplicationMinTestLines int
+
 	// DeadcodeMaxFiles overrides the file cap for the dead code collector.
 	// 0 uses default (10000).
 	DeadcodeMaxFiles int

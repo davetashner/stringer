@@ -25,14 +25,24 @@ are discarded. The scan continues with the remaining collectors.
 ## Duplication Collector
 
 The duplication collector caps file input at 10,000 files and output at 200
-signals (configurable via `max_issues`). On a stress-test scan of a mixed
-monorepo the uncapped collector produced 7,554 signals — the cap keeps output
-actionable.
+signals (configurable via `max_issues` or `duplication_signal_cap`). On a
+stress-test scan of a mixed monorepo the uncapped collector produced 7,554
+signals — the cap keeps output actionable.
+
+The cap applies **per scan invocation, i.e. per workspace**. A monorepo
+scanned workspace-by-workspace can report up to the cap for each workspace;
+scan the monorepo root once if you want a single cap across it.
+
+Overlapping sliding windows are merged into one signal per duplicated region
+(DR-026), and clone groups that live entirely in test files are dropped unless
+the merged block is at least `duplication_min_test_lines` lines (default 12).
+Lower it to surface short test boilerplate, or raise it in test-heavy repos:
 
 ```yaml
 collectors:
   duplication:
-    max_issues: 100   # tighter cap if needed
+    max_issues: 100                # tighter cap if needed
+    duplication_min_test_lines: 20 # only report long test-only clones
 ```
 
 ## Recommended Excludes

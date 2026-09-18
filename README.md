@@ -256,6 +256,8 @@ collectors:
     min_complexity_score: 6
   coupling:
     coupling_fan_out_threshold: 15
+  duplication:
+    duplication_min_test_lines: 12  # drop test-only clones shorter than this
 ```
 
 Each collector accepts its own options (`enabled`, `error_mode`, thresholds, patterns); run `stringer collectors info <name>` to see them, or `stringer config list` to see every setting with its source.

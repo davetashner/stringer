@@ -76,7 +76,7 @@ var knownCollectors = map[string]collectorMeta{
 		ConfigFields: []string{},
 	},
 	"duplication": {
-		Description:  "Detects copy-paste code duplication using token-based clone detection",
+		Description:  "Detects copy-paste code duplication using token-based clone detection (output capped per scanned workspace)",
 		SignalKinds:  []string{"code-clone", "near-clone"},
 		ConfigFields: []string{},
 	},
@@ -132,6 +132,7 @@ var collectorThresholds = map[string][]struct {
 		{"duplication_window_size", "6"},
 		{"duplication_signal_cap", "200"},
 		{"duplication_max_files", "10000"},
+		{"duplication_min_test_lines", "12"},
 	},
 	"deadcode": {
 		{"deadcode_max_files", "10000"},

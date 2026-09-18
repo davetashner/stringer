@@ -20,8 +20,16 @@ import (
 // defaultDuplicationMaxFiles is the default file cap to prevent runaway on large repos.
 const defaultDuplicationMaxFiles = 10000
 
-// defaultDuplicationSignalCap is the default maximum number of duplication signals.
+// defaultDuplicationSignalCap is the default maximum number of duplication
+// signals. The cap applies per scan invocation (per workspace), so a monorepo
+// scanned workspace-by-workspace can report up to the cap for each one.
 const defaultDuplicationSignalCap = 200
+
+// defaultDuplicationMinTestLines is the default minimum block span for a
+// clone group whose locations are all test files. Shorter test-only clones
+// are repeated setup boilerplate far more often than actionable duplication
+// (DR-026), so they are dropped rather than emitted at floor confidence.
+const defaultDuplicationMinTestLines = 12
 
 func init() {
 	collector.Register(&DuplicationCollector{})
@@ -29,10 +37,11 @@ func init() {
 
 // DuplicationMetrics holds structured metrics from the duplication scan.
 type DuplicationMetrics struct {
-	FilesScanned    int
-	ExactClones     int
-	NearClones      int
-	DuplicatedLines int
+	FilesScanned       int
+	ExactClones        int
+	NearClones         int
+	DuplicatedLines    int
+	TestOnlySuppressed int // test-only clone groups below the min-test-lines threshold
 }
 
 // DuplicationCollector detects copy-paste code duplication using a token-based
@@ -62,6 +71,10 @@ func (c *DuplicationCollector) Collect(ctx context.Context, repoPath string, opt
 	sigCap := opts.DuplicationSignalCap
 	if sigCap == 0 {
 		sigCap = defaultDuplicationSignalCap
+	}
+	minTestLines := opts.DuplicationMinTestLines
+	if minTestLines == 0 {
+		minTestLines = defaultDuplicationMinTestLines
 	}
 
 	// Phase 1: Walk files and read source lines.
@@ -190,38 +203,40 @@ func (c *DuplicationCollector) Collect(ctx context.Context, repoPath string, opt
 		type2Groups[i].NearClone = true
 	}
 
-	// Phase 4: Subtract Type 1 ranges from Type 2 results.
-	type2Groups = subtractType1Ranges(type2Groups, type1Groups)
+	// Phase 4: Merge overlapping windows into one group per duplicated
+	// region, collapsing same-file overlaps and resolving exact vs near
+	// clones (DR-026).
+	groups := mergeCloneGroups(append(type1Groups, type2Groups...))
 
 	// Phase 5: Generate signals.
 	var signals []signal.RawSignal
 	exactCount := 0
 	nearCount := 0
 	dupLines := 0
+	testOnlySuppressed := 0
 
-	for _, g := range type1Groups {
+	for _, g := range groups {
+		if g.Lines < minTestLines && cloneGroupIsTestOnly(g) {
+			testOnlySuppressed++
+			continue
+		}
 		sig := cloneGroupToSignal(g)
 		if opts.MinConfidence > 0 && sig.Confidence < opts.MinConfidence {
 			continue
 		}
 		signals = append(signals, sig)
-		exactCount++
-		dupLines += g.Lines * len(g.Locations)
-	}
-
-	for _, g := range type2Groups {
-		sig := cloneGroupToSignal(g)
-		if opts.MinConfidence > 0 && sig.Confidence < opts.MinConfidence {
-			continue
+		if g.NearClone {
+			nearCount++
+		} else {
+			exactCount++
 		}
-		signals = append(signals, sig)
-		nearCount++
 		dupLines += g.Lines * len(g.Locations)
 	}
 
-	// Sort signals by confidence descending. Test-only clone groups carry
+	// Sort signals by confidence descending (stable, so equal-confidence
+	// signals keep their path order). Test-only clone groups carry
 	// discounted confidence, so the cap below truncates boilerplate first.
-	sort.Slice(signals, func(i, j int) bool {
+	sort.SliceStable(signals, func(i, j int) bool {
 		return signals[i].Confidence > signals[j].Confidence
 	})
 
@@ -235,10 +250,11 @@ func (c *DuplicationCollector) Collect(ctx context.Context, repoPath string, opt
 	}
 
 	c.metrics = &DuplicationMetrics{
-		FilesScanned:    fileCount,
-		ExactClones:     exactCount,
-		NearClones:      nearCount,
-		DuplicatedLines: dupLines,
+		FilesScanned:       fileCount,
+		ExactClones:        exactCount,
+		NearClones:         nearCount,
+		DuplicatedLines:    dupLines,
+		TestOnlySuppressed: testOnlySuppressed,
 	}
 
 	// Enrich signals with timestamps from git log.
@@ -268,11 +284,17 @@ func cloneGroupToSignal(g cloneGroup) signal.RawSignal {
 		title = fmt.Sprintf("%s block (%d lines, %d locations, renamed identifiers)", titleVerb, g.Lines, len(g.Locations))
 	}
 
-	// Build description listing all locations.
+	// Build description listing all locations with their line ranges.
+	// Overlapping windows are merged into one range per location, so the
+	// list is one entry per distinct region (DR-026).
 	var desc strings.Builder
 	desc.WriteString("Duplicated code found in:\n")
 	for _, loc := range g.Locations {
-		fmt.Fprintf(&desc, "  - %s:%d\n", loc.Path, loc.StartLine)
+		if loc.EndLine > loc.StartLine {
+			fmt.Fprintf(&desc, "  - %s:%d-%d\n", loc.Path, loc.StartLine, loc.EndLine)
+		} else {
+			fmt.Fprintf(&desc, "  - %s:%d\n", loc.Path, loc.StartLine)
+		}
 	}
 
 	confidence := duplicationConfidence(g.Lines, len(g.Locations), g.NearClone)
