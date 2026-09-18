@@ -19,8 +19,20 @@ import (
 	"github.com/davetashner/stringer/internal/signal"
 )
 
-// defaultMinComplexityScore is the minimum composite score to emit a signal.
+// defaultMinComplexityScore is the minimum Go cyclomatic complexity to emit
+// an AST-analyzed signal.
 const defaultMinComplexityScore = 6.0
+
+// defaultMinRegexScore is the minimum nesting-weighted score for
+// regex-analyzed (non-Go) functions. Under DR-024's bands a score of 12
+// maps to confidence 0.5, so ordinary 16-line/4-branch methods (score ~7,
+// confidence ~0.42) are no longer emitted by default (stringer-nxx.5).
+// collectors.complexity.min_complexity_score overrides both paths.
+const defaultMinRegexScore = 12.0
+
+// maxTestCallbackLabel bounds the string literal echoed into a JS/TS test
+// callback name so titles stay readable.
+const maxTestCallbackLabel = 60
 
 // defaultMinFunctionLines is the minimum function body lines to analyze.
 const defaultMinFunctionLines = 5
@@ -42,6 +54,7 @@ type FunctionComplexity struct {
 	Cognitive  int     // AST-based cognitive complexity (0 if regex-analyzed)
 	MaxNesting int     // max nesting depth: AST-derived (Go) or indentation-derived (regex)
 	ASTBased   bool    // true if analyzed via Go AST, false if regex-based
+	IsTest     bool    // true if the function lives in a test file or is itself a test (see isComplexityTestFile)
 }
 
 // ComplexityMetrics holds structured metrics from the complexity scan.
@@ -95,6 +108,88 @@ var rubyBlockOpen = regexp.MustCompile(
 
 // rubyBlockEnd matches Ruby's `end` keyword.
 var rubyBlockEnd = regexp.MustCompile(`\bend\b`)
+
+// rustTestAttr matches a Rust attribute line that marks the following fn
+// as a test (`#[test]`, `#[tokio::test]`, `#[bench]`, `#[cfg(test)]`), so
+// inline `mod tests` blocks in src/ files are treated as test code even
+// though the file name is not a test convention (stringer-nxx.5).
+var rustTestAttr = regexp.MustCompile(`^\s*#\[(?:cfg\(test\)|(?:\w+::)*(?:test|bench)\b)`)
+
+// jsTestCallbacks are the JS/TS test-framework calls whose callback bodies
+// the JS funcStart regex mistakes for a function named after the call
+// (`describe('app', function() {` reads as a function called "describe").
+var jsTestCallbacks = map[string]bool{
+	"describe": true, "it": true, "test": true, "context": true, "suite": true,
+	"specify": true, "beforeEach": true, "afterEach": true, "beforeAll": true,
+	"afterAll": true, "before": true, "after": true,
+}
+
+// jsStringLiteral captures the first string literal on a line.
+var jsStringLiteral = regexp.MustCompile("[\"'`]([^\"'`]*)[\"'`]")
+
+// complexityTestDirs are path components that mark test scaffolding
+// regardless of file naming: express keeps its suite in test/app.js,
+// Jest projects in __tests__/, RSpec in spec/. Complements the shared
+// isTestFile naming conventions from patterns_classify.go.
+var complexityTestDirs = map[string]bool{
+	"test": true, "tests": true, "__tests__": true, "spec": true, "testdata": true,
+}
+
+// isComplexityTestFile reports whether relPath is test code for the
+// purposes of complexity scoring: either a language test-file naming
+// convention (shared isTestFile) or any path component that is a
+// conventional test directory.
+func isComplexityTestFile(relPath string) bool {
+	if isTestFile(relPath) {
+		return true
+	}
+	for _, p := range strings.Split(filepath.ToSlash(filepath.Dir(relPath)), "/") {
+		if complexityTestDirs[p] {
+			return true
+		}
+	}
+	return false
+}
+
+// isJSExt reports whether ext is one of the JavaScript/TypeScript extensions.
+func isJSExt(ext string) bool {
+	return ext == ".js" || ext == ".ts" || ext == ".jsx" || ext == ".tsx"
+}
+
+// testCallbackName renders a JS/TS test-framework callback by its enclosing
+// string literal so the title reads `describe("app.render") callback`
+// rather than `describe` (stringer-nxx.5).
+func testCallbackName(call, line string) string {
+	m := jsStringLiteral.FindStringSubmatch(line)
+	if m == nil || strings.TrimSpace(m[1]) == "" {
+		return call + " callback"
+	}
+	label := m[1]
+	if len(label) > maxTestCallbackLabel {
+		label = label[:maxTestCallbackLabel] + "…"
+	}
+	return fmt.Sprintf("%s(%q) callback", call, label)
+}
+
+// precededByRustTestAttr reports whether the attribute block directly
+// above the fn at idx (attributes, comments and blank lines only, bounded
+// to ten lines) contains a Rust test attribute.
+func precededByRustTestAttr(lines []string, idx int) bool {
+	for j := idx - 1; j >= 0 && j >= idx-10; j-- {
+		trimmed := strings.TrimSpace(lines[j])
+		switch {
+		case trimmed == "" || strings.HasPrefix(trimmed, "//"):
+			continue
+		case strings.HasPrefix(trimmed, "#["):
+			if rustTestAttr.MatchString(lines[j]) {
+				return true
+			}
+		default:
+			return false
+		}
+	}
+	return false
+}
 
 // langSpecs defines function detection patterns per language.
 //
@@ -180,8 +275,10 @@ func (c *ComplexityCollector) Collect(ctx context.Context, repoPath string, opts
 	excludes := mergeExcludes(opts.ExcludePatterns)
 
 	minScore := defaultMinComplexityScore
+	minRegexScore := defaultMinRegexScore
 	if opts.MinComplexityScore > 0 {
 		minScore = opts.MinComplexityScore
+		minRegexScore = opts.MinComplexityScore
 	}
 	minLines := defaultMinFunctionLines
 	if opts.MinFunctionLines > 0 {
@@ -238,6 +335,15 @@ func (c *ComplexityCollector) Collect(ctx context.Context, repoPath string, opts
 			return nil
 		}
 
+		// Test code is skipped by default: table-driven Go tests, JS
+		// describe/it callbacks and JUnit fixtures score high on every
+		// metric but are never refactor candidates (stringer-nxx.5).
+		// collectors.complexity.include_tests restores them, tagged.
+		testFile := isComplexityTestFile(relPath)
+		if testFile && !opts.IncludeTests {
+			return nil
+		}
+
 		// Use AST analysis for Go files; regex for everything else.
 		if ext == ".go" {
 			goFuncs, astErr := analyzeGoFile(path)
@@ -268,6 +374,7 @@ func (c *ComplexityCollector) Collect(ctx context.Context, repoPath string, opts
 					Cognitive:  gf.Cognitive,
 					MaxNesting: gf.MaxNesting,
 					ASTBased:   true,
+					IsTest:     testFile,
 				})
 			}
 		} else {
@@ -275,7 +382,13 @@ func (c *ComplexityCollector) Collect(ctx context.Context, repoPath string, opts
 			if analyzeErr != nil {
 				return nil
 			}
-			allFunctions = append(allFunctions, funcs...)
+			for _, fc := range funcs {
+				fc.IsTest = fc.IsTest || testFile
+				if fc.IsTest && !opts.IncludeTests {
+					continue
+				}
+				allFunctions = append(allFunctions, fc)
+			}
 		}
 		fileCount++
 
@@ -313,11 +426,11 @@ func (c *ComplexityCollector) Collect(ctx context.Context, repoPath string, opts
 				Title:       fmt.Sprintf("%s: %s (cyclomatic: %d, cognitive: %d, nesting: %d)", titleKind, fc.FuncName, fc.Cyclomatic, fc.Cognitive, fc.MaxNesting),
 				Description: astComplexityDescription(fc),
 				Confidence:  conf,
-				Tags:        []string{"complexity", "go", "ast-analyzed"},
+				Tags:        complexityTags(fc, "complexity", "go", "ast-analyzed"),
 			})
 		} else {
-			// Regex-analyzed: filter by minScore.
-			if fc.Score < minScore {
+			// Regex-analyzed: filter by the (higher) regex floor.
+			if fc.Score < minRegexScore {
 				continue
 			}
 			conf := regexComplexityConfidence(fc.Score, fc.MaxNesting)
@@ -327,9 +440,9 @@ func (c *ComplexityCollector) Collect(ctx context.Context, repoPath string, opts
 				FilePath:    fc.FilePath,
 				Line:        fc.StartLine,
 				Title:       fmt.Sprintf("Complex function: %s (score %.1f, %d lines, %d branches, nesting %d)", fc.FuncName, fc.Score, fc.Lines, fc.Branches, fc.MaxNesting),
-				Description: regexComplexityDescription(fc, minScore),
+				Description: regexComplexityDescription(fc, minRegexScore),
 				Confidence:  conf,
-				Tags:        []string{"complexity", "refactor-candidate"},
+				Tags:        complexityTags(fc, "complexity", "refactor-candidate"),
 			})
 		}
 	}
@@ -375,11 +488,24 @@ func extractFunctions(lines []string, relPath string, spec *langSpec, minLines i
 	var results []FunctionComplexity
 	i := 0
 
+	ext := filepath.Ext(relPath)
+
 	for i < len(lines) {
 		funcName, startLine := matchFuncStart(lines[i], spec, i+1)
 		if funcName == "" {
 			i++
 			continue
+		}
+
+		// Test detection below the file level: JS/TS test-framework
+		// callbacks and Rust #[test] fns are tests wherever they live.
+		isTest := false
+		if isJSExt(ext) && jsTestCallbacks[funcName] {
+			funcName = testCallbackName(funcName, lines[i])
+			isTest = true
+		}
+		if ext == ".rs" && precededByRustTestAttr(lines, i) {
+			isTest = true
 		}
 
 		// Determine function body boundaries.
@@ -396,7 +522,6 @@ func extractFunctions(lines []string, relPath string, spec *langSpec, minLines i
 		}
 
 		if len(bodyLines) >= minLines {
-			ext := filepath.Ext(relPath)
 			body := analyzeBody(bodyLines, ext)
 			nonBlank := countNonBlank(bodyLines)
 			// Lines contribute marginally; the score is dominated by
@@ -412,6 +537,7 @@ func extractFunctions(lines []string, relPath string, spec *langSpec, minLines i
 				Branches:   body.Branches,
 				Score:      score,
 				MaxNesting: body.MaxNesting,
+				IsTest:     isTest,
 			})
 		}
 
@@ -776,8 +902,18 @@ func regexComplexityDescription(fc FunctionComplexity, minScore float64) string 
 		b.WriteString("ACTION: extract the most deeply nested blocks into named helpers, or invert conditions with early returns to flatten the structure.\n")
 		b.WriteString("DISMISS: if the nesting mirrors an inherent structure (a state machine, a recursive descent), a rewrite may not clarify — close with a comment saying so.\n")
 	}
-	fmt.Fprintf(&b, "CONTEXT: fires at score ≥ %.1f; tune via collectors.complexity.min_complexity_score. Non-Go languages are analyzed heuristically (indentation-derived nesting); Go gets AST-based cognitive complexity.", minScore)
+	fmt.Fprintf(&b, "CONTEXT: fires at score ≥ %.1f; tune via collectors.complexity.min_complexity_score. Test files are skipped unless collectors.complexity.include_tests is true. Non-Go languages are analyzed heuristically (indentation-derived nesting); Go gets AST-based cognitive complexity.", minScore)
 	return b.String()
+}
+
+// complexityTags returns the base tags plus "test-file" when the function
+// is test code that was kept because include_tests is set, so consumers
+// can filter those findings downstream.
+func complexityTags(fc FunctionComplexity, base ...string) []string {
+	if fc.IsTest {
+		return append(base, "test-file")
+	}
+	return base
 }
 
 // astComplexityDescription builds the body for a Go AST-analyzed finding.

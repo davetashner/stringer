@@ -110,8 +110,13 @@ type CollectorOpts struct {
 	MinFunctionLines int
 
 	// MinComplexityScore is the minimum composite complexity score to emit a
-	// signal. 0 uses default (6.0).
+	// signal. 0 uses default (6.0 Go cyclomatic; 12.0 regex-analyzed languages).
 	MinComplexityScore float64
+
+	// IncludeTests keeps complexity findings in test files (and JS/TS
+	// test-framework callbacks, Rust #[test] fns), tagged "test-file".
+	// Default false: test code is skipped by the complexity collector.
+	IncludeTests bool
 
 	// DuplicationWindowSize overrides the sliding window size for duplication
 	// detection. 0 uses default (6).

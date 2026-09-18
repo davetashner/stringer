@@ -83,6 +83,9 @@ func Merge(fileCfg *Config, cliCfg signal.ScanConfig) signal.ScanConfig {
 			if co.MinComplexityScore == 0 && fc.MinComplexityScore > 0 {
 				co.MinComplexityScore = fc.MinComplexityScore
 			}
+			if !co.IncludeTests && fc.IncludeTests != nil && *fc.IncludeTests {
+				co.IncludeTests = true
+			}
 			if co.DuplicationWindowSize == 0 && fc.DuplicationWindowSize > 0 {
 				co.DuplicationWindowSize = fc.DuplicationWindowSize
 			}

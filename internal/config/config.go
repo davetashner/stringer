@@ -59,6 +59,7 @@ type CollectorConfig struct {
 	// Complexity collector settings.
 	MinFunctionLines   int     `yaml:"min_function_lines,omitempty"`
 	MinComplexityScore float64 `yaml:"min_complexity_score,omitempty"`
+	IncludeTests       *bool   `yaml:"include_tests,omitempty"`
 
 	// Duplication collector settings.
 	DuplicationWindowSize int `yaml:"duplication_window_size,omitempty"`

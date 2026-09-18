@@ -519,3 +519,29 @@ func TestMerge_ConfigurableThresholdsCLIOverride(t *testing.T) {
 	result := Merge(fileCfg, cliCfg)
 	assert.Equal(t, 8, result.CollectorOpts["duplication"].DuplicationWindowSize)
 }
+
+func TestMerge_IncludeTestsFromFile(t *testing.T) {
+	boolTrue := true
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"complexity": {IncludeTests: &boolTrue},
+		},
+	}
+	cliCfg := signal.ScanConfig{}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.True(t, result.CollectorOpts["complexity"].IncludeTests)
+}
+
+func TestMerge_IncludeTestsDefaultFalse(t *testing.T) {
+	boolFalse := false
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"complexity": {IncludeTests: &boolFalse},
+		},
+	}
+	cliCfg := signal.ScanConfig{}
+
+	result := Merge(fileCfg, cliCfg)
+	assert.False(t, result.CollectorOpts["complexity"].IncludeTests)
+}

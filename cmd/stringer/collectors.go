@@ -68,7 +68,7 @@ var knownCollectors = map[string]collectorMeta{
 	"complexity": {
 		Description:  "Detects complex functions using composite scoring (lines/50 + branches)",
 		SignalKinds:  []string{"complex-function"},
-		ConfigFields: []string{"min_function_lines", "min_complexity_score"},
+		ConfigFields: []string{"min_function_lines", "min_complexity_score", "include_tests"},
 	},
 	"deadcode": {
 		Description:  "Detects unused functions and types via regex heuristic and reference search",
@@ -154,7 +154,7 @@ var collectorThresholds = map[string][]struct {
 		{"test_ratio_min_files", "3"},
 	},
 	"complexity": {
-		{"min_complexity_score", "6"},
+		{"min_complexity_score", "6 (Go cyclomatic) / 12 (other languages)"},
 		{"min_function_lines", "5"},
 	},
 	"lotteryrisk": {
