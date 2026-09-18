@@ -269,12 +269,29 @@ var nonSourceDirSegments = map[string]bool{
 	"demo":     true,
 }
 
-// configDirSegments are directory names whose files are configuration rather
-// than source code.
+// configDirSegments are directory names that conventionally hold
+// configuration. Files under them are only treated as configuration when
+// their format says so (see configFileExtensions and isPHPConfigArray): Go,
+// Java, Kotlin, C#, Rust and Python packages named config are still source.
 var configDirSegments = map[string]bool{
 	"config":   true,
 	"configs":  true,
 	"settings": true,
+}
+
+// configFileExtensions are configuration formats. A file with one of these
+// extensions under a configDirSegments directory is configuration, not
+// source. Dotfiles such as .env and .env.local are handled by the dotfile rule.
+var configFileExtensions = map[string]bool{
+	".yaml":       true,
+	".yml":        true,
+	".json":       true,
+	".toml":       true,
+	".ini":        true,
+	".xml":        true,
+	".properties": true,
+	".cfg":        true,
+	".conf":       true,
 }
 
 // configFileNames are file basenames that are configuration, not source.
@@ -283,6 +300,13 @@ var configFileNames = map[string]bool{
 	"conf.py":     true,
 	"setup.py":    true,
 }
+
+// phpConfigReadBytes bounds how much of a PHP file isPHPConfigArray reads
+// while looking for a leading `return [` statement.
+const (
+	phpConfigReadBytes = 4 * 1024
+	phpConfigMaxLines  = 20
+)
 
 // dataClassDirSegments are directory names that, in class-per-file languages,
 // conventionally hold pure data carriers (events, DTOs, models, entities),
@@ -334,22 +358,84 @@ func isDocOrDemoTree(relPath string) bool {
 	return false
 }
 
-// isConfigPath returns true if relPath is a configuration file: anything under
-// a config/, configs/ or settings/ directory, dotfiles (.eslintrc.js),
-// *.config.* files (webpack.config.js, jest.config.ts), and well-known names
-// such as settings.py, conf.py and setup.py.
-func isConfigPath(relPath string) bool {
+// isConfigPath returns true if the file at path (with repo-relative relPath)
+// is a configuration file: dotfiles (.eslintrc.js, .env.local), *.config.*
+// files (webpack.config.js, jest.config.ts), well-known names such as
+// settings.py, conf.py and setup.py, and, under a config/, configs/ or
+// settings/ directory, configuration formats (yaml, json, toml, ini, xml,
+// properties, cfg, conf) plus Laravel-style PHP files that only return an
+// array. Source files in other languages under those directories are source.
+func isConfigPath(path, relPath string) bool {
+	base := filepath.Base(relPath)
+	if strings.HasPrefix(base, ".") || configFileNames[base] {
+		return true
+	}
+	ext := strings.ToLower(filepath.Ext(base))
+	stem := strings.TrimSuffix(base, filepath.Ext(base))
+	if strings.HasSuffix(strings.ToLower(stem), ".config") {
+		return true
+	}
+	if !isUnderConfigDir(relPath) {
+		return false
+	}
+	if configFileExtensions[ext] {
+		return true
+	}
+	return ext == ".php" && isPHPConfigArray(path)
+}
+
+// isUnderConfigDir returns true if any directory segment of relPath is one of
+// configDirSegments.
+func isUnderConfigDir(relPath string) bool {
 	for _, seg := range dirSegments(relPath) {
 		if configDirSegments[strings.ToLower(seg)] {
 			return true
 		}
 	}
-	base := filepath.Base(relPath)
-	if strings.HasPrefix(base, ".") || configFileNames[base] {
-		return true
+	return false
+}
+
+// isPHPConfigArray returns true if the PHP file at path opens with `<?php`
+// and its first statement, ignoring blank lines, comments, declare() and use
+// imports, is `return [` or `return array(` — the shape of a Laravel config
+// file. At most the first phpConfigMaxLines lines are examined.
+func isPHPConfigArray(path string) bool {
+	f, err := FS.Open(path)
+	if err != nil {
+		return false
 	}
-	stem := strings.TrimSuffix(base, filepath.Ext(base))
-	return strings.HasSuffix(strings.ToLower(stem), ".config")
+	defer f.Close() //nolint:errcheck // read-only file
+
+	buf := make([]byte, phpConfigReadBytes)
+	n, _ := io.ReadFull(f, buf)
+	rest := bytes.TrimLeft(buf[:n], "\xEF\xBB\xBF \t\r\n")
+	if !bytes.HasPrefix(rest, []byte("<?php")) {
+		return false
+	}
+	rest = rest[len("<?php"):]
+	inComment := false
+	for i := 0; i < phpConfigMaxLines && len(rest) > 0; i++ {
+		var line []byte
+		line, rest, _ = bytes.Cut(rest, []byte{'\n'})
+		line = bytes.TrimSpace(line)
+		switch {
+		case inComment:
+			if bytes.Contains(line, []byte("*/")) {
+				inComment = false
+			}
+		case len(line) == 0,
+			bytes.HasPrefix(line, []byte("//")),
+			bytes.HasPrefix(line, []byte("#")),
+			bytes.HasPrefix(line, []byte("use ")),
+			bytes.HasPrefix(line, []byte("declare(")):
+		case bytes.HasPrefix(line, []byte("/*")):
+			inComment = !bytes.Contains(line, []byte("*/"))
+		default:
+			return bytes.HasPrefix(line, []byte("return [")) ||
+				bytes.HasPrefix(line, []byte("return array("))
+		}
+	}
+	return false
 }
 
 // isDataClassPath returns true for class-per-file languages (PHP, C#, Java,
@@ -376,12 +462,12 @@ func isDataClassPath(relPath string) bool {
 	return false
 }
 
-// isNonSourceForTests returns true if relPath should be left out of
-// missing-tests detection and the per-directory test-ratio metric: config
-// files, data-only class files, and (unless includeDemo is set) documentation
-// and demo trees.
-func isNonSourceForTests(relPath string, includeDemo bool) bool {
-	if isConfigPath(relPath) || isDataClassPath(relPath) {
+// isNonSourceForTests returns true if the file at path (repo-relative
+// relPath) should be left out of missing-tests detection and the
+// per-directory test-ratio metric: config files, data-only class files, and
+// (unless includeDemo is set) documentation and demo trees.
+func isNonSourceForTests(path, relPath string, includeDemo bool) bool {
+	if isConfigPath(path, relPath) || isDataClassPath(relPath) {
 		return true
 	}
 	return !includeDemo && isDocOrDemoTree(relPath)

@@ -245,7 +245,7 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 		case isUnderTestRoot(relPath, testRoots), isTestOnlyDir(relPath):
 			// Helpers, fixtures and base classes inside a test tree are test
 			// support code: neither source to be covered nor test files.
-		case isNonSourceForTests(relPath, opts.IncludeDemoPaths):
+		case isNonSourceForTests(path, relPath, opts.IncludeDemoPaths):
 			// Config, data-only classes, and doc/demo trees are neither
 			// source nor test for coverage purposes.
 		default:
