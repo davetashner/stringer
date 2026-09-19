@@ -6,15 +6,10 @@ package collectors
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/davetashner/stringer/internal/signal"
 )
-
-// maxNpmChecks caps the number of npm registry lookups per scan.
-const maxNpmChecks = 50
 
 // npmRegistryBaseURL is the default npm registry URL.
 const npmRegistryBaseURL = "https://registry.npmjs.org"
@@ -51,12 +46,7 @@ func (c *realNpmRegistryClient) FetchPackage(ctx context.Context, name string) (
 	// Request abbreviated metadata to reduce response size.
 	req.Header.Set("Accept", "application/vnd.npm.install-v1+json")
 
-	client := c.httpClient
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
-	}
-
-	resp, err := client.Do(req)
+	resp, err := registryHTTPClient(c.httpClient).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching %s: %w", url, err)
 	}
@@ -76,38 +66,24 @@ func (c *realNpmRegistryClient) FetchPackage(ctx context.Context, name string) (
 
 // checkNpmDeps queries the npm registry for each dependency and emits signals
 // for packages that are deprecated.
-func checkNpmDeps(ctx context.Context, client npmRegistryClient, deps []PackageQuery, filePath string) []signal.RawSignal {
-	var signals []signal.RawSignal
-	checked := 0
-
-	for _, dep := range deps {
-		if ctx.Err() != nil {
-			break
-		}
-		if checked >= maxNpmChecks {
-			slog.Info("dephealth: reached npm registry check cap", "cap", maxNpmChecks)
-			break
-		}
-		checked++
-
+func (r *registryRun) checkNpmDeps(ctx context.Context, client npmRegistryClient, deps []PackageQuery, filePath string) []signal.RawSignal {
+	return lookupEach(ctx, r, "npm", deps, func(ctx context.Context, dep PackageQuery) []signal.RawSignal {
 		info, err := client.FetchPackage(ctx, dep.Name)
 		if err != nil {
-			slog.Debug("dephealth: npm lookup failed", "package", dep.Name, "error", err)
-			continue
+			r.lookupFailed("npm", dep.Name, err)
+			return nil
 		}
-
-		if info.Deprecated != "" {
-			signals = append(signals, signal.RawSignal{
-				Source:      "dephealth",
-				Kind:        "deprecated-dependency",
-				FilePath:    filePath,
-				Title:       fmt.Sprintf("Deprecated npm package: %s", dep.Name),
-				Description: fmt.Sprintf("npm package %s is deprecated: %s", dep.Name, info.Deprecated),
-				Confidence:  0.8,
-				Tags:        []string{"deprecated-dependency", "dephealth", "npm"},
-			})
+		if info.Deprecated == "" {
+			return nil
 		}
-	}
-
-	return signals
+		return []signal.RawSignal{{
+			Source:      "dephealth",
+			Kind:        "deprecated-dependency",
+			FilePath:    filePath,
+			Title:       fmt.Sprintf("Deprecated npm package: %s", dep.Name),
+			Description: fmt.Sprintf("npm package %s is deprecated: %s", dep.Name, info.Deprecated),
+			Confidence:  0.8,
+			Tags:        []string{"deprecated-dependency", "dephealth", "npm"},
+		}}
+	})
 }

@@ -36,6 +36,7 @@ type DepHealthMetrics struct {
 	Stale        []string
 	Yanked       []string
 	Ecosystems   []string // ecosystems detected (e.g., "go", "npm", "cargo")
+	TimedOut     int      // registry lookups that hit collectors.dephealth.registry_timeout
 }
 
 // ModuleDep represents a single require directive.
@@ -68,6 +69,7 @@ type ModuleRetract struct {
 // dependencies across multiple ecosystems.
 type DepHealthCollector struct {
 	metrics         *DepHealthMetrics
+	run             *registryRun
 	ghAPI           dephealthGitHubAPI
 	proxyClient     moduleProxyClient
 	npmClient       npmRegistryClient
@@ -89,6 +91,10 @@ func (c *DepHealthCollector) Name() string { return "dephealth" }
 func (c *DepHealthCollector) Collect(ctx context.Context, repoPath string, opts signal.CollectorOpts) ([]signal.RawSignal, error) {
 	metrics := &DepHealthMetrics{}
 	var signals []signal.RawSignal
+
+	// Registry lookups share one timeout, worker count and timeout counter
+	// across ecosystems (stringer-ds4).
+	c.run = newRegistryRun(opts)
 
 	// --- Go ecosystem (go.mod) ---
 	goSignals, err := c.collectGoHealth(ctx, repoPath, opts, metrics)
@@ -141,6 +147,11 @@ func (c *DepHealthCollector) Collect(ctx context.Context, repoPath string, opts 
 	if len(metrics.Ecosystems) == 0 {
 		slog.Info("no dependency manifests found, skipping dephealth collector")
 		return nil, nil
+	}
+
+	if n := c.run.timedOut.Load(); n > 0 {
+		metrics.TimedOut = int(n)
+		slog.Warn("dephealth: registry lookups timed out; raise collectors.dephealth.registry_timeout to retry them", "timed_out", n, "timeout", c.run.timeout)
 	}
 
 	c.metrics = metrics
@@ -251,17 +262,10 @@ func (c *DepHealthCollector) collectGoHealth(ctx context.Context, repoPath strin
 	}
 
 	// C6.2 + C6.4: Check GitHub repos for archived/stale status.
-	ghAPI := c.ghAPI
+	ghAPI := c.githubAPI()
 	if ghAPI == nil {
-		token := os.Getenv("GITHUB_TOKEN")
-		if token != "" {
-			client := github.NewClient(nil).WithAuthToken(token)
-			ghAPI = &realGitHubAPI{client: client}
-		} else {
-			slog.Info("GITHUB_TOKEN not set, skipping dephealth GitHub checks")
-		}
-	}
-	if ghAPI != nil {
+		slog.Info("GITHUB_TOKEN not set, skipping dephealth GitHub checks")
+	} else {
 		threshold := defaultStalenessThreshold
 		if opts.StalenessThreshold != "" {
 			if d, err := ParseDuration(opts.StalenessThreshold); err == nil {
@@ -270,7 +274,7 @@ func (c *DepHealthCollector) collectGoHealth(ctx context.Context, repoPath strin
 				slog.Warn("invalid staleness-threshold, using default", "value", opts.StalenessThreshold, "error", err)
 			}
 		}
-		ghSignals := checkGitHubDeps(ctx, ghAPI, metrics.Dependencies, threshold)
+		ghSignals := c.run.checkGitHubDeps(ctx, ghAPI, metrics.Dependencies, threshold)
 		for _, s := range ghSignals {
 			switch s.Kind {
 			case "archived-dependency":
@@ -285,9 +289,9 @@ func (c *DepHealthCollector) collectGoHealth(ctx context.Context, repoPath strin
 	// C6.3: Check Go module proxy for deprecated modules.
 	proxyClient := c.proxyClient
 	if proxyClient == nil {
-		proxyClient = &realModuleProxyClient{}
+		proxyClient = &realModuleProxyClient{httpClient: c.run.httpClient()}
 	}
-	deprecatedSignals := checkDeprecatedDeps(ctx, proxyClient, metrics.Dependencies)
+	deprecatedSignals := c.run.checkDeprecatedDeps(ctx, proxyClient, metrics.Dependencies)
 	for _, s := range deprecatedSignals {
 		metrics.Deprecated = append(metrics.Deprecated, s.Title)
 	}
@@ -319,10 +323,10 @@ func (c *DepHealthCollector) collectNpmHealth(ctx context.Context, repoPath stri
 
 	client := c.npmClient
 	if client == nil {
-		client = &realNpmRegistryClient{}
+		client = &realNpmRegistryClient{httpClient: c.run.httpClient()}
 	}
 
-	npmSignals := checkNpmDeps(ctx, client, deps, "package.json")
+	npmSignals := c.run.checkNpmDeps(ctx, client, deps, "package.json")
 	for _, s := range npmSignals {
 		metrics.Deprecated = append(metrics.Deprecated, s.Title)
 	}
@@ -353,10 +357,10 @@ func (c *DepHealthCollector) collectCargoHealth(ctx context.Context, repoPath st
 
 	client := c.cratesClient
 	if client == nil {
-		client = &realCratesRegistryClient{}
+		client = &realCratesRegistryClient{httpClient: c.run.httpClient()}
 	}
 
-	cargoSignals := checkCratesDeps(ctx, client, deps)
+	cargoSignals := c.run.checkCratesDeps(ctx, client, deps)
 	for _, s := range cargoSignals {
 		metrics.Yanked = append(metrics.Yanked, s.Title)
 	}
@@ -423,12 +427,9 @@ func (c *DepHealthCollector) collectMavenHealth(ctx context.Context, repoPath st
 
 	metrics.Ecosystems = append(metrics.Ecosystems, "maven")
 
-	client := c.mavenClient
-	if client == nil {
-		client = &realMavenRegistryClient{}
-	}
+	client := c.mavenClientOrDefault()
 
-	mavenSignals := checkMavenDeps(ctx, client, deps, "pom.xml")
+	mavenSignals := c.run.checkMavenDeps(ctx, client, deps, "pom.xml")
 	for _, s := range mavenSignals {
 		metrics.Stale = append(metrics.Stale, s.Title)
 	}
@@ -447,12 +448,9 @@ func (c *DepHealthCollector) collectGradleHealth(ctx context.Context, repoPath s
 
 	metrics.Ecosystems = append(metrics.Ecosystems, "gradle")
 
-	client := c.mavenClient
-	if client == nil {
-		client = &realMavenRegistryClient{}
-	}
+	client := c.mavenClientOrDefault()
 
-	gradleSignals := checkMavenDeps(ctx, client, deps, filePath)
+	gradleSignals := c.run.checkMavenDeps(ctx, client, deps, filePath)
 	for _, s := range gradleSignals {
 		metrics.Stale = append(metrics.Stale, s.Title)
 	}
@@ -470,10 +468,10 @@ func (c *DepHealthCollector) collectNuGetHealth(ctx context.Context, repoPath st
 
 	client := c.nugetClient
 	if client == nil {
-		client = &realNuGetRegistryClient{}
+		client = &realNuGetRegistryClient{httpClient: c.run.httpClient()}
 	}
 
-	nugetSignals := checkNuGetDeps(ctx, client, deps, filePath)
+	nugetSignals := c.run.checkNuGetDeps(ctx, client, deps, filePath)
 	for _, s := range nugetSignals {
 		metrics.Deprecated = append(metrics.Deprecated, s.Title)
 	}
@@ -491,10 +489,10 @@ func (c *DepHealthCollector) collectPyPIHealth(ctx context.Context, repoPath str
 
 	client := c.pypiClient
 	if client == nil {
-		client = &realPyPIRegistryClient{}
+		client = &realPyPIRegistryClient{httpClient: c.run.httpClient()}
 	}
 
-	pypiSignals := checkPyPIDeps(ctx, client, deps, filePath)
+	pypiSignals := c.run.checkPyPIDeps(ctx, client, deps, filePath)
 	for _, s := range pypiSignals {
 		metrics.Deprecated = append(metrics.Deprecated, s.Title)
 	}
@@ -524,10 +522,10 @@ func (c *DepHealthCollector) collectPackagistHealth(ctx context.Context, repoPat
 
 	client := c.packagistClient
 	if client == nil {
-		client = &realPackagistRegistryClient{}
+		client = &realPackagistRegistryClient{httpClient: c.run.httpClient()}
 	}
 
-	packagistSignals := checkPackagistDeps(ctx, client, deps, "composer.json")
+	packagistSignals := c.run.checkPackagistDeps(ctx, client, deps, "composer.json")
 	for _, s := range packagistSignals {
 		metrics.Deprecated = append(metrics.Deprecated, s.Title)
 	}
@@ -552,16 +550,10 @@ func (c *DepHealthCollector) collectSwiftHealth(ctx context.Context, repoPath st
 	metrics.Ecosystems = append(metrics.Ecosystems, "swiftpm")
 
 	// Swift packages are GitHub repos — check archived/stale status via GitHub API.
-	ghAPI := c.ghAPI
+	ghAPI := c.githubAPI()
 	if ghAPI == nil {
-		token := os.Getenv("GITHUB_TOKEN")
-		if token != "" {
-			ghClient := github.NewClient(nil).WithAuthToken(token)
-			ghAPI = &realGitHubAPI{client: ghClient}
-		} else {
-			slog.Info("GITHUB_TOKEN not set, skipping Swift GitHub checks")
-			return nil
-		}
+		slog.Info("GITHUB_TOKEN not set, skipping Swift GitHub checks")
+		return nil
 	}
 
 	// Convert SwiftPM deps to ModuleDep format for the GitHub checker.
@@ -580,7 +572,7 @@ func (c *DepHealthCollector) collectSwiftHealth(ctx context.Context, repoPath st
 		return nil
 	}
 
-	ghSignals := checkGitHubDeps(ctx, ghAPI, moduleDeps, defaultStalenessThreshold)
+	ghSignals := c.run.checkGitHubDeps(ctx, ghAPI, moduleDeps, defaultStalenessThreshold)
 	for _, s := range ghSignals {
 		// Re-tag signals for Swift.
 		s.Tags = append(s.Tags, "swift")
@@ -629,12 +621,9 @@ func (c *DepHealthCollector) collectSbtHealth(ctx context.Context, repoPath stri
 	metrics.Ecosystems = append(metrics.Ecosystems, "sbt")
 
 	// Scala artifacts are published to Maven Central — reuse the Maven client.
-	client := c.mavenClient
-	if client == nil {
-		client = &realMavenRegistryClient{}
-	}
+	client := c.mavenClientOrDefault()
 
-	sbtSignals := checkMavenDeps(ctx, client, deps, "build.sbt")
+	sbtSignals := c.run.checkMavenDeps(ctx, client, deps, "build.sbt")
 	for _, s := range sbtSignals {
 		metrics.Stale = append(metrics.Stale, s.Title)
 	}
@@ -660,14 +649,36 @@ func (c *DepHealthCollector) collectHexHealth(ctx context.Context, repoPath stri
 
 	client := c.hexClient
 	if client == nil {
-		client = &realHexRegistryClient{}
+		client = &realHexRegistryClient{httpClient: c.run.httpClient()}
 	}
 
-	hexSignals := checkHexDeps(ctx, client, deps, "mix.exs")
+	hexSignals := c.run.checkHexDeps(ctx, client, deps, "mix.exs")
 	for _, s := range hexSignals {
 		metrics.Deprecated = append(metrics.Deprecated, s.Title)
 	}
 	return hexSignals
+}
+
+// githubAPI returns the injected GitHub API, or a real client bounded by the
+// registry timeout when GITHUB_TOKEN is set. It returns nil without a token.
+func (c *DepHealthCollector) githubAPI() dephealthGitHubAPI {
+	if c.ghAPI != nil {
+		return c.ghAPI
+	}
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		return nil
+	}
+	return &realGitHubAPI{client: github.NewClient(c.run.httpClient()).WithAuthToken(token)}
+}
+
+// mavenClientOrDefault returns the injected Maven client or a real one bounded
+// by the registry timeout. Gradle and sbt artifacts live on Maven Central too.
+func (c *DepHealthCollector) mavenClientOrDefault() mavenRegistryClient {
+	if c.mavenClient != nil {
+		return c.mavenClient
+	}
+	return &realMavenRegistryClient{httpClient: c.run.httpClient()}
 }
 
 // Metrics returns structured dependency data from the last Collect call.

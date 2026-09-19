@@ -258,6 +258,9 @@ collectors:
     coupling_fan_out_threshold: 15
   duplication:
     duplication_min_test_lines: 12  # drop test-only clones shorter than this
+  dephealth:
+    registry_timeout: 10s      # per-lookup limit for npm/Maven/PyPI/... registries (was 30s)
+    registry_concurrency: 8    # parallel registry lookups per ecosystem
 ```
 
 Each collector accepts its own options (`enabled`, `error_mode`, thresholds, patterns); run `stringer collectors info <name>` to see them, or `stringer config list` to see every setting with its source.

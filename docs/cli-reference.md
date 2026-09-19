@@ -192,6 +192,8 @@ stringer collectors info duplication --json  # machine-readable with thresholds
 | `list` | Show all collectors with name, status, and description |
 | `info <name>` | Show detailed info including signal types, config options, and tunable thresholds |
 
+Thresholds are set per collector in `.stringer.yaml` under `collectors.<name>.<key>` (or with `stringer config set`). For example, `dephealth` exposes `registry_timeout` (per-lookup registry limit, default `10s`) and `registry_concurrency` (parallel lookups per ecosystem, default `8`); see [Large Repository Guidance](large-repos.md#registry-lookups-dephealth).
+
 ## Exit codes
 
 | Code | Name              | Meaning                                          |

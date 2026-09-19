@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -373,7 +374,7 @@ func TestCheckGitHubDeps_Archived(t *testing.T) {
 	}
 	deps := []ModuleDep{{Path: "github.com/foo/bar", Version: "v1.0.0"}}
 
-	signals := checkGitHubDeps(context.Background(), api, deps, defaultStalenessThreshold)
+	signals := testRun().checkGitHubDeps(context.Background(), api, deps, defaultStalenessThreshold)
 	require.Len(t, signals, 1)
 	assert.Equal(t, "archived-dependency", signals[0].Kind)
 	assert.Equal(t, 0.9, signals[0].Confidence)
@@ -394,7 +395,7 @@ func TestCheckGitHubDeps_Stale(t *testing.T) {
 	}
 	deps := []ModuleDep{{Path: "github.com/foo/bar", Version: "v1.0.0"}}
 
-	signals := checkGitHubDeps(context.Background(), api, deps, defaultStalenessThreshold)
+	signals := testRun().checkGitHubDeps(context.Background(), api, deps, defaultStalenessThreshold)
 	require.Len(t, signals, 1)
 	assert.Equal(t, "stale-dependency", signals[0].Kind)
 	assert.Equal(t, 0.6, signals[0].Confidence)
@@ -413,7 +414,7 @@ func TestCheckGitHubDeps_ArchivedNotDoubleStale(t *testing.T) {
 	}
 	deps := []ModuleDep{{Path: "github.com/foo/bar", Version: "v1.0.0"}}
 
-	signals := checkGitHubDeps(context.Background(), api, deps, defaultStalenessThreshold)
+	signals := testRun().checkGitHubDeps(context.Background(), api, deps, defaultStalenessThreshold)
 	require.Len(t, signals, 1)
 	assert.Equal(t, "archived-dependency", signals[0].Kind, "should only emit archived, not stale")
 }
@@ -430,7 +431,7 @@ func TestCheckGitHubDeps_Healthy(t *testing.T) {
 	}
 	deps := []ModuleDep{{Path: "github.com/foo/bar", Version: "v1.0.0"}}
 
-	signals := checkGitHubDeps(context.Background(), api, deps, defaultStalenessThreshold)
+	signals := testRun().checkGitHubDeps(context.Background(), api, deps, defaultStalenessThreshold)
 	assert.Empty(t, signals)
 }
 
@@ -441,7 +442,7 @@ func TestCheckGitHubDeps_NonGitHub(t *testing.T) {
 		{Path: "gopkg.in/yaml.v3", Version: "v3.0.1"},
 	}
 
-	signals := checkGitHubDeps(context.Background(), api, deps, defaultStalenessThreshold)
+	signals := testRun().checkGitHubDeps(context.Background(), api, deps, defaultStalenessThreshold)
 	assert.Empty(t, signals, "non-GitHub deps should be silently skipped")
 }
 
@@ -465,21 +466,28 @@ func TestCheckGitHubDeps_Dedup(t *testing.T) {
 		{Path: "github.com/foo/bar/pkg/sub", Version: "v1.1.0"},
 	}
 
-	signals := checkGitHubDeps(context.Background(), api, deps, defaultStalenessThreshold)
+	signals := testRun().checkGitHubDeps(context.Background(), api, deps, defaultStalenessThreshold)
 	assert.Empty(t, signals) // healthy repo
 	assert.Equal(t, 1, callCount, "should only make one API call for foo/bar")
 }
 
-// countingGitHubAPI wraps a mock and counts API calls.
+// countingGitHubAPI wraps a mock and counts API calls. Lookups run from a
+// worker pool, so the counter is guarded by a mutex.
 type countingGitHubAPI struct {
 	inner dephealthGitHubAPI
+	mu    sync.Mutex
 	count *int
 }
 
 func (c *countingGitHubAPI) GetRepository(ctx context.Context, owner, repo string) (*github.Repository, *github.Response, error) {
+	c.mu.Lock()
 	*c.count++
+	c.mu.Unlock()
 	return c.inner.GetRepository(ctx, owner, repo)
 }
+
+// testRun returns registry settings with defaults, for direct checker tests.
+func testRun() *registryRun { return newRegistryRun(signal.CollectorOpts{}) }
 
 func TestCheckGitHubDeps_APIError(t *testing.T) {
 	api := &mockDephealthGitHubAPI{
@@ -487,7 +495,7 @@ func TestCheckGitHubDeps_APIError(t *testing.T) {
 	}
 	deps := []ModuleDep{{Path: "github.com/foo/bar", Version: "v1.0.0"}}
 
-	signals := checkGitHubDeps(context.Background(), api, deps, defaultStalenessThreshold)
+	signals := testRun().checkGitHubDeps(context.Background(), api, deps, defaultStalenessThreshold)
 	assert.Empty(t, signals, "API errors should be silently skipped")
 }
 
@@ -504,7 +512,7 @@ func TestCheckDeprecatedDeps_Deprecated(t *testing.T) {
 	}
 	deps := []ModuleDep{{Path: "github.com/old/thing", Version: "v1.0.0"}}
 
-	signals := checkDeprecatedDeps(context.Background(), client, deps)
+	signals := testRun().checkDeprecatedDeps(context.Background(), client, deps)
 	require.Len(t, signals, 1)
 	assert.Equal(t, "deprecated-dependency", signals[0].Kind)
 	assert.Equal(t, 0.8, signals[0].Confidence)
@@ -521,7 +529,7 @@ func TestCheckDeprecatedDeps_NotDeprecated(t *testing.T) {
 	}
 	deps := []ModuleDep{{Path: "github.com/good/thing", Version: "v2.0.0"}}
 
-	signals := checkDeprecatedDeps(context.Background(), client, deps)
+	signals := testRun().checkDeprecatedDeps(context.Background(), client, deps)
 	assert.Empty(t, signals)
 }
 
@@ -531,7 +539,7 @@ func TestCheckDeprecatedDeps_ProxyError(t *testing.T) {
 	}
 	deps := []ModuleDep{{Path: "github.com/private/thing", Version: "v1.0.0"}}
 
-	signals := checkDeprecatedDeps(context.Background(), client, deps)
+	signals := testRun().checkDeprecatedDeps(context.Background(), client, deps)
 	assert.Empty(t, signals, "proxy errors should be silently skipped")
 }
 
@@ -548,7 +556,7 @@ func TestCheckDeprecatedDeps_MultipleDeps(t *testing.T) {
 		{Path: "github.com/missing/d", Version: "v1.0.0"}, // not in mock → error → skipped
 	}
 
-	signals := checkDeprecatedDeps(context.Background(), client, deps)
+	signals := testRun().checkDeprecatedDeps(context.Background(), client, deps)
 	require.Len(t, signals, 1)
 	assert.Equal(t, "deprecated-dependency", signals[0].Kind)
 	assert.Contains(t, signals[0].Title, "github.com/old/a")
@@ -722,7 +730,7 @@ func TestCheckNpmDeps_Deprecated(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "npm", Name: "old-package", Version: "1.0.0"}}
 
-	signals := checkNpmDeps(context.Background(), client, deps, "package.json")
+	signals := testRun().checkNpmDeps(context.Background(), client, deps, "package.json")
 	require.Len(t, signals, 1)
 	assert.Equal(t, "deprecated-dependency", signals[0].Kind)
 	assert.Equal(t, 0.8, signals[0].Confidence)
@@ -740,7 +748,7 @@ func TestCheckNpmDeps_NotDeprecated(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "npm", Name: "good-package", Version: "1.0.0"}}
 
-	signals := checkNpmDeps(context.Background(), client, deps, "package.json")
+	signals := testRun().checkNpmDeps(context.Background(), client, deps, "package.json")
 	assert.Empty(t, signals)
 }
 
@@ -750,7 +758,7 @@ func TestCheckNpmDeps_Error(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "npm", Name: "some-package", Version: "1.0.0"}}
 
-	signals := checkNpmDeps(context.Background(), client, deps, "package.json")
+	signals := testRun().checkNpmDeps(context.Background(), client, deps, "package.json")
 	assert.Empty(t, signals, "errors should be silently skipped")
 }
 
@@ -768,7 +776,7 @@ func TestCheckNpmDeps_Multiple(t *testing.T) {
 		{Ecosystem: "npm", Name: "old-c", Version: "3.0.0"},
 	}
 
-	signals := checkNpmDeps(context.Background(), client, deps, "package.json")
+	signals := testRun().checkNpmDeps(context.Background(), client, deps, "package.json")
 	require.Len(t, signals, 2)
 }
 
@@ -804,7 +812,7 @@ func TestCheckCratesDeps_Yanked(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "crates.io", Name: "bad-crate", Version: "1.0.0"}}
 
-	signals := checkCratesDeps(context.Background(), client, deps)
+	signals := testRun().checkCratesDeps(context.Background(), client, deps)
 	require.Len(t, signals, 1)
 	assert.Equal(t, "yanked-dependency", signals[0].Kind)
 	assert.Equal(t, 0.9, signals[0].Confidence)
@@ -826,7 +834,7 @@ func TestCheckCratesDeps_NotYanked(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "crates.io", Name: "good-crate", Version: "1.0.0"}}
 
-	signals := checkCratesDeps(context.Background(), client, deps)
+	signals := testRun().checkCratesDeps(context.Background(), client, deps)
 	assert.Empty(t, signals)
 }
 
@@ -843,7 +851,7 @@ func TestCheckCratesDeps_VersionNotFound(t *testing.T) {
 	// Query for version 1.0.0 which doesn't exist in the response.
 	deps := []PackageQuery{{Ecosystem: "crates.io", Name: "some-crate", Version: "1.0.0"}}
 
-	signals := checkCratesDeps(context.Background(), client, deps)
+	signals := testRun().checkCratesDeps(context.Background(), client, deps)
 	assert.Empty(t, signals, "version not found → no signal")
 }
 
@@ -853,7 +861,7 @@ func TestCheckCratesDeps_Error(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "crates.io", Name: "some-crate", Version: "1.0.0"}}
 
-	signals := checkCratesDeps(context.Background(), client, deps)
+	signals := testRun().checkCratesDeps(context.Background(), client, deps)
 	assert.Empty(t, signals, "errors should be silently skipped")
 }
 
@@ -897,7 +905,7 @@ func TestCheckMavenDeps_Stale(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "Maven", Name: "com.old:artifact", Version: "1.0.0"}}
 
-	signals := checkMavenDeps(context.Background(), client, deps, "pom.xml")
+	signals := testRun().checkMavenDeps(context.Background(), client, deps, "pom.xml")
 	require.Len(t, signals, 1)
 	assert.Equal(t, "stale-dependency", signals[0].Kind)
 	assert.Equal(t, 0.5, signals[0].Confidence)
@@ -925,7 +933,7 @@ func TestCheckMavenDeps_NotStale(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "Maven", Name: "com.fresh:artifact", Version: "2.0.0"}}
 
-	signals := checkMavenDeps(context.Background(), client, deps, "pom.xml")
+	signals := testRun().checkMavenDeps(context.Background(), client, deps, "pom.xml")
 	assert.Empty(t, signals)
 }
 
@@ -945,7 +953,7 @@ func TestCheckMavenDeps_NotFound(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "Maven", Name: "com.x:y", Version: "1.0.0"}}
 
-	signals := checkMavenDeps(context.Background(), client, deps, "pom.xml")
+	signals := testRun().checkMavenDeps(context.Background(), client, deps, "pom.xml")
 	assert.Empty(t, signals, "not found → no signal")
 }
 
@@ -955,7 +963,7 @@ func TestCheckMavenDeps_Error(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "Maven", Name: "com.x:y", Version: "1.0.0"}}
 
-	signals := checkMavenDeps(context.Background(), client, deps, "pom.xml")
+	signals := testRun().checkMavenDeps(context.Background(), client, deps, "pom.xml")
 	assert.Empty(t, signals, "errors should be silently skipped")
 }
 
@@ -966,7 +974,7 @@ func TestCheckMavenDeps_InvalidName(t *testing.T) {
 	// Name without colon separator.
 	deps := []PackageQuery{{Ecosystem: "Maven", Name: "no-colon", Version: "1.0.0"}}
 
-	signals := checkMavenDeps(context.Background(), client, deps, "pom.xml")
+	signals := testRun().checkMavenDeps(context.Background(), client, deps, "pom.xml")
 	assert.Empty(t, signals, "invalid name → skipped")
 }
 
@@ -1014,7 +1022,7 @@ func TestCheckNuGetDeps_Deprecated(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "NuGet", Name: "OldPackage", Version: "1.0.0"}}
 
-	signals := checkNuGetDeps(context.Background(), client, deps, "MyApp.csproj")
+	signals := testRun().checkNuGetDeps(context.Background(), client, deps, "MyApp.csproj")
 	require.Len(t, signals, 1)
 	assert.Equal(t, "deprecated-dependency", signals[0].Kind)
 	assert.Equal(t, 0.8, signals[0].Confidence)
@@ -1045,7 +1053,7 @@ func TestCheckNuGetDeps_NotDeprecated(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "NuGet", Name: "GoodPackage", Version: "1.0.0"}}
 
-	signals := checkNuGetDeps(context.Background(), client, deps, "MyApp.csproj")
+	signals := testRun().checkNuGetDeps(context.Background(), client, deps, "MyApp.csproj")
 	assert.Empty(t, signals)
 }
 
@@ -1074,7 +1082,7 @@ func TestCheckNuGetDeps_VersionMismatch(t *testing.T) {
 	// Query for version 1.0.0, but only 2.0.0 is deprecated.
 	deps := []PackageQuery{{Ecosystem: "NuGet", Name: "SomePackage", Version: "1.0.0"}}
 
-	signals := checkNuGetDeps(context.Background(), client, deps, "MyApp.csproj")
+	signals := testRun().checkNuGetDeps(context.Background(), client, deps, "MyApp.csproj")
 	assert.Empty(t, signals, "version mismatch → no signal")
 }
 
@@ -1084,7 +1092,7 @@ func TestCheckNuGetDeps_Error(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "NuGet", Name: "SomePackage", Version: "1.0.0"}}
 
-	signals := checkNuGetDeps(context.Background(), client, deps, "MyApp.csproj")
+	signals := testRun().checkNuGetDeps(context.Background(), client, deps, "MyApp.csproj")
 	assert.Empty(t, signals, "errors should be silently skipped")
 }
 
@@ -1142,7 +1150,7 @@ func TestCheckPyPIDeps_Inactive(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "PyPI", Name: "old-lib", Version: "1.0.0"}}
 
-	signals := checkPyPIDeps(context.Background(), client, deps, "requirements.txt")
+	signals := testRun().checkPyPIDeps(context.Background(), client, deps, "requirements.txt")
 	require.Len(t, signals, 1)
 	assert.Equal(t, "deprecated-dependency", signals[0].Kind)
 	assert.Equal(t, 0.7, signals[0].Confidence)
@@ -1166,7 +1174,7 @@ func TestCheckPyPIDeps_Active(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "PyPI", Name: "good-lib", Version: "2.0.0"}}
 
-	signals := checkPyPIDeps(context.Background(), client, deps, "requirements.txt")
+	signals := testRun().checkPyPIDeps(context.Background(), client, deps, "requirements.txt")
 	assert.Empty(t, signals)
 }
 
@@ -1176,7 +1184,7 @@ func TestCheckPyPIDeps_Error(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "PyPI", Name: "some-lib", Version: "1.0.0"}}
 
-	signals := checkPyPIDeps(context.Background(), client, deps, "requirements.txt")
+	signals := testRun().checkPyPIDeps(context.Background(), client, deps, "requirements.txt")
 	assert.Empty(t, signals, "errors should be silently skipped")
 }
 
@@ -1582,7 +1590,7 @@ func TestCheckPackagistDeps_Abandoned(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "Packagist", Name: "vendor/old-pkg", Version: "1.0.0"}}
 
-	signals := checkPackagistDeps(context.Background(), client, deps, "composer.json")
+	signals := testRun().checkPackagistDeps(context.Background(), client, deps, "composer.json")
 	require.Len(t, signals, 1)
 	assert.Equal(t, "deprecated-dependency", signals[0].Kind)
 	assert.Equal(t, 0.8, signals[0].Confidence)
@@ -1604,7 +1612,7 @@ func TestCheckPackagistDeps_NotAbandoned(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "Packagist", Name: "vendor/good-pkg", Version: "2.0.0"}}
 
-	signals := checkPackagistDeps(context.Background(), client, deps, "composer.json")
+	signals := testRun().checkPackagistDeps(context.Background(), client, deps, "composer.json")
 	assert.Empty(t, signals)
 }
 
@@ -1614,7 +1622,7 @@ func TestCheckPackagistDeps_Error(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "Packagist", Name: "vendor/pkg", Version: "1.0.0"}}
 
-	signals := checkPackagistDeps(context.Background(), client, deps, "composer.json")
+	signals := testRun().checkPackagistDeps(context.Background(), client, deps, "composer.json")
 	assert.Empty(t, signals, "errors should be silently skipped")
 }
 
@@ -1630,7 +1638,7 @@ func TestCheckPackagistDeps_AbandonedBool(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "Packagist", Name: "vendor/dead-pkg", Version: "1.0.0"}}
 
-	signals := checkPackagistDeps(context.Background(), client, deps, "composer.json")
+	signals := testRun().checkPackagistDeps(context.Background(), client, deps, "composer.json")
 	require.Len(t, signals, 1)
 	assert.Contains(t, signals[0].Description, "alternative")
 }
@@ -1704,7 +1712,7 @@ func TestCheckHexDeps_Retired(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "Hex", Name: "old_lib", Version: "1.0.0"}}
 
-	signals := checkHexDeps(context.Background(), client, deps, "mix.exs")
+	signals := testRun().checkHexDeps(context.Background(), client, deps, "mix.exs")
 	require.Len(t, signals, 1)
 	assert.Equal(t, "deprecated-dependency", signals[0].Kind)
 	assert.Equal(t, 0.8, signals[0].Confidence)
@@ -1726,7 +1734,7 @@ func TestCheckHexDeps_NotRetired(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "Hex", Name: "good_lib", Version: "1.0.0"}}
 
-	signals := checkHexDeps(context.Background(), client, deps, "mix.exs")
+	signals := testRun().checkHexDeps(context.Background(), client, deps, "mix.exs")
 	assert.Empty(t, signals)
 }
 
@@ -1736,7 +1744,7 @@ func TestCheckHexDeps_Error(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "Hex", Name: "some_lib", Version: "1.0.0"}}
 
-	signals := checkHexDeps(context.Background(), client, deps, "mix.exs")
+	signals := testRun().checkHexDeps(context.Background(), client, deps, "mix.exs")
 	assert.Empty(t, signals, "errors should be silently skipped")
 }
 
@@ -1753,7 +1761,7 @@ func TestCheckHexDeps_DifferentVersionRetired(t *testing.T) {
 	}
 	deps := []PackageQuery{{Ecosystem: "Hex", Name: "my_lib", Version: "1.0.0"}}
 
-	signals := checkHexDeps(context.Background(), client, deps, "mix.exs")
+	signals := testRun().checkHexDeps(context.Background(), client, deps, "mix.exs")
 	assert.Empty(t, signals, "only the exact version should trigger retirement signal")
 }
 

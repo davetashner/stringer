@@ -6,16 +6,11 @@ package collectors
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/davetashner/stringer/internal/signal"
 )
-
-// maxNuGetChecks caps the number of NuGet API lookups per scan.
-const maxNuGetChecks = 50
 
 // nugetRegistrationBaseURL is the default NuGet registration API URL.
 const nugetRegistrationBaseURL = "https://api.nuget.org/v3/registration5-semver1"
@@ -74,12 +69,7 @@ func (c *realNuGetRegistryClient) FetchRegistration(ctx context.Context, id stri
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	client := c.httpClient
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
-	}
-
-	resp, err := client.Do(req)
+	resp, err := registryHTTPClient(c.httpClient).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching %s: %w", url, err)
 	}
@@ -99,50 +89,37 @@ func (c *realNuGetRegistryClient) FetchRegistration(ctx context.Context, id stri
 
 // checkNuGetDeps queries the NuGet registration API for each dependency and
 // emits signals for deprecated packages.
-func checkNuGetDeps(ctx context.Context, client nugetRegistryClient, deps []PackageQuery, filePath string) []signal.RawSignal {
-	var signals []signal.RawSignal
-	checked := 0
-
-	for _, dep := range deps {
-		if ctx.Err() != nil {
-			break
-		}
-		if checked >= maxNuGetChecks {
-			slog.Info("dephealth: reached NuGet check cap", "cap", maxNuGetChecks)
-			break
-		}
-		checked++
-
+func (r *registryRun) checkNuGetDeps(ctx context.Context, client nugetRegistryClient, deps []PackageQuery, filePath string) []signal.RawSignal {
+	return lookupEach(ctx, r, "nuget", deps, func(ctx context.Context, dep PackageQuery) []signal.RawSignal {
 		info, err := client.FetchRegistration(ctx, dep.Name)
 		if err != nil {
-			slog.Debug("dephealth: nuget lookup failed", "package", dep.Name, "error", err)
-			continue
+			r.lookupFailed("nuget", dep.Name, err)
+			return nil
 		}
 
-		// Check if the latest version of the package is deprecated.
-		if isNuGetDeprecated(info, dep.Version) {
-			s := signal.RawSignal{
-				Source:      "dephealth",
-				Kind:        "deprecated-dependency",
-				FilePath:    filePath,
-				Title:       fmt.Sprintf("Deprecated NuGet package: %s", dep.Name),
-				Description: fmt.Sprintf("NuGet package %s version %s is deprecated. Consider migrating to an alternative.", dep.Name, dep.Version),
-				Confidence:  0.8,
-				Tags:        []string{"deprecated-dependency", "dephealth", "nuget"},
-			}
-			// Floating/bracket versions resolve above the floor; only the
-			// declared minimum is known to be deprecated.
-			if dep.IsRange {
-				s.Title = fmt.Sprintf("Deprecated NuGet package floor: %s", declaredSpec(dep.Name, dep.Constraint))
-				s.Description = fmt.Sprintf("The declared minimum %s of NuGet package %s is deprecated; the installed version is not known without packages.lock.json. Raise the floor or migrate to an alternative.", dep.Version, dep.Name)
-				s.Confidence = applyRangeDiscount(s.Confidence)
-				s.Tags = append(s.Tags, "version-floor")
-			}
-			signals = append(signals, s)
+		// Check if the declared version of the package is deprecated.
+		if !isNuGetDeprecated(info, dep.Version) {
+			return nil
 		}
-	}
-
-	return signals
+		s := signal.RawSignal{
+			Source:      "dephealth",
+			Kind:        "deprecated-dependency",
+			FilePath:    filePath,
+			Title:       fmt.Sprintf("Deprecated NuGet package: %s", dep.Name),
+			Description: fmt.Sprintf("NuGet package %s version %s is deprecated. Consider migrating to an alternative.", dep.Name, dep.Version),
+			Confidence:  0.8,
+			Tags:        []string{"deprecated-dependency", "dephealth", "nuget"},
+		}
+		// Floating/bracket versions resolve above the floor; only the
+		// declared minimum is known to be deprecated.
+		if dep.IsRange {
+			s.Title = fmt.Sprintf("Deprecated NuGet package floor: %s", declaredSpec(dep.Name, dep.Constraint))
+			s.Description = fmt.Sprintf("The declared minimum %s of NuGet package %s is deprecated; the installed version is not known without packages.lock.json. Raise the floor or migrate to an alternative.", dep.Version, dep.Name)
+			s.Confidence = applyRangeDiscount(s.Confidence)
+			s.Tags = append(s.Tags, "version-floor")
+		}
+		return []signal.RawSignal{s}
+	})
 }
 
 // isNuGetDeprecated checks if a specific version of a NuGet package is deprecated.

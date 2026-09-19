@@ -6,16 +6,11 @@ package collectors
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/davetashner/stringer/internal/signal"
 )
-
-// maxPyPIChecks caps the number of PyPI API lookups per scan.
-const maxPyPIChecks = 50
 
 // pypiBaseURL is the default PyPI JSON API URL.
 const pypiBaseURL = "https://pypi.org/pypi"
@@ -54,12 +49,7 @@ func (c *realPyPIRegistryClient) FetchPackage(ctx context.Context, name string) 
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	client := c.httpClient
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
-	}
-
-	resp, err := client.Do(req)
+	resp, err := registryHTTPClient(c.httpClient).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching %s: %w", url, err)
 	}
@@ -79,41 +69,29 @@ func (c *realPyPIRegistryClient) FetchPackage(ctx context.Context, name string) 
 
 // checkPyPIDeps queries PyPI for each dependency and emits signals for
 // packages that are inactive or deprecated based on classifiers.
-func checkPyPIDeps(ctx context.Context, client pypiRegistryClient, deps []PackageQuery, filePath string) []signal.RawSignal {
-	var signals []signal.RawSignal
-	checked := 0
-
-	for _, dep := range deps {
-		if ctx.Err() != nil {
-			break
-		}
-		if checked >= maxPyPIChecks {
-			slog.Info("dephealth: reached PyPI check cap", "cap", maxPyPIChecks)
-			break
-		}
-		checked++
-
+func (r *registryRun) checkPyPIDeps(ctx context.Context, client pypiRegistryClient, deps []PackageQuery, filePath string) []signal.RawSignal {
+	return lookupEach(ctx, r, "python", deps, func(ctx context.Context, dep PackageQuery) []signal.RawSignal {
 		info, err := client.FetchPackage(ctx, dep.Name)
 		if err != nil {
-			slog.Debug("dephealth: pypi lookup failed", "package", dep.Name, "error", err)
-			continue
+			r.lookupFailed("python", dep.Name, err)
+			return nil
 		}
 
 		// Check for inactive/deprecated classifiers.
-		if reason := pypiDeprecationReason(info); reason != "" {
-			signals = append(signals, signal.RawSignal{
-				Source:      "dephealth",
-				Kind:        "deprecated-dependency",
-				FilePath:    filePath,
-				Title:       fmt.Sprintf("Deprecated PyPI package: %s", dep.Name),
-				Description: fmt.Sprintf("PyPI package %s is marked as %s. Consider migrating to an alternative.", dep.Name, reason),
-				Confidence:  0.7,
-				Tags:        []string{"deprecated-dependency", "dephealth", "python"},
-			})
+		reason := pypiDeprecationReason(info)
+		if reason == "" {
+			return nil
 		}
-	}
-
-	return signals
+		return []signal.RawSignal{{
+			Source:      "dephealth",
+			Kind:        "deprecated-dependency",
+			FilePath:    filePath,
+			Title:       fmt.Sprintf("Deprecated PyPI package: %s", dep.Name),
+			Description: fmt.Sprintf("PyPI package %s is marked as %s. Consider migrating to an alternative.", dep.Name, reason),
+			Confidence:  0.7,
+			Tags:        []string{"deprecated-dependency", "dephealth", "python"},
+		}}
+	})
 }
 
 // pypiDeprecationReason checks classifiers for development status indicating

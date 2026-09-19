@@ -68,6 +68,20 @@ collectors:
 	assert.Nil(t, cfg.Collectors["todos"].Enabled)
 }
 
+func TestConfig_RegistryTimeoutYAML(t *testing.T) {
+	data := []byte(`
+collectors:
+  dephealth:
+    registry_timeout: 5s
+    registry_concurrency: 4
+`)
+	var cfg Config
+	require.NoError(t, yaml.Unmarshal(data, &cfg))
+	assert.Equal(t, "5s", cfg.Collectors["dephealth"].RegistryTimeout)
+	assert.Equal(t, 4, cfg.Collectors["dephealth"].RegistryConcurrency)
+	require.NoError(t, Validate(&cfg))
+}
+
 func TestConfig_EmptyYAML(t *testing.T) {
 	var cfg Config
 	require.NoError(t, yaml.Unmarshal([]byte(""), &cfg))
