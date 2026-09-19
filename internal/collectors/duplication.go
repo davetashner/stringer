@@ -324,11 +324,13 @@ func cloneGroupToSignal(g cloneGroup) signal.RawSignal {
 	}
 }
 
-// cloneGroupIsTestOnly reports whether every location in the group is a
-// test file.
+// cloneGroupIsTestOnly reports whether every location in the group is test
+// code: a test file by naming convention, or any file under a test-only
+// directory (test/, tests/, __tests__/, spec/, benches/), which is how
+// express-style suites such as test/express.json.js are laid out.
 func cloneGroupIsTestOnly(g cloneGroup) bool {
 	for _, loc := range g.Locations {
-		if !isTestFile(loc.Path) {
+		if !isTestFile(loc.Path) && !isTestOnlyDir(loc.Path) {
 			return false
 		}
 	}

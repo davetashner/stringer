@@ -965,3 +965,28 @@ func TestDuplication_TestOnlyClonesDownWeighted(t *testing.T) {
 		t.Errorf("production group must not carry the test-only tag")
 	}
 }
+
+func TestCloneGroupIsTestOnly_DirectoryBasedTests(t *testing.T) {
+	cases := []struct {
+		name string
+		locs []string
+		want bool
+	}{
+		{"express-style test dir without test suffix", []string{"test/express.json.js", "test/res.json.js"}, true},
+		{"nested tests dir", []string{"pkg/tests/helpers.py", "pkg/tests/more.py"}, true},
+		{"mixed production and test", []string{"lib/router.js", "test/router.js"}, false},
+		{"production only", []string{"lib/a.js", "lib/b.js"}, false},
+		{"empty", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := cloneGroup{}
+			for _, p := range tc.locs {
+				g.Locations = append(g.Locations, cloneLocation{Path: p})
+			}
+			if got := cloneGroupIsTestOnly(g); got != tc.want {
+				t.Errorf("cloneGroupIsTestOnly(%v) = %v, want %v", tc.locs, got, tc.want)
+			}
+		})
+	}
+}
