@@ -196,3 +196,56 @@ func TestSaveDeltaState_MultipleWorkspaces(t *testing.T) {
 	_, statErr = os.Stat(filepath.Join(dir, ".stringer", "svc-b", "last-scan.json"))
 	require.NoError(t, statErr, "svc-b state file should exist")
 }
+
+func TestResolveWorkspaces_MembersListScannedFirst(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.work"), []byte("go 1.24\n\nuse (\n\t.\n\t./svc-a\n\t./svc-b\n)\n"), 0o600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "svc-a"), 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "svc-b"), 0o750))
+
+	all := resolveWorkspaces(dir, false, "")
+	require.Len(t, all, 3)
+	want := []string{dir, filepath.Join(dir, "svc-a"), filepath.Join(dir, "svc-b")}
+	for _, e := range all {
+		assert.Equal(t, want, e.Members, e.Name)
+	}
+
+	// A --workspace filter keeps every member known, scanned entries first.
+	filtered := resolveWorkspaces(dir, false, "svc-b")
+	require.Len(t, filtered, 1)
+	assert.Equal(t, []string{filepath.Join(dir, "svc-b"), dir, filepath.Join(dir, "svc-a")}, filtered[0].Members)
+
+	// Non-monorepo entries carry no members.
+	assert.Nil(t, resolveWorkspaces(t.TempDir(), false, "")[0].Members)
+	assert.Nil(t, resolveWorkspaces(dir, true, "")[0].Members)
+}
+
+func TestApplyWorkspaceMembers(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "repo")
+	ws := workspaceEntry{
+		Name:    "svc-a",
+		Path:    filepath.Join(root, "mono", "svc-a"),
+		Rel:     "svc-a",
+		Members: []string{filepath.Join(root, "mono", "svc-a"), filepath.Join(root, "mono")},
+	}
+
+	// Members are expressed relative to the git root, which may be above
+	// the monorepo root, and only the workspace-scoped collectors get them.
+	var cfg signal.ScanConfig
+	applyWorkspaceMembers(&cfg, ws, root)
+	want := []string{filepath.Join("mono", "svc-a"), "mono"}
+	assert.Equal(t, want, cfg.CollectorOpts["gitlog"].WorkspaceMembers)
+	assert.Equal(t, want, cfg.CollectorOpts["lotteryrisk"].WorkspaceMembers)
+	assert.Len(t, cfg.CollectorOpts, 2)
+
+	// Existing options for those collectors are preserved.
+	cfg = signal.ScanConfig{CollectorOpts: map[string]signal.CollectorOpts{"gitlog": {GitDepth: 7}}}
+	applyWorkspaceMembers(&cfg, ws, filepath.Join(root, "mono"))
+	assert.Equal(t, 7, cfg.CollectorOpts["gitlog"].GitDepth)
+	assert.Equal(t, []string{"svc-a", "."}, cfg.CollectorOpts["gitlog"].WorkspaceMembers)
+
+	// Non-monorepo entries change nothing.
+	cfg = signal.ScanConfig{}
+	applyWorkspaceMembers(&cfg, workspaceEntry{Path: root, Rel: "."}, root)
+	assert.Nil(t, cfg.CollectorOpts)
+}

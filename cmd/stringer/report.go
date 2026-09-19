@@ -171,6 +171,7 @@ func runReport(cmd *cobra.Command, args []string) error {
 			CollectorTimeout: reportCollectorTimeout,
 			Paths:            reportPaths,
 		})
+		applyWorkspaceMembers(&scanCfg, ws, gitRoot)
 
 		p, err := pipeline.New(scanCfg)
 		if err != nil {

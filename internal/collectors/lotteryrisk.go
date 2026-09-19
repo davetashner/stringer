@@ -126,8 +126,13 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 
 	excludes := mergeExcludes(opts.ExcludePatterns)
 
+	// In a monorepo scan every workspace shares the repository history, so
+	// directories of nested member workspaces are left to those workspaces
+	// and commit activity is attributed only to this workspace's own files.
+	scope := newWorkspaceScope(repoPath, gitRoot, opts.WorkspaceMembers)
+
 	// Discover directories up to the configured depth.
-	dirs, err := discoverDirectories(ctx, repoPath, defaultDirectoryDepth, excludes, opts.IncludeDemoPaths)
+	dirs, err := discoverDirectories(ctx, repoPath, defaultDirectoryDepth, excludes, opts.IncludeDemoPaths, scope)
 	if err != nil {
 		return nil, fmt.Errorf("discovering directories: %w", err)
 	}
@@ -145,14 +150,14 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 	}
 
 	// Blame source files and attribute lines to directories.
-	if err := blameDirectories(ctx, gitRoot, repoPath, ownership, defaultMaxBlameFiles, excludes, opts); err != nil {
+	if err := blameDirectories(ctx, repoPath, ownership, defaultMaxBlameFiles, excludes, opts, scope); err != nil {
 		return nil, fmt.Errorf("blaming files: %w", err)
 	}
 
 	// Walk commits and attribute weighted commit activity to directories.
 	// Commit weight is scoped per directory: each changed file credits only
 	// its owning directory (see findOwningDir).
-	if err := walkCommitsForOwnership(ctx, gitRoot, ownership, opts); err != nil {
+	if err := walkCommitsForOwnership(ctx, gitRoot, ownership, opts, scope); err != nil {
 		return nil, fmt.Errorf("walking commits for ownership: %w", err)
 	}
 
@@ -219,16 +224,18 @@ func (c *LotteryRiskCollector) Collect(ctx context.Context, repoPath string, opt
 		return signals[i].FilePath < signals[j].FilePath
 	})
 
-	// Enrich signals with timestamps from git log.
-	enrichTimestamps(ctx, gitRoot, signals)
+	// Enrich signals with timestamps from git log. Signal paths are relative
+	// to repoPath, so git runs there.
+	enrichTimestamps(ctx, repoPath, signals)
 
 	return signals, nil
 }
 
 // discoverDirectories walks the repo and returns unique directory paths
 // up to the given depth (relative to repoPath). The root directory "." is
-// included. Directories matching excludes or demo patterns are skipped.
-func discoverDirectories(ctx context.Context, repoPath string, maxDepth int, excludes []string, includeDemoPaths bool) ([]string, error) {
+// included. Directories matching excludes or demo patterns, and member
+// workspaces nested in scope, are skipped.
+func discoverDirectories(ctx context.Context, repoPath string, maxDepth int, excludes []string, includeDemoPaths bool, scope workspaceScope) ([]string, error) {
 	dirSet := make(map[string]bool)
 	dirSet["."] = true
 
@@ -256,7 +263,7 @@ func discoverDirectories(ctx context.Context, repoPath string, maxDepth int, exc
 		}
 
 		// Skip directories matching exclude patterns.
-		if shouldExclude(relPath, excludes) {
+		if shouldExclude(relPath, excludes) || scope.nestedDir(relPath) {
 			return filepath.SkipDir
 		}
 
@@ -298,7 +305,9 @@ type blameFile struct {
 // blameDirectories blames source files and attributes line counts to their
 // containing directories. It caps blame at maxFiles per directory.
 // Uses native git CLI for blame (DR-011) with parallel workers for performance.
-func blameDirectories(ctx context.Context, gitDir string, repoPath string, ownership map[string]*dirOwnership, maxFiles int, excludes []string, opts signal.CollectorOpts) error {
+// git runs in repoPath, so workspace-relative paths resolve even when the
+// repository root is a parent directory.
+func blameDirectories(ctx context.Context, repoPath string, ownership map[string]*dirOwnership, maxFiles int, excludes []string, opts signal.CollectorOpts, scope workspaceScope) error {
 	// Phase 1: Walk the filesystem to collect files to blame.
 	dirFileCount := make(map[string]int)
 	var files []blameFile
@@ -320,7 +329,7 @@ func blameDirectories(ctx context.Context, gitDir string, repoPath string, owner
 				}
 			}
 			relPath, _ := filepath.Rel(repoPath, path)
-			if shouldExclude(relPath, excludes) {
+			if shouldExclude(relPath, excludes) || scope.nestedDir(relPath) {
 				return filepath.SkipDir
 			}
 			if !opts.IncludeDemoPaths && isDemoPath(relPath) {
@@ -372,7 +381,7 @@ func blameDirectories(ctx context.Context, gitDir string, repoPath string, owner
 		f := f // capture
 		g.Go(func() error {
 			blameCtx, cancel := context.WithTimeout(gctx, gitcli.DefaultTimeout)
-			blameResult, blameErr := gitcli.BlameFile(blameCtx, gitDir, filepath.ToSlash(f.relPath))
+			blameResult, blameErr := gitcli.BlameFile(blameCtx, repoPath, filepath.ToSlash(f.relPath))
 			cancel()
 			if blameErr != nil {
 				return nil // skip files that can't be blamed
@@ -441,8 +450,10 @@ func repoHeadHash(gitDir string) string {
 // walkCommitsForOwnership runs `git log --numstat` and applies recency-weighted
 // attribution to directories based on changed files. This replaced the earlier
 // go-git tree-diff approach for performance (DR-011). The numstat output is
-// memoised per repository so every workspace of a monorepo scan shares it.
-func walkCommitsForOwnership(ctx context.Context, gitDir string, ownership map[string]*dirOwnership, opts signal.CollectorOpts) error {
+// memoised per repository so every workspace of a monorepo scan shares it;
+// numstat paths are repository-relative and are mapped into scope, so only
+// changes to this workspace's own files count.
+func walkCommitsForOwnership(ctx context.Context, gitDir string, ownership map[string]*dirOwnership, opts signal.CollectorOpts, scope workspaceScope) error {
 	maxWalk := maxCommitWalk
 	if opts.GitDepth > 0 {
 		maxWalk = opts.GitDepth
@@ -498,6 +509,10 @@ func walkCommitsForOwnership(ctx context.Context, gitDir string, ownership map[s
 		weight := recencyDecay(daysOld)
 
 		for _, f := range c.Files {
+			f, ok := scope.relPath(f)
+			if !ok {
+				continue
+			}
 			dir := findOwningDir(f, ownership)
 			if dir == "" {
 				continue

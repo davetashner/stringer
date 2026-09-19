@@ -231,6 +231,7 @@ func (sc *scanContext) runPipeline() error {
 		if err != nil {
 			return err
 		}
+		applyWorkspaceMembers(&wsCfg, ws, sc.gitRoot)
 
 		p, err := pipeline.New(wsCfg)
 		if err != nil {

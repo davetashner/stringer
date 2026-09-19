@@ -49,7 +49,7 @@ func TestWalkCommitsForOwnership_SharedAcrossWorkspaces(t *testing.T) {
 
 	// First workspace runs git log --numstat.
 	own1 := rootOwnership()
-	require.NoError(t, walkCommitsForOwnership(ctx, root, own1, signal.CollectorOpts{}))
+	require.NoError(t, walkCommitsForOwnership(ctx, root, own1, signal.CollectorOpts{}, workspaceScope{}))
 	hits, misses := numstatHistories.stats()
 	assert.Equal(t, 0, hits)
 	assert.Equal(t, 1, misses)
@@ -58,7 +58,7 @@ func TestWalkCommitsForOwnership_SharedAcrossWorkspaces(t *testing.T) {
 
 	// Second workspace reuses the parsed commits.
 	own2 := rootOwnership()
-	require.NoError(t, walkCommitsForOwnership(ctx, root, own2, signal.CollectorOpts{}))
+	require.NoError(t, walkCommitsForOwnership(ctx, root, own2, signal.CollectorOpts{}, workspaceScope{}))
 	hits, misses = numstatHistories.stats()
 	assert.Equal(t, 1, hits, "second workspace must reuse the numstat walk")
 	assert.Equal(t, 1, misses)
@@ -67,20 +67,20 @@ func TestWalkCommitsForOwnership_SharedAcrossWorkspaces(t *testing.T) {
 	// Uncached walk after reset produces the same attribution.
 	resetNumstatHistoryCache()
 	own3 := rootOwnership()
-	require.NoError(t, walkCommitsForOwnership(ctx, root, own3, signal.CollectorOpts{}))
+	require.NoError(t, walkCommitsForOwnership(ctx, root, own3, signal.CollectorOpts{}, workspaceScope{}))
 	_, misses = numstatHistories.stats()
 	assert.Equal(t, 1, misses, "reset must force a new walk")
 	assertSameWeights(t, own1["."], own3["."])
 
 	// Depth is part of the key.
-	require.NoError(t, walkCommitsForOwnership(ctx, root, rootOwnership(), signal.CollectorOpts{GitDepth: 1}))
+	require.NoError(t, walkCommitsForOwnership(ctx, root, rootOwnership(), signal.CollectorOpts{GitDepth: 1}, workspaceScope{}))
 	_, misses = numstatHistories.stats()
 	assert.Equal(t, 2, misses, "GitDepth must be part of the cache key")
 
 	// A new commit moves HEAD and invalidates the entry.
 	addCommitAs(t, repo, root, "pkg/b/b.go", "package b\n// 2\n", "feat: b again", now, "Carol", "carol@example.com")
 	own4 := rootOwnership()
-	require.NoError(t, walkCommitsForOwnership(ctx, root, own4, signal.CollectorOpts{}))
+	require.NoError(t, walkCommitsForOwnership(ctx, root, own4, signal.CollectorOpts{}, workspaceScope{}))
 	_, misses = numstatHistories.stats()
 	assert.Equal(t, 3, misses, "HEAD must be part of the cache key")
 	assert.Contains(t, own4["."].Authors, "Carol", "fresh walk must see the new commit")
