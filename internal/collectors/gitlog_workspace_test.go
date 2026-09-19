@@ -6,6 +6,7 @@ package collectors
 import (
 	"context"
 	"fmt"
+	"path"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -50,7 +51,7 @@ func scanWorkspaces(t *testing.T, root string, rels []string) []signal.RawSignal
 		for i := range sigs {
 			sigs[i].Workspace = rel
 			if rel != "." && sigs[i].Kind != "stale-branch" {
-				sigs[i].FilePath = filepath.Join(rel, sigs[i].FilePath)
+				sigs[i].FilePath = path.Join(rel, sigs[i].FilePath) // as stampWorkspace does
 			}
 		}
 		all = append(all, sigs...)

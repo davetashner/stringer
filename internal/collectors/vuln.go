@@ -503,12 +503,12 @@ func findCsprojFiles(repoPath string) []string {
 			return nil //nolint:nilerr // skip inaccessible paths
 		}
 
-		rel, relErr := filepath.Rel(repoPath, path)
+		rel, relErr := relSlash(repoPath, path)
 		if relErr != nil {
 			return nil
 		}
 
-		depth := strings.Count(rel, string(filepath.Separator))
+		depth := strings.Count(rel, "/")
 		if d.IsDir() && depth >= 2 {
 			return fs.SkipDir
 		}

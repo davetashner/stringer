@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"path/filepath"
+	"path"
 	"sort"
 	"sync"
 	"time"
@@ -158,8 +158,8 @@ func buildChurnEntries(signals []signal.RawSignal) []churnEntry {
 		return nil
 	}
 	entries := make([]churnEntry, 0, len(counts))
-	for path, count := range counts {
-		entries = append(entries, churnEntry{Path: path, Count: count})
+	for p, count := range counts {
+		entries = append(entries, churnEntry{Path: p, Count: count})
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Count > entries[j].Count
@@ -174,7 +174,7 @@ func buildLotteryEntries(signals []signal.RawSignal) []lotteryEntry {
 	var entries []lotteryEntry
 	for _, s := range signals {
 		if s.Source == "lotteryrisk" {
-			dir := filepath.Dir(s.FilePath)
+			dir := path.Dir(s.FilePath) // FilePath is slash-separated on every OS
 			if dir == "" || dir == "." {
 				dir = s.FilePath
 			}

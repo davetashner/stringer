@@ -5,6 +5,7 @@ package collectors
 
 import (
 	"context"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -119,7 +120,7 @@ func extractGoImports(lines []string, relPath string, modulePath string, allModu
 // extractJSImports extracts JS/TS import and require statements.
 func extractJSImports(lines []string, relPath string, _ string, allModules map[string]bool) []string {
 	var imports []string
-	dir := filepath.Dir(relPath)
+	dir := path.Dir(filepath.ToSlash(relPath))
 
 	for _, line := range lines {
 		var importPath string
@@ -139,7 +140,7 @@ func extractJSImports(lines []string, relPath string, _ string, allModules map[s
 		}
 
 		// Resolve relative to the importing file's directory.
-		resolved := filepath.Clean(filepath.Join(dir, importPath))
+		resolved := path.Join(dir, importPath)
 		resolved = strings.TrimPrefix(resolved, "./")
 
 		// Strip known extensions for matching.
@@ -241,7 +242,7 @@ func extractRustImports(lines []string, _ string, _ string, allModules map[strin
 // extractRubyImports extracts Ruby require_relative statements.
 func extractRubyImports(lines []string, relPath string, _ string, allModules map[string]bool) []string {
 	var imports []string
-	dir := filepath.Dir(relPath)
+	dir := path.Dir(filepath.ToSlash(relPath))
 
 	for _, line := range lines {
 		m := rubyRequireRelative.FindStringSubmatch(line)
@@ -249,7 +250,7 @@ func extractRubyImports(lines []string, relPath string, _ string, allModules map
 			continue
 		}
 
-		resolved := filepath.Clean(filepath.Join(dir, m[1]))
+		resolved := path.Join(dir, m[1])
 		resolved = strings.TrimPrefix(resolved, "./")
 		resolved = strings.TrimSuffix(resolved, ".rb")
 
@@ -349,23 +350,26 @@ func csharpNamespace(lines []string) string {
 // and extension. This determines how files are grouped into "modules" for
 // graph construction.
 func moduleForFile(relPath string, ext string) string {
+	// Module identities are slash-based on every OS so the graph, signal
+	// titles and exempt globs agree regardless of where stringer runs.
+	relPath = filepath.ToSlash(relPath)
 	switch ext {
 	case ".go":
 		// Go: package directory path.
-		return filepath.Dir(relPath)
+		return path.Dir(relPath)
 	case ".js", ".ts", ".jsx", ".tsx":
 		// JS/TS: file path without extension.
 		return strings.TrimSuffix(relPath, ext)
 	case ".py":
 		// Python: dotted module name from path.
 		noExt := strings.TrimSuffix(relPath, ext)
-		return strings.ReplaceAll(filepath.ToSlash(noExt), "/", ".")
+		return strings.ReplaceAll(noExt, "/", ".")
 	case ".java":
 		// Java: extract package from directory structure.
-		return strings.ReplaceAll(filepath.ToSlash(filepath.Dir(relPath)), "/", ".")
+		return strings.ReplaceAll(path.Dir(relPath), "/", ".")
 	case ".rs":
 		// Rust: crate-local module path (first component after src/).
-		parts := strings.Split(filepath.ToSlash(relPath), "/")
+		parts := strings.Split(relPath, "/")
 		for i, p := range parts {
 			if p == "src" && i+1 < len(parts) {
 				name := strings.TrimSuffix(parts[i+1], ".rs")
@@ -375,15 +379,15 @@ func moduleForFile(relPath string, ext string) string {
 				return name
 			}
 		}
-		return strings.TrimSuffix(filepath.Base(relPath), ".rs")
+		return strings.TrimSuffix(path.Base(relPath), ".rs")
 	case ".rb":
 		// Ruby: file path without extension.
 		return strings.TrimSuffix(relPath, ext)
 	case ".php":
 		// PHP: namespace from directory structure using backslash convention.
-		dir := filepath.Dir(relPath)
+		dir := path.Dir(relPath)
 		// Convert path separators to backslash for PHP namespace.
-		return strings.ReplaceAll(dir, string(filepath.Separator), `\`)
+		return strings.ReplaceAll(dir, "/", `\`)
 	case ".c", ".cpp", ".h", ".hpp":
 		// C/C++: include path (the file's relative path).
 		return relPath
@@ -392,7 +396,7 @@ func moduleForFile(relPath string, ext string) string {
 		// file declares; this directory-derived form is the fallback for
 		// files without one and mirrors the .NET convention that folders
 		// track namespaces (Jellyfin.Api/Controllers → Jellyfin.Api.Controllers).
-		return strings.ReplaceAll(filepath.ToSlash(filepath.Dir(relPath)), "/", ".")
+		return strings.ReplaceAll(path.Dir(relPath), "/", ".")
 	}
 	return relPath
 }

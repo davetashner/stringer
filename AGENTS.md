@@ -366,6 +366,7 @@ When you open a PR that implements an Accepted DR, flip its status in the same P
    (already present — this ensures all collector `init()` functions run)
 5. Add tests in `internal/collectors/yourname_test.go`
 6. Update `README.md` collector list
+7. Keep paths portable: derive repo-relative paths with `relSlash(repoPath, path)` (not bare `filepath.Rel`) and manipulate them with `path.*`, not `filepath.*`, since `filepath.Dir`/`Join` rewrite `/` to `\` on Windows. Use `filepath.*` only to go back to the filesystem. The `Test (windows-latest)` CI job catches regressions.
 
 ### Logging conventions
 
@@ -431,6 +432,8 @@ type RawSignal struct {
 }
 ```
 
+`FilePath` is repo-relative and slash-separated on every OS (`internal/foo/bar.go`, never `internal\foo\bar.go`), so dedup hashes, bead IDs, delta state and SARIF/JSON output match between Linux, macOS and Windows scans. Collectors build it with `relSlash`, `Pipeline.runCollector` normalizes whatever a collector returns with `filepath.ToSlash`, `stampWorkspace` joins workspace prefixes with `path.Join`, and `ValidateSignal` rejects rooted paths (`/x`, `\x`, `C:\x`) on every OS.
+
 ### Beads JSONL output contract
 
 Each line must be a valid JSON object compatible with beads. Required fields:
@@ -481,6 +484,12 @@ Optional but valuable:
 | `Analyze` / `CodeQL` | Static analysis and security scanning |
 
 The `Self-Scan` job (`.github/workflows/self-scan.yml`, [DR-027](docs/decisions/027-self-scan-gate.md)) runs `scripts/self-scan.sh`: it scans this repository with the deterministic collectors and fails when a finding at confidence >= 0.8 is not in the committed `.stringer/baseline.json`. Fix the finding, or accept an intentional one with the `stringer baseline suppress sts-…` command the job prints (from the repository root; `go run ./cmd/stringer baseline suppress …` works without an installed binary) and commit the baseline.
+
+**Advisory CI checks** (run on every PR, not yet required by branch protection):
+
+| Check | What it verifies |
+|-------|-----------------|
+| `Test (macos-latest)` / `Test (windows-latest)` | `go test ./...` (with `-race` when the runner has a cgo C compiler; both do today) plus `scripts/smoke-e2e.sh`: a real `stringer scan -f json` and `stringer report` of the checkout that must exit 0, emit todos/complexity/gitlog/lotteryrisk signals and use only repo-relative slash paths. Git is configured with `core.autocrlf=false` so fixtures keep LF; CRLF input is covered by `internal/collectors/crlf_test.go` on every OS. Separate job so the required `Test (Go 1.26)` name is unchanged; add both names to required checks once they have been green for a week. |
 
 A separate [OpenSSF Scorecard](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer) workflow runs on the default branch to track supply chain security posture.
 
