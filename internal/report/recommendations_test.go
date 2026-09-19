@@ -183,3 +183,22 @@ func TestRecommendations_AnalyzeReinitializes(t *testing.T) {
 	require.NoError(t, s.Analyze(&signal.ScanResult{Metrics: map[string]any{}}))
 	assert.Empty(t, s.recs)
 }
+
+func TestRecommendations_DepHealthFailedLookups(t *testing.T) {
+	s := &recommendationsSection{}
+	render := func(m any) string {
+		require.NoError(t, s.Analyze(&signal.ScanResult{Metrics: map[string]any{"dephealth": m}}))
+		var buf bytes.Buffer
+		require.NoError(t, s.Render(&buf))
+		return buf.String()
+	}
+
+	out := render(&collectors.DepHealthMetrics{RateLimited: 37, TimedOut: 1, Ecosystems: []string{"gradle"}})
+	assert.Contains(t, out, "38 registry lookups failed (rate limited: 37, timed out: 1, server errors: 0, other: 0); dependency findings are incomplete")
+	assert.Contains(t, out, "registry_timeout")
+
+	assert.Contains(t, render(&collectors.DepHealthMetrics{NotFound: 4}), "No actionable recommendations", "404s are not failures")
+	assert.Contains(t, render(&collectors.DepHealthMetrics{}), "No actionable recommendations")
+	assert.Contains(t, render((*collectors.DepHealthMetrics)(nil)), "No actionable recommendations")
+	assert.Contains(t, render("wrong type"), "No actionable recommendations")
+}

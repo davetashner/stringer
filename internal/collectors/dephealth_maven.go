@@ -146,18 +146,14 @@ func (c *realMavenRegistryClient) fetchMetadata(ctx context.Context, groupID, ar
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	resp, err := registryHTTPClient(c.httpClient).Do(req)
+	resp, err := doRegistryRequest(registryHTTPClient(c.httpClient), req, "maven metadata", groupID+":"+artifactID)
 	if err != nil {
-		return nil, fmt.Errorf("fetching %s: %w", u, err)
+		if registryStatus(err) == http.StatusNotFound {
+			return nil, fmt.Errorf("%w: %w at %s", errMavenMetadataUnusable, err, base)
+		}
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("%w: %s:%s not found at %s", errMavenMetadataUnusable, groupID, artifactID, base)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("maven metadata returned %d for %s:%s", resp.StatusCode, groupID, artifactID)
-	}
 
 	var meta mavenMetadata
 	if err := xml.NewDecoder(io.LimitReader(resp.Body, maxRegistryResponseBytes)).Decode(&meta); err != nil {
@@ -195,15 +191,11 @@ func (c *realMavenRegistryClient) fetchSearch(ctx context.Context, groupID, arti
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	resp, err := registryHTTPClient(c.httpClient).Do(req)
+	resp, err := doRegistryRequest(registryHTTPClient(c.httpClient), req, "maven central", groupID+":"+artifactID)
 	if err != nil {
-		return nil, fmt.Errorf("fetching %s: %w", u, err)
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("maven central returned %d for %s:%s", resp.StatusCode, groupID, artifactID)
-	}
 
 	var info mavenArtifactInfo
 	if err := decodeJSONLimited(resp.Body, &info); err != nil {

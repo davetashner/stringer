@@ -54,15 +54,11 @@ func (c *realModuleProxyClient) FetchLatest(ctx context.Context, modulePath stri
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	resp, err := registryHTTPClient(c.httpClient).Do(req)
+	resp, err := doRegistryRequest(registryHTTPClient(c.httpClient), req, "proxy", modulePath)
 	if err != nil {
-		return nil, fmt.Errorf("fetching %s: %w", url, err)
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("proxy returned %d for %s", resp.StatusCode, modulePath)
-	}
 
 	var info moduleInfo
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {

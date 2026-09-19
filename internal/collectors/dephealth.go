@@ -36,7 +36,21 @@ type DepHealthMetrics struct {
 	Stale        []string
 	Yanked       []string
 	Ecosystems   []string // ecosystems detected (e.g., "go", "npm", "cargo")
-	TimedOut     int      // registry lookups that hit collectors.dephealth.registry_timeout
+
+	// Registry lookup outcomes (stringer-ds4, stringer-jfh.6). A non-zero
+	// FailedLookups means the dependency findings are incomplete.
+	TimedOut        int                         // hit collectors.dephealth.registry_timeout
+	RateLimited     int                         // HTTP 429 after one retry
+	ServerErrors    int                         // HTTP 5xx after one retry
+	OtherErrors     int                         // other failures (4xx, malformed, DNS, TLS)
+	NotFound        int                         // HTTP 404; normal for private packages, not a failure
+	RegistryLookups map[string]RegistryFailures // per ecosystem, as named in lookup logs ("maven" covers Gradle and sbt)
+}
+
+// FailedLookups returns the number of registry lookups with an unknown
+// outcome (timed out, rate limited, server error, other).
+func (m *DepHealthMetrics) FailedLookups() int {
+	return m.TimedOut + m.RateLimited + m.ServerErrors + m.OtherErrors
 }
 
 // ModuleDep represents a single require directive.
@@ -149,8 +163,14 @@ func (c *DepHealthCollector) Collect(ctx context.Context, repoPath string, opts 
 		return nil, nil
 	}
 
-	if n := c.run.timedOut.Load(); n > 0 {
-		metrics.TimedOut = int(n)
+	totals := c.run.totals()
+	metrics.TimedOut = totals.TimedOut
+	metrics.RateLimited = totals.RateLimited
+	metrics.ServerErrors = totals.ServerError
+	metrics.OtherErrors = totals.Other
+	metrics.NotFound = totals.NotFound
+	metrics.RegistryLookups = c.run.byEcosystem()
+	if n := totals.TimedOut; n > 0 {
 		slog.Warn("dephealth: registry lookups timed out; raise collectors.dephealth.registry_timeout to retry them", "timed_out", n, "timeout", c.run.timeout)
 	}
 

@@ -213,6 +213,7 @@ func TestRealMavenClient_BadLastUpdatedFallsBackToSearch(t *testing.T) {
 }
 
 func TestRealMavenClient_ServerErrorDoesNotFallBack(t *testing.T) {
+	shortRetryBackoff(t)
 	m := newMavenTestServer(t)
 	m.metaStatus = http.StatusServiceUnavailable
 	m.searchBody = searchStaleBody
@@ -224,6 +225,7 @@ func TestRealMavenClient_ServerErrorDoesNotFallBack(t *testing.T) {
 }
 
 func TestRealMavenClient_SearchFallbackErrors(t *testing.T) {
+	shortRetryBackoff(t)
 	m := newMavenTestServer(t)
 	m.metaStatus = http.StatusNotFound
 
