@@ -4,6 +4,7 @@
 package collectors
 
 import (
+	"log/slog"
 	"regexp"
 	"strings"
 )
@@ -132,8 +133,9 @@ func parseGradleDepsWithCatalogs(data []byte, catalogs gradleCatalogs) ([]Packag
 			if isTestConfig(config) {
 				continue
 			}
-			// "g:a:$versions.x" literals resolve through the Groovy ext maps.
-			add(parseCoordinates(catalogs.interpolate(m[1])))
+			// "g:a_$versions.x:$versions.y" literals resolve through the Groovy
+			// ext maps; an unresolved placeholder falls through to be dropped.
+			add(parseCoordinates(catalogs.interpolateOrKeep(m[1])))
 			continue
 		}
 
@@ -143,7 +145,7 @@ func parseGradleDepsWithCatalogs(data []byte, catalogs gradleCatalogs) ([]Packag
 			if isTestConfig(config) {
 				continue
 			}
-			add(parseMapNotation(line))
+			add(parseMapNotation(catalogs.interpolateOrKeep(line)))
 		}
 	}
 
@@ -177,8 +179,29 @@ func parseCoordinates(coords string) *PackageQuery {
 	if len(parts) < 3 || parts[2] == "" {
 		return nil
 	}
+	return gradleQuery(parts[0], parts[1], parts[2])
+}
+
+// gradleQuery builds a Maven query from resolved coordinates. Any segment that
+// still carries a placeholder or a dangling suffix (an interpolation that
+// resolved to nothing, e.g. "scala-logging_.") is dropped here so a malformed
+// name is never sent to OSV or a registry.
+func gradleQuery(group, artifact, version string) *PackageQuery {
+	for _, seg := range []string{group, artifact, version} {
+		if malformedGradleSegment(seg) {
+			slog.Debug("vuln: skipping malformed gradle coordinate", "coordinate", group+":"+artifact+":"+version)
+			return nil
+		}
+	}
 	// Dynamic versions ("1.0+", "[1.0,2.0)") query their lower bound as a floor.
-	return mavenStyleQuery("Maven", parts[0]+":"+parts[1], parts[2])
+	return mavenStyleQuery("Maven", group+":"+artifact, version)
+}
+
+// malformedGradleSegment reports an empty segment, an unresolved $var / ${var}
+// placeholder, or a trailing "_." / "_" / "-" left by an empty interpolation.
+func malformedGradleSegment(s string) bool {
+	return s == "" || strings.ContainsAny(s, "${}") ||
+		strings.HasSuffix(s, "_.") || strings.HasSuffix(s, "_") || strings.HasSuffix(s, "-")
 }
 
 // parseMapNotation extracts group, name, version from a map-style dependency declaration.
@@ -192,5 +215,5 @@ func parseMapNotation(line string) *PackageQuery {
 		return nil
 	}
 
-	return mavenStyleQuery("Maven", groupMatch[1]+":"+nameMatch[1], verMatch[1])
+	return gradleQuery(groupMatch[1], nameMatch[1], verMatch[1])
 }
