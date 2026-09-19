@@ -55,7 +55,7 @@ func TestExec_MockCommandFailure(t *testing.T) {
 	})
 	defer SetExecutor(nil)
 
-	_, err := Exec(context.Background(), "/tmp", "status")
+	_, err := Exec(context.Background(), t.TempDir(), "status")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "git status")
 }
@@ -79,7 +79,7 @@ func TestBlameSingleLine_MockExecFailure(t *testing.T) {
 	})
 	defer SetExecutor(nil)
 
-	_, err := BlameSingleLine(context.Background(), "/tmp", "missing.go", 1)
+	_, err := BlameSingleLine(context.Background(), t.TempDir(), "missing.go", 1)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "git blame")
 }
@@ -90,7 +90,7 @@ func TestBlameSingleLine_EmptyBlameOutput(t *testing.T) {
 	})
 	defer SetExecutor(nil)
 
-	_, err := BlameSingleLine(context.Background(), "/tmp", "file.go", 1)
+	_, err := BlameSingleLine(context.Background(), t.TempDir(), "file.go", 1)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no blame output for file.go:1")
 }
@@ -101,7 +101,7 @@ func TestBlameFile_MockExecFailure(t *testing.T) {
 	})
 	defer SetExecutor(nil)
 
-	_, err := BlameFile(context.Background(), "/tmp", "missing.go")
+	_, err := BlameFile(context.Background(), t.TempDir(), "missing.go")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "git blame")
 }
@@ -112,7 +112,7 @@ func TestLastCommitTime_MockExecFailure(t *testing.T) {
 	})
 	defer SetExecutor(nil)
 
-	_, err := LastCommitTime(context.Background(), "/tmp", "file.go")
+	_, err := LastCommitTime(context.Background(), t.TempDir(), "file.go")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "git log")
 }
@@ -123,7 +123,7 @@ func TestLastCommitTime_MockEmptyOutput(t *testing.T) {
 	})
 	defer SetExecutor(nil)
 
-	ts, err := LastCommitTime(context.Background(), "/tmp", "nocommits.go")
+	ts, err := LastCommitTime(context.Background(), t.TempDir(), "nocommits.go")
 	require.NoError(t, err)
 	assert.True(t, ts.IsZero(), "empty output should return zero time")
 }
@@ -134,7 +134,7 @@ func TestLastCommitTime_MockMalformedTimestamp(t *testing.T) {
 	})
 	defer SetExecutor(nil)
 
-	_, err := LastCommitTime(context.Background(), "/tmp", "file.go")
+	_, err := LastCommitTime(context.Background(), t.TempDir(), "file.go")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "parsing commit time")
 }

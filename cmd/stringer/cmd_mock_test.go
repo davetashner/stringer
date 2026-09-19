@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -608,6 +609,9 @@ func TestRunDocs_GenerateOutputError(t *testing.T) {
 // -----------------------------------------------------------------------
 
 func TestRunInit_BootstrapError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits: chmod cannot make a file or directory unreadable/unwritable on Windows")
+	}
 	resetInitFlags()
 
 	if os.Getuid() == 0 {

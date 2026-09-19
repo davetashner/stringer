@@ -33,7 +33,11 @@ func repoRoot(t *testing.T) string {
 // buildBinary compiles stringer into a temp directory.
 func buildBinary(t *testing.T) string {
 	t.Helper()
-	binary := filepath.Join(t.TempDir(), "stringer-test")
+	name := "stringer-test"
+	if runtime.GOOS == "windows" {
+		name += ".exe" // exec needs the extension to find the binary
+	}
+	binary := filepath.Join(t.TempDir(), name)
 	cmd := exec.Command("go", "build", "-o", binary, "./cmd/stringer") //nolint:gosec // test helper
 	cmd.Dir = repoRoot(t)
 	out, err := cmd.CombinedOutput()

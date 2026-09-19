@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -1026,6 +1027,9 @@ func TestPatterns_BrokenSymlinkSkipped(t *testing.T) {
 // --- Patterns Collect: unreadable file ---
 
 func TestPatterns_UnreadableFileSkipped(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits: chmod cannot make a file or directory unreadable/unwritable on Windows")
+	}
 	dir := t.TempDir()
 
 	// Create a normal large file.

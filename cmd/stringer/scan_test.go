@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -16,7 +17,11 @@ import (
 // buildBinary compiles the stringer binary into a temp directory for integration testing.
 func buildBinary(t *testing.T) string {
 	t.Helper()
-	binary := filepath.Join(t.TempDir(), "stringer-test")
+	name := "stringer-test"
+	if runtime.GOOS == "windows" {
+		name += ".exe" // exec needs the extension to find the binary
+	}
+	binary := filepath.Join(t.TempDir(), name)
 	build := exec.Command("go", "build", //nolint:gosec // test helper with fixed args
 		"-o", binary,
 		".",
