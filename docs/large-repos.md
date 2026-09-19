@@ -42,6 +42,24 @@ Each lookup that hits the limit logs a WARN line naming the ecosystem and
 package, and the collector reports the total as `TimedOut` in its metrics.
 Raise `registry_timeout` on a slow network to retry them.
 
+Registries also refuse lookups outright when several scans hit them at once:
+Maven Central answers HTTP 429 to every request for a while, which used to
+finish the collector in under a second with zero findings and no warning. A
+429 is now retried once after the `Retry-After` header (capped at
+`registry_timeout`, 1s when absent) and a 5xx once after 1s; other 4xx are
+never retried, and a 404 stays at DEBUG because it is normal for private
+packages. Whatever still fails is summarised in one WARN per ecosystem:
+
+```text
+WARN dephealth: maven lookups failed; dependency findings are incomplete failed=38 lookups=48 rate_limited=37 timed_out=1
+```
+
+The counts are exposed as `RateLimited`, `ServerErrors`, `OtherErrors`,
+`NotFound` and per-ecosystem `RegistryLookups` in the collector metrics, and
+`stringer report` adds a recommendation naming the failed lookups. When you
+see rate limiting, wait a few minutes before re-running, and avoid running
+several scans of Gradle or Maven builds in parallel.
+
 Maven, Gradle and sbt artifacts are checked against the CDN-backed
 `https://repo1.maven.org/maven2/<group path>/<artifact>/maven-metadata.xml`,
 which answers in well under a second. The `search.maven.org` solrsearch API

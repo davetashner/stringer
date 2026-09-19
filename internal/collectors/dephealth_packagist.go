@@ -49,15 +49,11 @@ func (c *realPackagistRegistryClient) FetchPackage(ctx context.Context, name str
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	resp, err := registryHTTPClient(c.httpClient).Do(req)
+	resp, err := doRegistryRequest(registryHTTPClient(c.httpClient), req, "packagist", name)
 	if err != nil {
-		return nil, fmt.Errorf("fetching %s: %w", url, err)
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("packagist returned %d for %s", resp.StatusCode, name)
-	}
 
 	var info packagistPackageInfo
 	if err := decodeJSONLimited(resp.Body, &info); err != nil {

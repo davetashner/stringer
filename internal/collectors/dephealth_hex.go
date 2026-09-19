@@ -56,15 +56,11 @@ func (c *realHexRegistryClient) FetchPackage(ctx context.Context, name string) (
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	resp, err := registryHTTPClient(c.httpClient).Do(req)
+	resp, err := doRegistryRequest(registryHTTPClient(c.httpClient), req, "hex.pm", name)
 	if err != nil {
-		return nil, fmt.Errorf("fetching %s: %w", url, err)
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("hex.pm returned %d for %s", resp.StatusCode, name)
-	}
 
 	var info hexPackageInfo
 	if err := decodeJSONLimited(resp.Body, &info); err != nil {

@@ -46,15 +46,11 @@ func (c *realNpmRegistryClient) FetchPackage(ctx context.Context, name string) (
 	// Request abbreviated metadata to reduce response size.
 	req.Header.Set("Accept", "application/vnd.npm.install-v1+json")
 
-	resp, err := registryHTTPClient(c.httpClient).Do(req)
+	resp, err := doRegistryRequest(registryHTTPClient(c.httpClient), req, "npm registry", name)
 	if err != nil {
-		return nil, fmt.Errorf("fetching %s: %w", url, err)
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("npm registry returned %d for %s", resp.StatusCode, name)
-	}
 
 	var info npmPackageInfo
 	if err := decodeJSONLimited(resp.Body, &info); err != nil {

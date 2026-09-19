@@ -5,7 +5,9 @@ package collectors
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -41,6 +43,22 @@ func extractGitHubOwnerRepo(modulePath string) (owner, repo string, ok bool) {
 		return "", "", false
 	}
 	return parts[1], parts[2], true
+}
+
+// githubLookupStatus returns the HTTP status behind a go-github error, or 0.
+// Primary and secondary rate limits (403 with rate-limit headers) count as
+// 429 so they are classified as rate limited.
+func githubLookupStatus(err error) int {
+	var rl *github.RateLimitError
+	var abuse *github.AbuseRateLimitError
+	var er *github.ErrorResponse
+	switch {
+	case errors.As(err, &rl), errors.As(err, &abuse):
+		return http.StatusTooManyRequests
+	case errors.As(err, &er) && er.Response != nil:
+		return er.Response.StatusCode
+	}
+	return 0
 }
 
 // repoKey returns a dedup key for a GitHub repo.

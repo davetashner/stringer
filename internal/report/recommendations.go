@@ -50,6 +50,7 @@ func (s *recommendationsSection) Analyze(result *signal.ScanResult) error {
 	s.analyzeCoverage(result)
 	s.analyzeComplexity(result)
 	s.analyzeHotspots(result)
+	s.analyzeDepHealth(result)
 
 	// Sort: high > medium > low.
 	sort.SliceStable(s.recs, func(i, j int) bool {
@@ -90,6 +91,24 @@ func (s *recommendationsSection) analyzeLotteryRisk(result *signal.ScanResult) {
 			})
 		}
 	}
+}
+
+// analyzeDepHealth notes failed registry lookups so an empty dependency
+// section is not mistaken for a clean bill of health (stringer-jfh.6).
+func (s *recommendationsSection) analyzeDepHealth(result *signal.ScanResult) {
+	raw, ok := result.Metrics["dephealth"]
+	if !ok {
+		return
+	}
+	m, ok := raw.(*collectors.DepHealthMetrics)
+	if !ok || m == nil || m.FailedLookups() == 0 {
+		return
+	}
+	s.recs = append(s.recs, Recommendation{
+		Severity: SeverityMedium,
+		Message: fmt.Sprintf("%d registry lookups failed (rate limited: %d, timed out: %d, server errors: %d, other: %d); dependency findings are incomplete. Re-run once the registry recovers or raise collectors.dephealth.registry_timeout.",
+			m.FailedLookups(), m.RateLimited, m.TimedOut, m.ServerErrors, m.OtherErrors),
+	})
 }
 
 func (s *recommendationsSection) analyzeChurn(result *signal.ScanResult) {
