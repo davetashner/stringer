@@ -252,7 +252,7 @@ func TestRealClients_HonourRegistryTimeout(t *testing.T) {
 	ctx := context.Background()
 	clients := map[string]func() error{
 		"maven": func() error {
-			_, err := (&realMavenRegistryClient{httpClient: hc, baseURL: srv.URL}).FetchArtifact(ctx, "g", "a")
+			_, err := (&realMavenRegistryClient{httpClient: hc, baseURL: srv.URL, metaURL: srv.URL}).FetchArtifact(ctx, "g", "a")
 			return err
 		},
 		"proxy": func() error {
