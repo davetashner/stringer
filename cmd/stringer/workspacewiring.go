@@ -96,7 +96,10 @@ func workspaceMemberPaths(scanned, all []workspaceEntry) []string {
 
 // applyWorkspaceMembers tells the workspace-scoped collectors which
 // workspaces the monorepo has, as paths relative to gitRoot, so they emit
-// each repository-wide signal once. Non-monorepo entries change nothing.
+// each repository-wide signal once, and excludes the member workspaces
+// nested inside ws from every collector's file walk so their files are
+// reported by their own workspace only (stringer-nxx.18). Non-monorepo
+// entries change nothing.
 func applyWorkspaceMembers(cfg *signal.ScanConfig, ws workspaceEntry, gitRoot string) {
 	if len(ws.Members) == 0 {
 		return
@@ -117,6 +120,26 @@ func applyWorkspaceMembers(cfg *signal.ScanConfig, ws workspaceEntry, gitRoot st
 		co.WorkspaceMembers = members
 		cfg.CollectorOpts[name] = co
 	}
+	cfg.ExcludePatterns = append(cfg.ExcludePatterns, nestedMemberExcludes(ws)...)
+}
+
+// nestedMemberExcludes returns one anchored exclude glob ("/<dir>/**",
+// relative to ws.Path) per member workspace nested inside ws. A root
+// workspace declared as a member (go.work `use .`, a root package.json)
+// would otherwise walk the same files its nested members report. The
+// patterns are anchored so a member named api does not also hide an
+// unrelated internal/api directory. Nothing is returned for a workspace
+// with no nested members.
+func nestedMemberExcludes(ws workspaceEntry) []string {
+	var excludes []string
+	for _, abs := range ws.Members {
+		rel, err := filepath.Rel(ws.Path, abs)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+		excludes = append(excludes, "/"+filepath.ToSlash(rel)+"/**")
+	}
+	return excludes
 }
 
 // filterWorkspaceEntries keeps only entries whose Name matches one of the

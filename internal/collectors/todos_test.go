@@ -189,6 +189,19 @@ func TestShouldExclude(t *testing.T) {
 		{name: "doublestar_path_suffix_nested", relPath: "api/v1/gen/types.go", patterns: []string{"**/gen/*.go"}, want: true},
 		{name: "doublestar_path_suffix_root", relPath: "gen/types.go", patterns: []string{"**/gen/*.go"}, want: true},
 		{name: "doublestar_path_suffix_no_match", relPath: "api/gen/deep/types.go", patterns: []string{"**/gen/*.go"}, want: false},
+		// Anchored patterns match from the walk root only (nested workspaces).
+		{name: "anchored_dir_itself", relPath: "api", patterns: []string{"/api/**"}, want: true},
+		{name: "anchored_dir_file", relPath: "api/types.go", patterns: []string{"/api/**"}, want: true},
+		{name: "anchored_dir_deep", relPath: "api/v1/types.go", patterns: []string{"/api/**"}, want: true},
+		{name: "anchored_dir_no_interior", relPath: "internal/api/types.go", patterns: []string{"/api/**"}, want: false},
+		{name: "anchored_dir_no_interior_dir", relPath: "internal/api", patterns: []string{"/api/**"}, want: false},
+		{name: "anchored_dir_no_prefix", relPath: "apiserver/main.go", patterns: []string{"/api/**"}, want: false},
+		{name: "anchored_nested_dir", relPath: "staging/src/k8s.io/api/types.go", patterns: []string{"/staging/src/k8s.io/api/**"}, want: true},
+		{name: "anchored_nested_dir_no_interior", relPath: "vendor/staging/src/k8s.io/api/types.go", patterns: []string{"/staging/src/k8s.io/api/**"}, want: false},
+		{name: "anchored_glob_root", relPath: "README.md", patterns: []string{"/*.md"}, want: true},
+		{name: "anchored_glob_no_basename", relPath: "docs/README.md", patterns: []string{"/*.md"}, want: false},
+		{name: "anchored_glob_path", relPath: "docs/README.md", patterns: []string{"/docs/*.md"}, want: true},
+		{name: "anchored_glob_invalid", relPath: "docs/README.md", patterns: []string{"/docs/[.md"}, want: false},
 	}
 
 	for _, tt := range tests {

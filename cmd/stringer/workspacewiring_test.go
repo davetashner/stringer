@@ -249,3 +249,46 @@ func TestApplyWorkspaceMembers(t *testing.T) {
 	applyWorkspaceMembers(&cfg, workspaceEntry{Path: root, Rel: "."}, root)
 	assert.Nil(t, cfg.CollectorOpts)
 }
+
+func TestNestedMemberExcludes(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "repo")
+	members := []string{
+		root,
+		filepath.Join(root, "staging", "a"),
+		filepath.Join(root, "staging", "a", "nested"),
+		filepath.Join(root, "b"),
+	}
+
+	// The root workspace excludes every member below it, anchored so a
+	// member named b does not also hide an unrelated internal/b.
+	rootWS := workspaceEntry{Name: ".", Path: root, Rel: ".", Members: members}
+	assert.Equal(t, []string{"/staging/a/**", "/staging/a/nested/**", "/b/**"}, nestedMemberExcludes(rootWS))
+
+	// A member excludes only the members nested inside it, relative to
+	// itself; the root and its siblings are outside its walk anyway.
+	aWS := workspaceEntry{Name: "a", Path: filepath.Join(root, "staging", "a"), Rel: "staging/a", Members: members}
+	assert.Equal(t, []string{"/nested/**"}, nestedMemberExcludes(aWS))
+
+	// A leaf member and a non-monorepo entry exclude nothing.
+	leaf := workspaceEntry{Name: "nested", Path: filepath.Join(root, "staging", "a", "nested"), Rel: "staging/a/nested", Members: members}
+	assert.Nil(t, nestedMemberExcludes(leaf))
+	assert.Nil(t, nestedMemberExcludes(workspaceEntry{Path: root, Rel: "."}))
+}
+
+func TestApplyWorkspaceMembers_ExcludesNestedMembers(t *testing.T) {
+	root := filepath.Join(string(filepath.Separator), "repo")
+	members := []string{root, filepath.Join(root, "staging", "a")}
+	rootWS := workspaceEntry{Name: ".", Path: root, Rel: ".", Members: members}
+
+	// Nested member excludes are appended to the global patterns, after
+	// the user's own, so the pipeline applies them to every collector.
+	cfg := signal.ScanConfig{ExcludePatterns: []string{"docs/**"}}
+	applyWorkspaceMembers(&cfg, rootWS, root)
+	assert.Equal(t, []string{"docs/**", "/staging/a/**"}, cfg.ExcludePatterns)
+	assert.Equal(t, []string{".", filepath.Join("staging", "a")}, cfg.CollectorOpts["gitlog"].WorkspaceMembers)
+
+	// The member's own scan gets no exclude for itself.
+	cfg = signal.ScanConfig{}
+	applyWorkspaceMembers(&cfg, workspaceEntry{Name: "a", Path: members[1], Rel: "staging/a", Members: members}, root)
+	assert.Empty(t, cfg.ExcludePatterns)
+}
