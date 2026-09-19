@@ -1,0 +1,54 @@
+name: Self-Scan
+
+# Dogfooding gate (DR-027): build stringer from the checkout, scan this
+# repository with the deterministic collectors, and fail when a finding at
+# confidence >= 0.8 is not covered by .stringer/baseline.json. All settings
+# live in scripts/self-scan.sh so a local run matches CI exactly.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  self-scan:
+    name: Self-Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Default depth 1 is enough: the gated collectors read the working tree
+      # and `git ls-files`, and a depth-1 clone yields the same >= 0.8 findings
+      # as a full clone (verified in DR-027).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26"
+      - name: Check for new high-confidence findings
+        run: |
+          if ./scripts/self-scan.sh; then
+            exit 0
+          else
+            status=$?
+          fi
+          if [ "$status" -eq 4 ]; then
+            {
+              echo "### New stringer findings at confidence >= 0.8"
+              echo
+              echo "Fix each finding, or accept an intentional one by running the"
+              echo "\`stringer baseline suppress sts-...\` command printed in the job log"
+              echo "from the repository root and committing \`.stringer/baseline.json\`."
+              echo "See docs/decisions/027-self-scan-gate.md."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"

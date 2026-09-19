@@ -18,7 +18,8 @@ stringer/
 │   ├── init.go                 # init subcommand (bootstrap stringer in a repo)
 │   ├── config.go               # config get/set/list subcommands
 │   ├── collectors.go           # collectors list/info subcommands (info shows thresholds, supports --json)
-│   ├── baseline.go             # baseline create/suppress/list/remove/status subcommands
+│   ├── baseline.go             # baseline create/suppress/list/remove/status subcommands (IDs: str- exact or sts- stable)
+│   ├── baselinecheck.go        # baseline check <scan.json>: NEW (exit 4, with the suppress command) / RESOLVED (notice) vs the baseline, --accept/--prune, GitHub annotations; drives the self-scan gate (DR-027)
 │   ├── mcp.go                  # mcp serve subcommand (MCP server)
 │   ├── validate.go             # validate subcommand (JSONL validation)
 │   ├── version.go              # version subcommand
@@ -110,12 +111,12 @@ stringer/
 │   │   ├── markdown.go         # Human-readable markdown summary
 │   │   ├── sarif.go            # SARIF v2.1.0 output with suppressions + baseline comparison
 │   │   ├── tasks.go            # Claude Code task format
-│   │   └── signalid.go         # Shared deterministic signal ID generation
+│   │   └── signalid.go         # Shared deterministic signal ID (str-: source+kind+file+line+title); StableSignalID (sts-: source+kind+file+title with standalone numbers masked, survives line shifts and metric changes) and LookupSuppression (exact, then stable) for baselines (DR-027)
 │   ├── pipeline/           # Scan orchestration
 │   │   ├── pipeline.go         # New(), Run() — parallel execution via errgroup; Progress callbacks + heartbeat
 │   │   ├── dedup.go            # Content-based signal deduplication
 │   │   ├── enrich.go           # Cross-signal confidence boosting (co-location)
-│   │   ├── baseline.go         # FilterSuppressed() — baseline suppression filtering
+│   │   ├── baseline.go         # FilterSuppressed() — baseline suppression filtering by exact ID or stable key
 │   │   └── validate.go         # ScanConfig validation
 │   ├── redact/             # Secret redaction
 │   │   └── redact.go           # Scrub sensitive patterns from signal content
@@ -131,7 +132,7 @@ stringer/
 │   │   ├── recommendations.go  # Actionable recommendations section
 │   │   └── modulesummary.go    # Module health summary section
 │   ├── baseline/           # Signal suppression state (baseline.json)
-│   │   ├── baseline.go         # Load/Save/Lookup/AddOrUpdate/Remove for .stringer/baseline.json
+│   │   ├── baseline.go         # Load/Save/Lookup/AddOrUpdate/Remove for .stringer/baseline.json (saved one suppression per line)
 │   │   └── rename.go           # Atomic rename helper (overridable for tests)
 │   ├── signal/             # Domain types
 │   │   └── signal.go           # RawSignal, ScanConfig, ScanResult, CollectorOpts
@@ -240,6 +241,9 @@ golangci-lint run ./...
 
 # SARIF with baseline comparison (marks results as new/unchanged/absent)
 ./stringer scan /path/to/repo --format sarif --sarif-baseline previous.sarif -o current.sarif
+
+# Self-scan gate: new findings at confidence >= 0.8 vs .stringer/baseline.json (DR-027)
+./scripts/self-scan.sh            # --prune drops resolved entries, --accept accepts all new ones
 ```
 
 ## Key Design Decisions
@@ -475,6 +479,8 @@ Optional but valuable:
 | `Fuzz` | Fuzz testing for input parsing (mcpserver, config, beads); pinned to Go 1.27+ because older `internal/fuzz` spuriously fails with `context deadline exceeded` at the `-fuzztime` boundary ([go#75804](https://go.dev/issue/75804)) |
 | `Backlog Health` | Beads backlog consistency checks |
 | `Analyze` / `CodeQL` | Static analysis and security scanning |
+
+The `Self-Scan` job (`.github/workflows/self-scan.yml`, [DR-027](docs/decisions/027-self-scan-gate.md)) runs `scripts/self-scan.sh`: it scans this repository with the deterministic collectors and fails when a finding at confidence >= 0.8 is not in the committed `.stringer/baseline.json`. Fix the finding, or accept an intentional one with the `stringer baseline suppress sts-…` command the job prints (from the repository root; `go run ./cmd/stringer baseline suppress …` works without an installed binary) and commit the baseline.
 
 A separate [OpenSSF Scorecard](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer) workflow runs on the default branch to track supply chain security posture.
 

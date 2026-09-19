@@ -6,6 +6,7 @@ package output
 import (
 	"testing"
 
+	"github.com/davetashner/stringer/internal/baseline"
 	"github.com/davetashner/stringer/internal/signal"
 	"github.com/stretchr/testify/assert"
 )
@@ -127,4 +128,72 @@ func TestSignalID_MatchesBeadsFormatter(t *testing.T) {
 	sharedID := SignalID(sig, "str-")
 	beadsID := NewBeadsFormatter().generateID(sig)
 	assert.Equal(t, beadsID, sharedID, "SignalID and BeadsFormatter.generateID should produce identical IDs")
+}
+
+// TestStableSignalID_StabilityContract pins stable keys: they are committed in
+// baselines (.stringer/baseline.json, DR-027), so changing the composition
+// silently un-suppresses every baselined finding.
+func TestStableSignalID_StabilityContract(t *testing.T) {
+	merge := signal.RawSignal{Source: "complexity", Kind: "complex-function", FilePath: "internal/config/merge.go",
+		Line: 14, Title: "Complex function: Merge (cyclomatic: 88, cognitive: 163, nesting: 4)"}
+	assert.Equal(t, "sts-301a576c", StableSignalID(merge))
+	assert.Equal(t, "sts-709e80c8", StableSignalID(signal.RawSignal{}))
+}
+
+func TestStableSignalID_IgnoresLineAndNumbers(t *testing.T) {
+	base := signal.RawSignal{Source: "complexity", Kind: "complex-function", FilePath: "a.go",
+		Line: 14, Title: "Complex function: Merge (cyclomatic: 88, cognitive: 163, nesting: 4)"}
+	moved := base
+	moved.Line = 15
+	improved := base
+	improved.Title = "Complex function: Merge (cyclomatic: 85, cognitive: 150, nesting: 3)"
+	decimal := signal.RawSignal{Title: "Large binary file: x.png (1.2 MB)"}
+	decimal2 := signal.RawSignal{Title: "Large binary file: x.png (3.75 MB)"}
+
+	assert.Equal(t, StableSignalID(base), StableSignalID(moved), "line shift keeps the key")
+	assert.Equal(t, StableSignalID(base), StableSignalID(improved), "metric change keeps the key")
+	assert.Equal(t, StableSignalID(decimal), StableSignalID(decimal2), "decimals are masked")
+	assert.Regexp(t, `^sts-[0-9a-f]{8}$`, StableSignalID(base))
+}
+
+func TestStableSignalID_FieldSensitivity(t *testing.T) {
+	base := signal.RawSignal{Source: "complexity", Kind: "complex-function", FilePath: "a.go",
+		Title: "Complex function: parseV2 (cyclomatic: 20)"}
+	tests := map[string]func(s signal.RawSignal) signal.RawSignal{
+		"source":   func(s signal.RawSignal) signal.RawSignal { s.Source = "deadcode"; return s },
+		"kind":     func(s signal.RawSignal) signal.RawSignal { s.Kind = "complex-method"; return s },
+		"filepath": func(s signal.RawSignal) signal.RawSignal { s.FilePath = "b.go"; return s },
+		"symbol": func(s signal.RawSignal) signal.RawSignal {
+			s.Title = "Complex function: Other (cyclomatic: 20)"
+			return s
+		},
+		"identifier_digit": func(s signal.RawSignal) signal.RawSignal {
+			s.Title = "Complex function: parseV3 (cyclomatic: 20)"
+			return s
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.NotEqual(t, StableSignalID(base), StableSignalID(mutate(base)))
+		})
+	}
+}
+
+func TestLookupSuppression(t *testing.T) {
+	sig := signal.RawSignal{Source: "todos", Kind: "bug", FilePath: "a.go", Line: 3, Title: "BUG: x"}
+	exact := SignalID(sig, "str-")
+	stable := StableSignalID(sig)
+
+	sup, ok := LookupSuppression(map[string]baseline.Suppression{exact: {SignalID: exact}}, sig, "str-")
+	assert.True(t, ok)
+	assert.Equal(t, exact, sup.SignalID)
+
+	sup, ok = LookupSuppression(map[string]baseline.Suppression{stable: {SignalID: stable}}, sig, "str-")
+	assert.True(t, ok)
+	assert.Equal(t, stable, sup.SignalID)
+
+	_, ok = LookupSuppression(map[string]baseline.Suppression{"str-00000000": {}}, sig, "str-")
+	assert.False(t, ok)
+	_, ok = LookupSuppression(nil, sig, "str-")
+	assert.False(t, ok)
 }

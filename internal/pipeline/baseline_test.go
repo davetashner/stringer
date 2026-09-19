@@ -183,3 +183,18 @@ func TestFilterSuppressed_EmptySignals(t *testing.T) {
 		t.Errorf("result length = %d, want 0", len(result))
 	}
 }
+
+func TestFilterSuppressed_StableKey(t *testing.T) {
+	sig := makeTestSignal("complexity", "complex-function", "a.go", 14, "Complex function: F (cyclomatic: 30)")
+	state := &baseline.BaselineState{Version: "1", Suppressions: []baseline.Suppression{
+		{SignalID: output.StableSignalID(sig), Reason: baseline.ReasonAcknowledged, SuppressedAt: time.Now()},
+	}}
+
+	// Same function, moved down and simplified: still suppressed by its stable key.
+	moved := makeTestSignal("complexity", "complex-function", "a.go", 20, "Complex function: F (cyclomatic: 25)")
+	other := makeTestSignal("complexity", "complex-function", "a.go", 40, "Complex function: G (cyclomatic: 30)")
+	result, count := FilterSuppressed([]signal.RawSignal{moved, other}, state, "str-")
+	if count != 1 || len(result) != 1 || result[0].Title != other.Title {
+		t.Errorf("got count=%d result=%v, want only G left", count, result)
+	}
+}

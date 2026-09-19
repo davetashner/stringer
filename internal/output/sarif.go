@@ -356,8 +356,7 @@ func (f *SARIFFormatter) buildResults(signals []signal.RawSignal, ruleIndex map[
 		}
 
 		// SA5.1: Map baseline suppressions to SARIF suppressions.
-		sigID := SignalID(sig, f.BaselinePrefix)
-		if sup, found := blLookup[sigID]; found && !baseline.IsExpired(sup) {
+		if sup, found := LookupSuppression(blLookup, sig, f.BaselinePrefix); found && !baseline.IsExpired(sup) {
 			result.Suppressions = []sarifSuppression{
 				mapBaselineToSuppression(sup),
 			}

@@ -39,6 +39,7 @@ func TestBaselineSubcommands_AreRegistered(t *testing.T) {
 	assert.True(t, subs["list"], "list subcommand should be registered")
 	assert.True(t, subs["remove"], "remove subcommand should be registered")
 	assert.True(t, subs["status"], "status subcommand should be registered")
+	assert.True(t, subs["check"], "check subcommand should be registered")
 }
 
 // --- suppress tests ---
@@ -689,8 +690,8 @@ func TestFormatAge(t *testing.T) {
 }
 
 func TestSignalIDPattern(t *testing.T) {
-	valid := []string{"str-abcd1234", "str-00000000", "str-ffffffff", "str-12345678"}
-	invalid := []string{"str-ABCD1234", "str-abc", "str-abcd12345", "abc-12345678", "invalid", "str-ghij1234"}
+	valid := []string{"str-abcd1234", "str-00000000", "str-ffffffff", "str-12345678", "sts-abcd1234"}
+	invalid := []string{"str-ABCD1234", "str-abc", "str-abcd12345", "abc-12345678", "invalid", "str-ghij1234", "stx-abcd1234"}
 
 	for _, id := range valid {
 		assert.True(t, signalIDPattern.MatchString(id), "expected %q to be valid", id)

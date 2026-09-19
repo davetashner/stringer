@@ -11,7 +11,8 @@ import (
 	"github.com/davetashner/stringer/internal/signal"
 )
 
-// FilterSuppressed removes signals whose IDs appear in the baseline.
+// FilterSuppressed removes signals whose exact ID or stable key (DR-027)
+// appears in the baseline.
 // Expired suppressions are NOT filtered (signal reappears after TTL).
 // Returns the filtered signals and count of suppressed signals.
 func FilterSuppressed(signals []signal.RawSignal, state *baseline.BaselineState, prefix string) ([]signal.RawSignal, int) {
@@ -24,11 +25,10 @@ func FilterSuppressed(signals []signal.RawSignal, state *baseline.BaselineState,
 	result := make([]signal.RawSignal, 0, len(signals))
 
 	for _, sig := range signals {
-		id := output.SignalID(sig, prefix)
-		sup, found := lookup[id]
+		sup, found := output.LookupSuppression(lookup, sig, prefix)
 		if found && !baseline.IsExpired(sup) {
 			suppressed++
-			slog.Debug("suppressed signal", "id", id, "reason", sup.Reason)
+			slog.Debug("suppressed signal", "id", sup.SignalID, "reason", sup.Reason)
 			continue
 		}
 		result = append(result, sig)
