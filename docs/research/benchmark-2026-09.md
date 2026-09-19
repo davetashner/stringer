@@ -301,6 +301,58 @@ boundary commit's author, so recent single-author activity looks like total
 ownership. Jellyfin shows the same effect at scale: 171 of its 228
 lottery-risk signals carry the identical "60%" figure. (stringer-nxx.6)
 
+## Results after the fixes (main at d85a249, 2026-09-19)
+
+Every bead filed from this benchmark was implemented and merged between
+2026-09-18 and 2026-09-19 (epic stringer-nxx, PRs #431 to #448, plus
+follow-ups #450 to #454 under stringer-jfh). The same 13 repositories were
+re-run with the same runner on a build of main at d85a249 under
+`caffeinate -i`, so wall clock and monotonic timings agree this time.
+Repositories were re-cloned at `--depth 100`, so their HEADs moved by a few
+days; the commit SHAs are listed at the end.
+
+What changed in the tool between the two runs:
+
+| Area | Change | PR |
+|------|--------|----|
+| deadcode | Inverted identifier index replaces per-symbol regex over every file | #433 |
+| deadcode | Trait impls, tests, decorated handlers skipped; library public API suppressed by default | #442, #454 |
+| excludes | `compiled/`, minified and generated files excluded from noise-prone collectors | #431 |
+| duplication | Overlapping windows merged, adjacent-line artifacts dropped, test-only clones gated at 12 lines, directory-aware test detection, stable sort | #438, #450 |
+| complexity | Test code skipped, JS test callbacks named, non-Go floor raised to score 12 | #434 |
+| lotteryrisk | Shallow clones capped at 0.5 and annotated; tiny and static directories skipped | #432 |
+| patterns | Repo-wide test index (Maven, C# sibling projects, prefixed names), config/DTO/demo exclusions, mirrored-tree ratios | #436, #445, #448 |
+| vuln, dephealth | Version floors reported as floors at 0.6x confidence; lockfiles preferred; workspace members skipped | #437, #444 |
+| vuln, dephealth | NuGet Central Package Management; Gradle catalogs and `libs.*`; Gradle in dephealth | #446, #447, #453 |
+| dephealth | 10 s registry timeout, 8-way parallel lookups, repo1.maven.org metadata instead of solrsearch | #451, #452 |
+| githygiene | Secrets detector skips docs, templates, docstrings and obvious placeholders | #435 |
+| docstale | Template placeholders, site-root and directory links resolved against detected static-site layouts | #441 |
+| C# | Added to complexity, deadcode and coupling | #443 |
+| pipeline | Per-collector completion logged as it happens | #440 |
+
+COMPARISON_TABLES
+
+Reading the comparison:
+
+- The signal totals fall on every repository except jellyfin, where C#
+  support adds complexity, dead-code and coupling signals that did not exist
+  before. Jellyfin's remaining bulk is missing-tests.
+- The "High" share falls on several small repos. That is the intended
+  effect: the high-confidence signals in the first run were the mislabelled
+  version floors and complexity hits on test files. What remains at 0.8 or
+  above is a shorter, honest list.
+- Timing is dominated by the dead-code fix. Kafka's scan goes from 52
+  minutes of collector time to about a minute, next.js from 35 minutes to
+  under ten, kubernetes from two hours to KUBERNETES_SCAN. Dependency health
+  on Gradle repos is bounded by the registry timeout.
+- Duplication still hits its per-workspace cap on the larger repos. The
+  cap is now applied to merged regions rather than raw windows, so the 200
+  signals describe 200 distinct regions.
+
+### Open follow-ups
+
+FOLLOWUPS
+
 ### Beads filed
 
 Epic stringer-nxx with 13 children, each carrying the evidence above:
