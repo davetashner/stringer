@@ -398,6 +398,44 @@ func TestDocStale_ConfigurableStaleDays(t *testing.T) {
 
 // TestDocStale_ConfigurableDriftMinCommits verifies the drift min-commits
 // threshold is configurable.
+// Regression test for stringer-q6y: the default 1y window must reach
+// commits older than the first day of the current month. git reads a raw
+// "--since=1y" as the 1st of this month, which silently dropped these.
+func TestDocStale_DocCodeDrift_DefaultWindowSpansAYear(t *testing.T) {
+	dir := t.TempDir()
+	runDocGit(t, dir, "init")
+	srcDir := filepath.Join(dir, "internal", "auth")
+	require.NoError(t, os.MkdirAll(srcDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "auth.go"), []byte("package auth\n"), 0o600))
+	docsDir := filepath.Join(dir, "docs")
+	require.NoError(t, os.MkdirAll(docsDir, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(docsDir, "auth.md"), []byte("# Auth\n"), 0o600))
+	gitCommit(t, dir, "init with doc and source")
+	backdateLastCommit(t, dir, time.Now().AddDate(-3, 0, 0))
+
+	// Source-only commits dated 60 days ago: inside a true one-year window,
+	// always before the first day of the current month.
+	old := time.Now().AddDate(0, 0, -60)
+	for i := 0; i < 12; i++ {
+		content := []byte("package auth\n\n// " + string(rune('a'+i)) + "\n")
+		require.NoError(t, os.WriteFile(filepath.Join(srcDir, "auth.go"), content, 0o600))
+		gitCommit(t, dir, "update auth source")
+		backdateLastCommit(t, dir, old.Add(time.Duration(i)*time.Minute))
+	}
+
+	c := &DocStaleCollector{}
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{GitRoot: dir, GitDepth: 5000})
+	require.NoError(t, err)
+
+	var foundAuth bool
+	for _, s := range filterByKind(signals, "doc-code-drift") {
+		if strings.Contains(s.Title, "auth.md") {
+			foundAuth = true
+		}
+	}
+	assert.True(t, foundAuth, "default 1y window must include source commits from 60 days ago")
+}
+
 func TestDocStale_ConfigurableDriftMinCommits(t *testing.T) {
 	assert.Equal(t, 10, defaultDriftMinCommits,
 		"default drift min commits should be 10")

@@ -70,7 +70,7 @@ stringer/
 │   │   ├── deadcode_index.go   # Inverted identifier index for deadcode: each file is tokenized once into ASCII word runs (regexp `\b` semantics) and only declared symbol names are recorded as token → per-file counts, so each symbol check is a map lookup instead of a regexp over every file; names with non-word bytes (Elixir `Foo.Bar`, Ruby `valid?`) fall back to the regexp over index-bounded candidate files (stringer-nxx.1); predicate/bang names drop the trailing `\b` so `obj.valid?` counts as a reference
 │   │   ├── githygiene.go       # Git hygiene: large binaries, merge conflicts, committed secrets, mixed line endings — tracked files only (git ls-files), full-scan fallback outside a repo
 │   │   ├── secrets.go          # Secret detection: 24+ built-in patterns, custom patterns, allowlist, entropy detection; generic/JWT/entropy detectors are skipped in docs, examples, templates, comments and Python docstrings, placeholder values dropped, fixture values (`test key`) → 0.2, test-file hits capped at 0.3 (stringer-nxx.7)
-│   │   └── duration.go         # Duration parsing helpers
+│   │   └── duration.go         # Duration parsing helpers; gitSinceArg converts --git-since shorthand (90d/6m/1y) to an absolute RFC 3339 time for `git log --since`, which misreads the raw shorthand
 │   ├── analysis/           # LLM-powered analysis
 │   │   ├── cluster.go          # Signal clustering via LLM
 │   │   ├── priority.go         # Priority inference via LLM

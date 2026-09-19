@@ -466,13 +466,7 @@ func walkCommitsForOwnership(ctx context.Context, gitDir string, ownership map[s
 		since:  opts.GitSince,
 	}
 	commits, err := numstatHistories.load(ctx, key, func(ctx context.Context) ([]gitcli.NumstatCommit, error) {
-		var since string
-		if opts.GitSince != "" {
-			if d, parseErr := ParseDuration(opts.GitSince); parseErr == nil {
-				since = time.Now().Add(-d).Format(time.RFC3339)
-			}
-		}
-		return gitcli.LogNumstat(ctx, gitDir, maxWalk, since)
+		return gitcli.LogNumstat(ctx, gitDir, maxWalk, gitSinceArg(opts.GitSince, time.Now()))
 	})
 	if err != nil {
 		errMsg := err.Error()

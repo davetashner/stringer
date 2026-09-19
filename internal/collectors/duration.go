@@ -36,3 +36,20 @@ func ParseDuration(s string) (time.Duration, error) {
 		return 0, fmt.Errorf("invalid duration unit %q in %q (use d/w/m/y)", string(unit), s)
 	}
 }
+
+// gitSinceArg converts a --git-since shorthand ("90d", "6m", "1y") into an
+// absolute RFC 3339 timestamp for `git log --since`. The raw shorthand must
+// never reach git: git's approxidate parser misreads it ("1y" becomes the
+// first day of the current month, "90d" a date in 1990). Values that are not
+// valid shorthand yield "" (no time filter), matching the documented flag
+// contract.
+func gitSinceArg(spec string, now time.Time) string {
+	if spec == "" {
+		return ""
+	}
+	d, err := ParseDuration(spec)
+	if err != nil {
+		return ""
+	}
+	return now.Add(-d).UTC().Format(time.RFC3339)
+}
