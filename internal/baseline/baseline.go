@@ -10,6 +10,7 @@
 package baseline
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -99,11 +100,10 @@ func Save(repoPath string, state *BaselineState) error {
 		return fmt.Errorf("create baseline directory: %w", err)
 	}
 
-	data, err := json.MarshalIndent(state, "", "  ")
+	data, err := marshalState(state)
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
 
 	finalPath := filepath.Join(dir, baselineFile)
 	tmpPath := finalPath + ".tmp"
@@ -119,6 +119,36 @@ func Save(repoPath string, state *BaselineState) error {
 	}
 
 	return nil
+}
+
+// marshalState renders the baseline as indented JSON with one suppression per
+// line, so accepting or dropping a finding is a one-line diff in a committed
+// baseline (DR-027). The result is ordinary JSON; Load does not depend on it.
+func marshalState(state *BaselineState) ([]byte, error) {
+	version, err := json.Marshal(state.Version)
+	if err != nil {
+		return nil, err
+	}
+	var b bytes.Buffer
+	b.WriteString("{\n  \"version\": ")
+	b.Write(version)
+	b.WriteString(",\n  \"suppressions\": [")
+	for i, s := range state.Suppressions {
+		line, err := json.Marshal(s)
+		if err != nil {
+			return nil, err
+		}
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString("\n    ")
+		b.Write(line)
+	}
+	if len(state.Suppressions) > 0 {
+		b.WriteString("\n  ")
+	}
+	b.WriteString("]\n}\n")
+	return b.Bytes(), nil
 }
 
 // ValidateReason checks that r is one of the allowed suppression reasons.

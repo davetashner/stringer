@@ -9,4 +9,5 @@ const (
 	ExitInvalidArgs    = 1 // Invalid arguments or bad path.
 	ExitPartialFailure = 2 // Some collectors failed, partial output written.
 	ExitTotalFailure   = 3 // No output produced.
+	ExitNewSignals     = 4 // baseline check: signals not covered by the baseline.
 )

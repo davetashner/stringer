@@ -24,8 +24,8 @@ import (
 	"github.com/davetashner/stringer/internal/signal"
 )
 
-// Signal ID format: str-[0-9a-f]{8}.
-var signalIDPattern = regexp.MustCompile(`^str-[0-9a-f]{8}$`)
+// Signal ID format: str-[0-9a-f]{8} (exact ID) or sts-[0-9a-f]{8} (stable key, DR-027).
+var signalIDPattern = regexp.MustCompile(`^st[rs]-[0-9a-f]{8}$`)
 
 // Baseline command flags.
 var (
@@ -71,7 +71,8 @@ var baselineSuppressCmd = &cobra.Command{
 	Long: `Add a suppression for the given signal ID. If the signal is already
 suppressed, its reason, comment, and expiry are updated.
 
-Signal IDs follow the format str-XXXXXXXX (8 hex digits).`,
+Signal IDs follow the format str-XXXXXXXX (exact ID) or sts-XXXXXXXX
+(stable key printed by 'stringer baseline check'), with 8 hex digits.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runBaselineSuppress,
 }
@@ -161,10 +162,13 @@ func resetBaselineFlags() {
 	baselineExpires = ""
 	baselineJSON = false
 	baselineExpired = false
+	baselineCheckAccept = false
+	baselineCheckPrune = false
+	baselineCheckReason = "acknowledged"
 
 	for _, cmd := range []*cobra.Command{
 		baselineCreateCmd, baselineSuppressCmd, baselineListCmd,
-		baselineRemoveCmd, baselineStatusCmd,
+		baselineRemoveCmd, baselineStatusCmd, baselineCheckCmd,
 	} {
 		cmd.Flags().VisitAll(func(f *pflag.Flag) {
 			_ = f.Value.Set(f.DefValue)
@@ -276,7 +280,7 @@ func runBaselineSuppress(cmd *cobra.Command, args []string) error {
 
 	if !signalIDPattern.MatchString(signalID) {
 		return exitError(ExitInvalidArgs,
-			"stringer: invalid signal ID %q — must match str-[0-9a-f]{8}", signalID)
+			"stringer: invalid signal ID %q — must match str-[0-9a-f]{8} or sts-[0-9a-f]{8}", signalID)
 	}
 
 	reason := baseline.Reason(baselineSuppressReason)
@@ -422,7 +426,7 @@ func runBaselineRemove(cmd *cobra.Command, args []string) error {
 	signalID := args[0]
 	if !signalIDPattern.MatchString(signalID) {
 		return exitError(ExitInvalidArgs,
-			"stringer: invalid signal ID %q — must match str-[0-9a-f]{8}", signalID)
+			"stringer: invalid signal ID %q — must match str-[0-9a-f]{8} or sts-[0-9a-f]{8}", signalID)
 	}
 
 	if !baseline.Remove(state, signalID) {

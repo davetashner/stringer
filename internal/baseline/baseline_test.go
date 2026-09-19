@@ -633,3 +633,35 @@ func TestSuppressionJSON_OmitEmpty(t *testing.T) {
 		t.Error("expected expires_at to be omitted when nil")
 	}
 }
+
+func TestMarshalState_OneSuppressionPerLine(t *testing.T) {
+	at := time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC)
+	state := &BaselineState{Version: "1", Suppressions: []Suppression{
+		{SignalID: "sts-00000001", Reason: ReasonAcknowledged, Comment: "a.go: x", SuppressedAt: at},
+		{SignalID: "str-00000002", Reason: ReasonWontFix, SuppressedAt: at},
+	}}
+	data, err := marshalState(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{
+  "version": "1",
+  "suppressions": [
+    {"signal_id":"sts-00000001","reason":"acknowledged","comment":"a.go: x","suppressed_at":"2026-09-19T00:00:00Z"},
+    {"signal_id":"str-00000002","reason":"won't-fix","suppressed_at":"2026-09-19T00:00:00Z"}
+  ]
+}
+`
+	if string(data) != want {
+		t.Errorf("marshalState =\n%s\nwant\n%s", data, want)
+	}
+	var back BaselineState
+	if err := json.Unmarshal(data, &back); err != nil || len(back.Suppressions) != 2 {
+		t.Fatalf("round trip failed: %v %+v", err, back)
+	}
+
+	empty, err := marshalState(&BaselineState{Version: "1"})
+	if err != nil || string(empty) != "{\n  \"version\": \"1\",\n  \"suppressions\": []\n}\n" {
+		t.Errorf("empty marshalState = %q, %v", empty, err)
+	}
+}
