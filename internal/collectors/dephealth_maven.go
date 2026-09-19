@@ -5,16 +5,31 @@ package collectors
 
 import (
 	"context"
+	"encoding/xml"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/davetashner/stringer/internal/signal"
 )
 
-// mavenSearchBaseURL is the default Maven Central search URL.
+// mavenSearchBaseURL is the Maven Central search URL, used only as a
+// fallback: search.maven.org/solrsearch answers in ~20s per query and
+// throttles concurrent clients (stringer-jfh.3).
 const mavenSearchBaseURL = "https://search.maven.org/solrsearch"
+
+// mavenMetadataBaseURL is the CDN-backed Maven Central repository root. Each
+// artifact's maven-metadata.xml under it lists every version and the last
+// deployment time and answers in well under a second.
+const mavenMetadataBaseURL = "https://repo1.maven.org/maven2"
+
+// mavenLastUpdatedLayout is the <lastUpdated> format in maven-metadata.xml
+// (yyyyMMddHHmmss, UTC).
+const mavenLastUpdatedLayout = "20060102150405"
 
 // mavenRegistryClient fetches package metadata from Maven Central.
 type mavenRegistryClient interface {
@@ -22,6 +37,7 @@ type mavenRegistryClient interface {
 }
 
 // mavenArtifactInfo represents the subset of Maven Central search response we need.
+// The metadata path synthesises the same shape so checkMavenDeps has one contract.
 type mavenArtifactInfo struct {
 	Response struct {
 		NumFound int             `json:"numFound"`
@@ -37,28 +53,151 @@ type mavenArtifact struct {
 	Timestamp  int64  `json:"timestamp"` // millis since epoch
 }
 
-// realMavenRegistryClient queries the real Maven Central search API.
-type realMavenRegistryClient struct {
-	httpClient *http.Client
-	baseURL    string
+// mavenMetadata is the subset of maven-metadata.xml we read.
+type mavenMetadata struct {
+	GroupID    string `xml:"groupId"`
+	ArtifactID string `xml:"artifactId"`
+	Versioning struct {
+		Latest      string   `xml:"latest"`
+		Release     string   `xml:"release"`
+		Versions    []string `xml:"versions>version"`
+		LastUpdated string   `xml:"lastUpdated"`
+	} `xml:"versioning"`
 }
 
-// FetchArtifact queries Maven Central for an artifact's metadata.
-func (c *realMavenRegistryClient) FetchArtifact(ctx context.Context, groupID, artifactID string) (*mavenArtifactInfo, error) {
-	base := c.baseURL
-	if base == "" {
-		base = mavenSearchBaseURL
-	}
-	url := fmt.Sprintf("%s/select?q=g:%%22%s%%22+AND+a:%%22%s%%22&rows=1&wt=json", base, groupID, artifactID)
+// empty reports whether the metadata carries no versioning information at
+// all, in which case the search API is consulted instead.
+func (m *mavenMetadata) empty() bool {
+	v := m.Versioning
+	return v.Latest == "" && v.Release == "" && len(v.Versions) == 0 && v.LastUpdated == ""
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+// latestVersion picks the newest published version: <release> first, then a
+// non-SNAPSHOT <latest>, then the last non-SNAPSHOT entry in <versions>, and
+// only when nothing else exists a SNAPSHOT.
+func (m *mavenMetadata) latestVersion() string {
+	v := m.Versioning
+	if v.Release != "" {
+		return v.Release
+	}
+	if v.Latest != "" && !isMavenSnapshot(v.Latest) {
+		return v.Latest
+	}
+	for i := len(v.Versions) - 1; i >= 0; i-- {
+		if !isMavenSnapshot(v.Versions[i]) {
+			return v.Versions[i]
+		}
+	}
+	if v.Latest != "" {
+		return v.Latest
+	}
+	if n := len(v.Versions); n > 0 {
+		return v.Versions[n-1]
+	}
+	return ""
+}
+
+func isMavenSnapshot(version string) bool {
+	return strings.HasSuffix(strings.ToUpper(version), "-SNAPSHOT")
+}
+
+// errMavenMetadataUnusable marks a metadata response that should be retried
+// through the search API: a 404 (artifact not on Central under that path),
+// malformed XML, or a document without a versioning block.
+var errMavenMetadataUnusable = errors.New("maven metadata unusable")
+
+// realMavenRegistryClient queries Maven Central: the repository's
+// maven-metadata.xml first, the search API only as a fallback.
+type realMavenRegistryClient struct {
+	httpClient *http.Client
+	baseURL    string // search API root; mavenSearchBaseURL when empty
+	metaURL    string // repository root; mavenMetadataBaseURL when empty
+}
+
+// FetchArtifact returns an artifact's latest version and last-updated time.
+// Any error other than an unusable metadata document (network failure,
+// timeout, 5xx) is returned as-is so a slow registry is not queried twice
+// within one lookup deadline.
+func (c *realMavenRegistryClient) FetchArtifact(ctx context.Context, groupID, artifactID string) (*mavenArtifactInfo, error) {
+	info, err := c.fetchMetadata(ctx, groupID, artifactID)
+	if err == nil {
+		return info, nil
+	}
+	if !errors.Is(err, errMavenMetadataUnusable) {
+		return nil, err
+	}
+	return c.fetchSearch(ctx, groupID, artifactID)
+}
+
+// fetchMetadata reads <root>/<group path>/<artifact>/maven-metadata.xml.
+func (c *realMavenRegistryClient) fetchMetadata(ctx context.Context, groupID, artifactID string) (*mavenArtifactInfo, error) {
+	base := c.metaURL
+	if base == "" {
+		base = mavenMetadataBaseURL
+	}
+	segments := strings.Split(groupID, ".")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	u := fmt.Sprintf("%s/%s/%s/maven-metadata.xml", base, strings.Join(segments, "/"), url.PathEscape(artifactID))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
 	resp, err := registryHTTPClient(c.httpClient).Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetching %s: %w", url, err)
+		return nil, fmt.Errorf("fetching %s: %w", u, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%w: %s:%s not found at %s", errMavenMetadataUnusable, groupID, artifactID, base)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("maven metadata returned %d for %s:%s", resp.StatusCode, groupID, artifactID)
+	}
+
+	var meta mavenMetadata
+	if err := xml.NewDecoder(io.LimitReader(resp.Body, maxRegistryResponseBytes)).Decode(&meta); err != nil {
+		return nil, fmt.Errorf("%w: decoding metadata for %s:%s: %w", errMavenMetadataUnusable, groupID, artifactID, err)
+	}
+	if meta.empty() {
+		return nil, fmt.Errorf("%w: no versioning for %s:%s", errMavenMetadataUnusable, groupID, artifactID)
+	}
+
+	doc := mavenArtifact{GroupID: groupID, ArtifactID: artifactID, Version: meta.latestVersion()}
+	if meta.Versioning.LastUpdated != "" {
+		t, err := time.ParseInLocation(mavenLastUpdatedLayout, strings.TrimSpace(meta.Versioning.LastUpdated), time.UTC)
+		if err != nil {
+			return nil, fmt.Errorf("%w: lastUpdated %q for %s:%s: %w", errMavenMetadataUnusable, meta.Versioning.LastUpdated, groupID, artifactID, err)
+		}
+		doc.Timestamp = t.UnixMilli()
+	}
+
+	info := &mavenArtifactInfo{}
+	info.Response.NumFound = 1
+	info.Response.Docs = []mavenArtifact{doc}
+	return info, nil
+}
+
+// fetchSearch queries the Maven Central search API for an artifact's metadata.
+func (c *realMavenRegistryClient) fetchSearch(ctx context.Context, groupID, artifactID string) (*mavenArtifactInfo, error) {
+	base := c.baseURL
+	if base == "" {
+		base = mavenSearchBaseURL
+	}
+	u := fmt.Sprintf("%s/select?q=g:%%22%s%%22+AND+a:%%22%s%%22&rows=1&wt=json", base, groupID, artifactID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+
+	resp, err := registryHTTPClient(c.httpClient).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching %s: %w", u, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 

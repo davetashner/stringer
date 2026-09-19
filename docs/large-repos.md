@@ -42,6 +42,13 @@ Each lookup that hits the limit logs a WARN line naming the ecosystem and
 package, and the collector reports the total as `TimedOut` in its metrics.
 Raise `registry_timeout` on a slow network to retry them.
 
+Maven, Gradle and sbt artifacts are checked against the CDN-backed
+`https://repo1.maven.org/maven2/<group path>/<artifact>/maven-metadata.xml`,
+which answers in well under a second. The `search.maven.org` solrsearch API
+(~20s per query, throttled under concurrency) is only used as a fallback when
+an artifact has no metadata there, so a Gradle build with dozens of
+dependencies finishes in seconds instead of timing out most lookups.
+
 ## Duplication Collector
 
 The duplication collector caps file input at 10,000 files and output at 200
