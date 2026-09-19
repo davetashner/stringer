@@ -72,7 +72,8 @@ type CollectorConfig struct {
 	DuplicationMinTestLines int `yaml:"duplication_min_test_lines,omitempty"`
 
 	// Dead code collector settings.
-	DeadcodeMaxFiles int `yaml:"deadcode_max_files,omitempty"`
+	DeadcodeMaxFiles int   `yaml:"deadcode_max_files,omitempty"`
+	IncludePublicAPI *bool `yaml:"include_public_api,omitempty"`
 
 	// Coupling collector settings.
 	CouplingFanOutThreshold int      `yaml:"coupling_fan_out_threshold,omitempty"`

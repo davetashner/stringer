@@ -381,6 +381,43 @@ func TestCollectorsInfo_ThresholdsWithConfig(t *testing.T) {
 	assert.Contains(t, out, "12")
 }
 
+func TestCollectorsInfo_ThresholdsBoolPointer_Deadcode(t *testing.T) {
+	dir := t.TempDir()
+	yamlContent := "collectors:\n  deadcode:\n    include_public_api: true\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, config.FileName), []byte(yamlContent), 0o600))
+
+	origDir, _ := os.Getwd()
+	require.NoError(t, os.Chdir(dir))
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	stdout := new(bytes.Buffer)
+	rootCmd.SetOut(stdout)
+	rootCmd.SetArgs([]string{"collectors", "info", "deadcode", "--json"})
+	require.NoError(t, rootCmd.Execute())
+
+	var result map[string]interface{}
+	require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
+	thresholds, ok := result["thresholds"].([]interface{})
+	require.True(t, ok)
+	var found bool
+	for _, th := range thresholds {
+		m := th.(map[string]interface{})
+		if m["name"] == "include_public_api" {
+			found = true
+			assert.Equal(t, "false", m["default"])
+			assert.Equal(t, "true", m["current"], "pointer bools render their value, not an address")
+			assert.Equal(t, "collectors.deadcode.include_public_api", m["config_key"])
+		}
+	}
+	assert.True(t, found, "include_public_api threshold listed")
+
+	// Text mode lists the key under configuration options.
+	stdout.Reset()
+	rootCmd.SetArgs([]string{"collectors", "info", "deadcode"})
+	require.NoError(t, rootCmd.Execute())
+	assert.Contains(t, stdout.String(), "include_public_api")
+}
+
 func TestCollectorsInfo_JSONOutput(t *testing.T) {
 	dir := t.TempDir()
 	origDir, _ := os.Getwd()

@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -42,6 +43,13 @@ type DeadCodeMetrics struct {
 	SymbolsFound       int
 	DeadSymbols        int
 	SkippedCapExceeded bool
+	// IsLibrary reports whether the repository was classified as a library
+	// (manifest marker or no application entry point).
+	IsLibrary bool
+	// PublicSuppressed counts exported symbols of a library repository that
+	// looked unreferenced but were not reported because include_public_api
+	// is false.
+	PublicSuppressed int
 }
 
 // DeadCodeCollector detects unused functions and types using regex-based
@@ -297,6 +305,7 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 	idx := buildSymbolIndex(files, symbols)
 	var signals []signal.RawSignal
 	deadCount := 0
+	publicSuppressed := 0
 
 	for i := range symbols {
 		if err := ctx.Err(); err != nil {
@@ -313,7 +322,14 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 			continue
 		}
 
+		// A library's exported symbols exist for downstream consumers the
+		// reference search cannot see; they are counted, not reported,
+		// unless include_public_api opts back into the 0.3 tier (stringer-jfh.2).
 		publicAPI := isLibrary && sym.Exported && !sym.InInternal && !sym.InTest
+		if publicAPI && !opts.IncludePublicAPI {
+			publicSuppressed++
+			continue
+		}
 		conf := deadCodeConfidence(sym, testOnly, publicAPI)
 		if conf < opts.MinConfidence {
 			continue
@@ -350,6 +366,11 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 		SymbolsFound:       len(symbols),
 		DeadSymbols:        deadCount,
 		SkippedCapExceeded: capExceeded,
+		IsLibrary:          isLibrary,
+		PublicSuppressed:   publicSuppressed,
+	}
+	if publicSuppressed > 0 {
+		slog.Info("deadcode: public symbols not reported (library repo; set collectors.deadcode.include_public_api to see them)", "count", publicSuppressed)
 	}
 
 	// Enrich signals with timestamps from git log.

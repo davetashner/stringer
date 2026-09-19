@@ -148,7 +148,7 @@ func TestInternalHelper(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "lib_test.go"), []byte(testFile), 0o600))
 
 	c := &DeadCodeCollector{}
-	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{IncludePublicAPI: true})
 	require.NoError(t, err)
 
 	found := false
@@ -499,7 +499,7 @@ func UnusedPublicExport() {}
 	require.NoError(t, os.WriteFile(filepath.Join(pkgDir, "lib.go"), []byte(goCode), 0o600))
 
 	c := &DeadCodeCollector{}
-	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{IncludePublicAPI: true})
 	require.NoError(t, err)
 
 	found := false
@@ -871,7 +871,7 @@ obj = UsedClass.new
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.rb"), []byte(rbCode), 0o600))
 
 	c := &DeadCodeCollector{}
-	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{IncludePublicAPI: true})
 	require.NoError(t, err)
 
 	foundUnused := false
@@ -902,7 +902,7 @@ $svc = new UsedService();
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.php"), []byte(phpCode), 0o600))
 
 	c := &DeadCodeCollector{}
-	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{IncludePublicAPI: true})
 	require.NoError(t, err)
 
 	foundUnused := false
@@ -962,7 +962,7 @@ val svc = new UsedService()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "App.scala"), []byte(scalaCode), 0o600))
 
 	c := &DeadCodeCollector{}
-	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{IncludePublicAPI: true})
 	require.NoError(t, err)
 
 	foundUnused := false
@@ -992,7 +992,7 @@ UsedServer.start()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "app.ex"), []byte(exCode), 0o600))
 
 	c := &DeadCodeCollector{}
-	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{})
+	signals, err := c.Collect(context.Background(), dir, signal.CollectorOpts{IncludePublicAPI: true})
 	require.NoError(t, err)
 
 	foundUnused := false

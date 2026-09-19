@@ -553,6 +553,23 @@ func TestMerge_IncludeTestsFromFile(t *testing.T) {
 	assert.True(t, result.CollectorOpts["complexity"].IncludeTests)
 }
 
+func TestMerge_IncludePublicAPIFromFile(t *testing.T) {
+	boolTrue, boolFalse := true, false
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"deadcode":   {IncludePublicAPI: &boolTrue},
+			"complexity": {IncludePublicAPI: &boolFalse},
+		},
+	}
+	result := Merge(fileCfg, signal.ScanConfig{})
+	assert.True(t, result.CollectorOpts["deadcode"].IncludePublicAPI)
+	assert.False(t, result.CollectorOpts["complexity"].IncludePublicAPI)
+
+	// Unset defaults to false.
+	result = Merge(&Config{Collectors: map[string]CollectorConfig{"deadcode": {}}}, signal.ScanConfig{})
+	assert.False(t, result.CollectorOpts["deadcode"].IncludePublicAPI)
+}
+
 func TestMerge_IncludeTestsDefaultFalse(t *testing.T) {
 	boolFalse := false
 	fileCfg := &Config{

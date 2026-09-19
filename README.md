@@ -258,6 +258,8 @@ collectors:
     coupling_fan_out_threshold: 15
   duplication:
     duplication_min_test_lines: 12  # drop test-only clones shorter than this
+  deadcode:
+    include_public_api: false  # library repos: report exported symbols at 0.3 (default: suppressed)
   dephealth:
     registry_timeout: 10s      # per-lookup limit for npm/Maven/PyPI/... registries (was 30s)
     registry_concurrency: 8    # parallel registry lookups per ecosystem

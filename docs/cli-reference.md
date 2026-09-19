@@ -192,7 +192,7 @@ stringer collectors info duplication --json  # machine-readable with thresholds
 | `list` | Show all collectors with name, status, and description |
 | `info <name>` | Show detailed info including signal types, config options, and tunable thresholds |
 
-Thresholds are set per collector in `.stringer.yaml` under `collectors.<name>.<key>` (or with `stringer config set`). For example, `dephealth` exposes `registry_timeout` (per-lookup registry limit, default `10s`) and `registry_concurrency` (parallel lookups per ecosystem, default `8`); see [Large Repository Guidance](large-repos.md#registry-lookups-dephealth).
+Thresholds are set per collector in `.stringer.yaml` under `collectors.<name>.<key>` (or with `stringer config set`). For example, `dephealth` exposes `registry_timeout` (per-lookup registry limit, default `10s`) and `registry_concurrency` (parallel lookups per ecosystem, default `8`); see [Large Repository Guidance](large-repos.md#registry-lookups-dephealth). `deadcode` exposes `deadcode_max_files` (default `10000`), `include_tests` (report symbols defined in test files, default `false`) and `include_public_api` (default `false`: in a library repository — manifest marker or no application entry point — exported symbols are not reported, and the scan logs how many were suppressed; set `true` to emit them at confidence 0.3 tagged `public-api`).
 
 ## Exit codes
 
