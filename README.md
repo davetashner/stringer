@@ -120,21 +120,21 @@ signals at confidence 0.8 or above, the ones worth acting on first.
 
 | Repository | Language | Files | Signals | High | Scan | Highlights |
 |------------|----------|------:|--------:|-----:|-----:|------------|
-| [gin](https://github.com/gin-gonic/gin) | Go | 130 | 166 | 8% | 2s | 39 complex functions, 4 lottery risks, 1 CVE |
-| [express](https://github.com/expressjs/express) | JS | 214 | 97 | 0% | 2s | 2 CVE floors, 4 lottery risks, 1 revert |
+| [gin](https://github.com/gin-gonic/gin) | Go | 130 | 165 | 8% | 3s | 39 complex functions, 4 lottery risks, 1 CVE |
+| [express](https://github.com/expressjs/express) | JS | 214 | 97 | 0% | 3s | 2 CVE floors, 4 lottery risks, 1 revert |
 | [flask](https://github.com/pallets/flask) | Python | 236 | 100 | 0% | 2s | 9 vulnerable version floors, 14 complex functions, 3 lottery risks |
-| [rustlings](https://github.com/rust-lang/rustlings) | Rust | 293 | 356 | 1% | 3s | 141 TODOs, 62 coverage gaps, 30 lottery risks |
-| [tokio](https://github.com/tokio-rs/tokio) | Rust | 874 | 1,141 | 1% | 21s | 15 vulnerable deps, 2 yanked crates, 90 reverts and churn hotspots |
-| [jellyfin](https://github.com/jellyfin/jellyfin) | C# | 2,619 | 2,969 | 11% | 35s | 915 complex functions, 227 dead code hits, 42 coupling issues |
-| [fastapi](https://github.com/tiangolo/fastapi) | Python | 3,139 | 407 | 12% | 7s | 67 complex functions, 35 lottery risks, 7 vulnerable deps |
-| [laravel](https://github.com/laravel/framework) | PHP | 3,414 | 1,589 | 2% | 18s | 34 vulnerable deps, 364 dead code hits, 261 complex functions |
-| [react](https://github.com/facebook/react) | JS/TS | 7,245 | 5,587 | 9% | 1m 46s | 1,020 TODOs, 86 vulnerable deps, 29 coupling issues |
-| [django](https://github.com/django/django) | Python | 7,091 | 1,293 | 13% | 21s | 520 complex functions, 15 coupling issues, 76 git hygiene issues |
-| [kafka](https://github.com/apache/kafka) | Java/Scala | 7,558 | 4,509 | 8% | 1m 09s | 1,367 complex functions, 2,077 coverage gaps, 594 dead code hits |
-| [next.js](https://github.com/vercel/next.js) | JS/TS | 32,691 | 5,027 | 9% | 9m 40s | 1,093 complex functions, 176 churn hotspots, 92 vulnerable deps |
-| [kubernetes](https://github.com/kubernetes/kubernetes) | Go | 31,379 | 28,388 | 10% | 34m 43s | 8,823 complex functions, 3,522 TODOs, 97 vulnerable deps |
+| [rustlings](https://github.com/rust-lang/rustlings) | Rust | 293 | 356 | 1% | 5s | 141 TODOs, 62 coverage gaps, 30 lottery risks |
+| [tokio](https://github.com/tokio-rs/tokio) | Rust | 874 | 1,089 | 1% | 20s | 15 vulnerable deps, 2 yanked crates, 4 reverts |
+| [jellyfin](https://github.com/jellyfin/jellyfin) | C# | 2,619 | 2,969 | 11% | 58s | 915 complex functions, 227 dead code hits, 42 coupling issues |
+| [fastapi](https://github.com/tiangolo/fastapi) | Python | 3,139 | 408 | 12% | 13s | 67 complex functions, 35 lottery risks, 7 vulnerable deps |
+| [framework](https://github.com/laravel/framework) | PHP | 3,414 | 1,589 | 2% | 28s | 34 vulnerable deps, 364 dead code hits, 261 complex functions |
+| [react](https://github.com/facebook/react) | JS/TS | 7,245 | 5,568 | 9% | 1m 11s | 1,020 TODOs, 86 vulnerable deps, 29 coupling issues |
+| [django](https://github.com/django/django) | Python | 7,091 | 1,293 | 13% | 25s | 520 complex functions, 15 coupling issues, 76 git hygiene issues |
+| [kafka](https://github.com/apache/kafka) | Java/Scala | 7,558 | 4,514 | 8% | 1m 11s | 1,367 complex functions, 2,077 coverage gaps, 5 stale dependencies |
+| [next.js](https://github.com/vercel/next.js) | JS/TS | 32,691 | 4,922 | 10% | 1m 39s | 1,093 complex functions, 92 vulnerable deps, 79 coupling issues |
+| [kubernetes](https://github.com/kubernetes/kubernetes) | Go | 31,379 | 17,694 | 10% | 10m 59s | 5,939 complex functions, 2,520 TODOs, 97 vulnerable deps |
 
-<sub>Tested 2026-09-19 on a build of main at d85a249 (post v1.10.0, after the accuracy and performance fixes in PRs #431 to #454) on a 10-core Apple Silicon laptop. Repos cloned with `--depth 100`, GitHub collector excluded. Scan is the collector phase of `stringer scan`; `stringer report` takes about the same. Lottery-risk signals on shallow clones are capped at 0.5 and annotated. The v1.10.0 numbers, the method, per-collector counts, commit SHAs and the false-positive review are in [docs/research/benchmark-2026-09.md](docs/research/benchmark-2026-09.md).</sub>
+<sub>Tested 2026-09-19 on a build of main at 0e10cf5 (post v1.10.0, after the accuracy and performance fixes in PRs #431 to #459) on a 10-core Apple Silicon laptop. Repos cloned with `--depth 100`, GitHub collector excluded. Scan is the collector phase of `stringer scan`; `stringer report` takes about the same. Lottery-risk signals on shallow clones are capped at 0.5 and annotated. The v1.10.0 numbers, the method, per-collector counts, commit SHAs and the false-positive review are in [docs/research/benchmark-2026-09.md](docs/research/benchmark-2026-09.md).</sub>
 
 Signal counts are dominated by three collectors (complexity, missing tests,
 duplication) and the "High" column is small by design: most signals are
@@ -142,7 +142,7 @@ low-confidence hints, and a repository with nothing above 0.8 reads as 0%.
 Start with `--min-confidence 0.8`, or let the report rank them. Compared
 with v1.10.0 these fixes cut signal totals by 29% to 70% on every repository
 except jellyfin (which gained C# support) and took Kafka's scan from 52
-minutes to 69 seconds and kubernetes from two hours to 35 minutes.
+minutes to 71 seconds and kubernetes from two hours to 11 minutes.
 
 On a large repo, preview first and cap the output:
 
