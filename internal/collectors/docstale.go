@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/davetashner/stringer/internal/collector"
 	"github.com/davetashner/stringer/internal/gitcli"
@@ -197,10 +198,11 @@ func (c *DocStaleCollector) Collect(ctx context.Context, repoPath string, opts s
 	}
 
 	// Signal 2: doc-code-drift — co-change ratio analysis.
-	since := opts.GitSince
-	if since == "" {
-		since = "1y"
+	sinceSpec := opts.GitSince
+	if sinceSpec == "" {
+		sinceSpec = "1y"
 	}
+	since := gitSinceArg(sinceSpec, time.Now())
 	depth := opts.GitDepth
 	if depth == 0 {
 		depth = 1000
