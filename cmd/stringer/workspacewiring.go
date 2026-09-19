@@ -20,7 +20,17 @@ type workspaceEntry struct {
 	Name string // workspace name (empty for non-monorepo)
 	Path string // absolute path to scan
 	Rel  string // relative to monorepo root ("." for single-dir)
+
+	// Members holds the absolute path of every workspace the monorepo
+	// declares, the scanned entries first, so that a --workspace filter
+	// still lets the root workspace leave member files to their owners.
+	// Nil for non-monorepo scans.
+	Members []string
 }
+
+// workspaceScopedCollectors read repository-wide git history and need the
+// workspace layout to scope their signals to one workspace.
+var workspaceScopedCollectors = []string{"gitlog", "lotteryrisk"}
 
 // resolveWorkspaces determines the list of workspace entries to scan based on
 // auto-detection results and CLI flags. When noWorkspaces is true or no layout
@@ -51,6 +61,7 @@ func resolveWorkspaces(rootPath string, noWorkspaces bool, workspaceFilter strin
 	}
 
 	// Apply --workspace filter if set.
+	all := entries
 	if workspaceFilter != "" {
 		entries = filterWorkspaceEntries(entries, workspaceFilter)
 	}
@@ -60,7 +71,52 @@ func resolveWorkspaces(rootPath string, noWorkspaces bool, workspaceFilter strin
 		return []workspaceEntry{{Path: rootPath, Rel: "."}}
 	}
 
+	members := workspaceMemberPaths(entries, all)
+	for i := range entries {
+		entries[i].Members = members
+	}
 	return entries
+}
+
+// workspaceMemberPaths lists the absolute path of every workspace in all,
+// with the scanned entries first in scan order.
+func workspaceMemberPaths(scanned, all []workspaceEntry) []string {
+	members := make([]string, 0, len(all))
+	seen := make(map[string]bool, len(all))
+	for _, list := range [][]workspaceEntry{scanned, all} {
+		for _, e := range list {
+			if !seen[e.Path] {
+				seen[e.Path] = true
+				members = append(members, e.Path)
+			}
+		}
+	}
+	return members
+}
+
+// applyWorkspaceMembers tells the workspace-scoped collectors which
+// workspaces the monorepo has, as paths relative to gitRoot, so they emit
+// each repository-wide signal once. Non-monorepo entries change nothing.
+func applyWorkspaceMembers(cfg *signal.ScanConfig, ws workspaceEntry, gitRoot string) {
+	if len(ws.Members) == 0 {
+		return
+	}
+	members := make([]string, 0, len(ws.Members))
+	for _, abs := range ws.Members {
+		rel, err := filepath.Rel(gitRoot, abs)
+		if err != nil {
+			continue
+		}
+		members = append(members, rel)
+	}
+	if cfg.CollectorOpts == nil {
+		cfg.CollectorOpts = make(map[string]signal.CollectorOpts)
+	}
+	for _, name := range workspaceScopedCollectors {
+		co := cfg.CollectorOpts[name]
+		co.WorkspaceMembers = members
+		cfg.CollectorOpts[name] = co
+	}
 }
 
 // filterWorkspaceEntries keeps only entries whose Name matches one of the

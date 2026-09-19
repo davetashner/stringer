@@ -133,25 +133,33 @@ func (c *GitlogCollector) Collect(ctx context.Context, repoPath string, opts sig
 	var signals []signal.RawSignal
 
 	// Reverts and churn data come from a single commit walk, shared across
-	// the workspaces of a monorepo scan.
+	// the workspaces of a monorepo scan. The walk is repository-wide, so
+	// each workspace keeps only the signals for its own files, with paths
+	// relative to the workspace; the caller prefixes them with the
+	// workspace path afterwards. Metrics stay repository-wide.
 	hist, err := c.loadHistory(ctx, repo, gitRoot, opts)
 	if err != nil {
 		return nil, fmt.Errorf("walking commits: %w", err)
 	}
-	reverts := cloneSignals(hist.reverts)
+	scope := newWorkspaceScope(repoPath, gitRoot, opts.WorkspaceMembers)
+	reverts := scope.filterSignals(cloneSignals(hist.reverts))
 	signals = append(signals, reverts...)
-	signals = append(signals, buildChurnSignals(hist.fileChanges, hist.fileAuthors)...)
+	signals = append(signals, scope.filterSignals(buildChurnSignals(hist.fileChanges, hist.fileAuthors))...)
 
 	// Check context before stale-branch scan.
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
+	// Stale branches are repository-wide: in a monorepo only the first
+	// scanned workspace emits them, so they appear once per scan.
 	staleBranches, err := c.detectStaleBranches(ctx, repo)
 	if err != nil {
 		return nil, fmt.Errorf("detecting stale branches: %w", err)
 	}
-	signals = append(signals, staleBranches...)
+	if scope.repoWide() {
+		signals = append(signals, staleBranches...)
+	}
 
 	// Build metrics from all files (not just above-threshold).
 	var churns []FileChurn
@@ -169,7 +177,7 @@ func (c *GitlogCollector) Collect(ctx context.Context, repoPath string, opts sig
 
 	c.metrics = &GitlogMetrics{
 		FileChurns:       churns,
-		RevertCount:      len(reverts),
+		RevertCount:      len(hist.reverts),
 		StaleBranchCount: len(staleBranches),
 	}
 

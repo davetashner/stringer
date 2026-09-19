@@ -102,19 +102,23 @@ func TestGitlogCollector_CachedWorkspaceOutputMatchesUncached(t *testing.T) {
 	assert.Equal(t, sigBFresh, sigBCached, "cached workspace signals must equal the uncached walk")
 	assert.Equal(t, metricsBFresh, metricsBCached, "cached workspace metrics must equal the uncached walk")
 
-	// gitlog signals are repository-wide and stamped per workspace by the
-	// caller, so both workspaces see the same repo-root-relative paths.
-	assert.Equal(t, sigA, sigBCached)
+	// The shared history is repository-wide, so metrics agree across
+	// workspaces, while each workspace keeps only its own files with
+	// workspace-relative paths (stringer-nxx.17).
 	assert.Equal(t, metricsA, metricsBCached)
+	require.Len(t, filterByKind(sigA, "churn"), 1)
+	assert.Equal(t, "hot.go", filterByKind(sigA, "churn")[0].FilePath)
+	assert.Empty(t, filterByKind(sigA, "revert"), "pkg/a does not own the reverted file")
 
-	require.Len(t, filterByKind(sigBCached, "churn"), 1)
-	assert.Equal(t, "pkg/a/hot.go", filterByKind(sigBCached, "churn")[0].FilePath)
+	assert.Empty(t, filterByKind(sigBCached, "churn"), "pkg/b does not own the churned file")
 	require.Len(t, filterByKind(sigBCached, "revert"), 1)
-	assert.Equal(t, "pkg/b/b.go", filterByKind(sigBCached, "revert")[0].FilePath)
+	assert.Equal(t, "b.go", filterByKind(sigBCached, "revert")[0].FilePath)
+	// Without a member list every workspace is repository-wide for stale branches.
 	require.Len(t, filterByKind(sigBCached, "stale-branch"), 1)
 	assert.Equal(t, "old-feature", filterByKind(sigBCached, "stale-branch")[0].FilePath)
 	assert.Equal(t, 1, metricsBCached.RevertCount)
 	assert.Equal(t, 1, metricsBCached.StaleBranchCount)
+	assert.Len(t, metricsBCached.FileChurns, 2, "metrics cover the whole repository")
 }
 
 func TestGitlogCollector_CacheKeyCoversWalkOptions(t *testing.T) {
@@ -190,7 +194,7 @@ func TestGitlogCollector_ConcurrentWorkspacesShareOneWalk(t *testing.T) {
 
 	for i := 0; i < n; i++ {
 		require.NoError(t, errs[i])
-		assert.Equal(t, results[0], results[i], "every workspace must see the same history")
+		assert.Equal(t, results[i%2], results[i], "every run of a workspace must see the same history")
 	}
 	hits, misses := gitlogHistories.stats()
 	assert.Equal(t, 1, misses, "concurrent collectors must share a single walk")
@@ -203,7 +207,7 @@ func TestGitlogCollector_CachedSignalsAreIndependentCopies(t *testing.T) {
 	t.Cleanup(resetGitlogHistoryCache)
 
 	c := &GitlogCollector{}
-	first, _ := collectWorkspace(t, c, root, "pkg/a", signal.CollectorOpts{})
+	first, _ := collectWorkspace(t, c, root, "pkg/b", signal.CollectorOpts{})
 	reverts := filterByKind(first, "revert")
 	require.Len(t, reverts, 1)
 	reverts[0].Tags[0] = "mutated"
@@ -212,7 +216,7 @@ func TestGitlogCollector_CachedSignalsAreIndependentCopies(t *testing.T) {
 	second, _ := collectWorkspace(t, c, root, "pkg/b", signal.CollectorOpts{})
 	got := filterByKind(second, "revert")
 	require.Len(t, got, 1)
-	assert.Equal(t, "pkg/b/b.go", got[0].FilePath)
+	assert.Equal(t, "b.go", got[0].FilePath)
 	assert.Equal(t, []string{"revert", "historical-path"}, got[0].Tags)
 }
 

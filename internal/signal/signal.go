@@ -71,6 +71,13 @@ type CollectorOpts struct {
 	// from RepoPath when scanning a subdirectory.
 	GitRoot string
 
+	// WorkspaceMembers lists every workspace of a monorepo scan as a path
+	// relative to GitRoot (or to RepoPath when GitRoot is empty), the
+	// scanned workspaces first. Collectors that read repository-wide git
+	// history (gitlog, lotteryrisk) use it to scope their signals to the
+	// workspace being scanned. Empty outside monorepo scans.
+	WorkspaceMembers []string
+
 	// GitDepth caps the number of commits walked. 0 uses default (1000).
 	GitDepth int
 
