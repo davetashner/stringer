@@ -429,8 +429,14 @@ func shouldExclude(relPath string, patterns []string) bool {
 //	*.min.js         filename at any depth
 //	**/compiled/**   same as compiled/** (explicit any-depth prefix)
 //	**/gen/*.go      path suffix at any depth
+//	/api/**          anchored: the api directory at the root only, never
+//	                 an interior internal/api (used for nested workspaces)
+//	/docs/*.md       anchored: a glob matched against the whole path only
 func matchesExcludePattern(relPath, pattern string) bool {
 	sep := string(filepath.Separator)
+	if anchored, ok := strings.CutPrefix(pattern, "/"); ok {
+		return matchesAnchoredExclude(relPath, anchored)
+	}
 	if rest, ok := strings.CutPrefix(pattern, "**/"); ok {
 		if matchesExcludePattern(relPath, rest) {
 			return true
@@ -472,6 +478,19 @@ func matchesExcludePattern(relPath, pattern string) bool {
 		}
 	}
 	return false
+}
+
+// matchesAnchoredExclude matches pattern (an exclude glob with its leading
+// "/" removed) against relPath from the walk root only. "dir/**" covers the
+// directory itself and everything below it; any other glob is matched
+// against the whole path, never against interior segments or the basename.
+func matchesAnchoredExclude(relPath, pattern string) bool {
+	if dir, ok := strings.CutSuffix(pattern, "/**"); ok {
+		dir = filepath.FromSlash(dir)
+		return relPath == dir || strings.HasPrefix(relPath, dir+string(filepath.Separator))
+	}
+	matched, err := filepath.Match(filepath.FromSlash(pattern), relPath)
+	return err == nil && matched
 }
 
 // matchesAny returns true if relPath matches any of the given glob patterns.
