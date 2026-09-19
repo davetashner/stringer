@@ -472,7 +472,7 @@ Optional but valuable:
 | `Archived Deps Check` | Warns if any GitHub-hosted dependencies are archived |
 | `PR Size Guard` | Warns at 500 lines, fails at 1000 non-test lines (PRs only) |
 | `Doc Staleness` | AGENTS.md interface code blocks match source; warns on internal Go changes without doc update (PRs only) |
-| `Fuzz` | Fuzz testing for input parsing (mcpserver, config, beads) |
+| `Fuzz` | Fuzz testing for input parsing (mcpserver, config, beads); pinned to Go 1.27+ because older `internal/fuzz` spuriously fails with `context deadline exceeded` at the `-fuzztime` boundary ([go#75804](https://go.dev/issue/75804)) |
 | `Backlog Health` | Beads backlog consistency checks |
 | `Analyze` / `CodeQL` | Static analysis and security scanning |
 
