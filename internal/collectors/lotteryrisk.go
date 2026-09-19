@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -247,7 +248,7 @@ func discoverDirectories(ctx context.Context, repoPath string, maxDepth int, exc
 			return err
 		}
 
-		relPath, relErr := filepath.Rel(repoPath, path)
+		relPath, relErr := relSlash(repoPath, path)
 		if relErr != nil {
 			return nil
 		}
@@ -272,7 +273,7 @@ func discoverDirectories(ctx context.Context, repoPath string, maxDepth int, exc
 			return filepath.SkipDir
 		}
 
-		depth := strings.Count(relPath, string(filepath.Separator))
+		depth := strings.Count(relPath, "/")
 		if relPath != "." {
 			depth++ // "internal" is depth 1, "internal/collectors" is depth 2
 		}
@@ -323,12 +324,12 @@ func blameDirectories(ctx context.Context, repoPath string, ownership map[string
 		if d.IsDir() {
 			base := filepath.Base(path)
 			if strings.HasPrefix(base, ".") {
-				relPath, _ := filepath.Rel(repoPath, path)
+				relPath, _ := relSlash(repoPath, path)
 				if relPath != "." {
 					return filepath.SkipDir
 				}
 			}
-			relPath, _ := filepath.Rel(repoPath, path)
+			relPath, _ := relSlash(repoPath, path)
 			if shouldExclude(relPath, excludes) || scope.nestedDir(relPath) {
 				return filepath.SkipDir
 			}
@@ -338,7 +339,7 @@ func blameDirectories(ctx context.Context, repoPath string, ownership map[string
 			return nil
 		}
 
-		relPath, relErr := filepath.Rel(repoPath, path)
+		relPath, relErr := relSlash(repoPath, path)
 		if relErr != nil {
 			return nil
 		}
@@ -535,14 +536,14 @@ func recencyDecay(daysOld float64) float64 {
 // findOwningDir returns the most specific directory in the ownership map
 // that contains the given file path, or empty string if none match.
 func findOwningDir(relPath string, ownership map[string]*dirOwnership) string {
-	dir := filepath.Dir(relPath)
+	dir := path.Dir(filepath.ToSlash(relPath))
 
 	// Walk up from the file's directory to find the deepest matching dir.
 	for dir != "" {
 		if _, ok := ownership[dir]; ok {
 			return dir
 		}
-		parent := filepath.Dir(dir)
+		parent := path.Dir(dir)
 		if parent == dir {
 			break
 		}

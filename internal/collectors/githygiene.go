@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -109,7 +110,7 @@ func (c *GitHygieneCollector) Collect(ctx context.Context, repoPath string, opts
 			return err
 		}
 
-		relPath, relErr := filepath.Rel(repoPath, path)
+		relPath, relErr := relSlash(repoPath, path)
 		if relErr != nil {
 			return nil
 		}
@@ -339,13 +340,14 @@ func parseLFSPatterns(repoPath string) []string {
 // isLFSTracked returns true if the given relative path matches any of the
 // LFS glob patterns from .gitattributes.
 func isLFSTracked(relPath string, lfsPatterns []string) bool {
+	relPath = filepath.ToSlash(relPath) // .gitattributes patterns use "/"
 	for _, pattern := range lfsPatterns {
-		matched, err := filepath.Match(pattern, filepath.Base(relPath))
+		matched, err := path.Match(pattern, path.Base(relPath))
 		if err == nil && matched {
 			return true
 		}
 		// Also try full path match.
-		matched, err = filepath.Match(pattern, relPath)
+		matched, err = path.Match(pattern, relPath)
 		if err == nil && matched {
 			return true
 		}

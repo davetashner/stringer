@@ -5,6 +5,7 @@ package collectors
 
 import (
 	"context"
+	"path"
 	"path/filepath"
 	"testing"
 	"time"
@@ -116,7 +117,7 @@ func TestLotteryRiskCollector_WorkspaceSignalsScopedOnce(t *testing.T) {
 		for _, s := range filterByKind(sigs, "low-lottery-risk") {
 			p := s.FilePath
 			if rel != "." {
-				p = filepath.Join(rel, p)
+				p = path.Join(rel, p) // as stampWorkspace does
 			}
 			paths = append(paths, p)
 		}

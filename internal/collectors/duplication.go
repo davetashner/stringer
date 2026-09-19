@@ -93,7 +93,7 @@ func (c *DuplicationCollector) Collect(ctx context.Context, repoPath string, opt
 			return err
 		}
 
-		relPath, relErr := filepath.Rel(repoPath, path)
+		relPath, relErr := relSlash(repoPath, path)
 		if relErr != nil {
 			return nil
 		}

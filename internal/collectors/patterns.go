@@ -170,7 +170,7 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 			return err
 		}
 
-		relPath, relErr := filepath.Rel(repoPath, path)
+		relPath, relErr := relSlash(repoPath, path)
 		if relErr != nil {
 			return nil
 		}
@@ -230,7 +230,7 @@ func (c *PatternsCollector) Collect(ctx context.Context, repoPath string, opts s
 		}
 
 		// Track directory stats for test-ratio and missing-test analysis.
-		dir := filepath.Dir(relPath)
+		dir := filepath.ToSlash(filepath.Dir(relPath))
 		if dirMap[dir] == nil {
 			dirMap[dir] = &dirStats{}
 		}

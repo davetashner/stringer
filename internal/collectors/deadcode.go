@@ -200,7 +200,7 @@ func (c *DeadCodeCollector) Collect(ctx context.Context, repoPath string, opts s
 			return err
 		}
 
-		relPath, relErr := filepath.Rel(repoPath, path)
+		relPath, relErr := relSlash(repoPath, path)
 		if relErr != nil {
 			return nil
 		}
