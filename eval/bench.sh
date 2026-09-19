@@ -7,10 +7,14 @@
 # pinned commit SHA so the run can be reproduced later.
 #
 # Usage:
-#   eval/bench.sh [--bin PATH] [--out DIR] [--depth N] [--reuse] [--exclude LIST] owner/repo [owner/repo ...]
+#   eval/bench.sh [--bin PATH] [--out DIR] [--depth N] [--reuse] [--exclude LIST] [--no-report]
+#                 owner/repo[@<40-char-sha>] [...]
 #
 # Defaults: --bin stringer (from PATH), --out eval/results/bench-<YYYY-MM>,
 #           --depth 100, --exclude github (needs a token; not part of the README run).
+# A target of owner/repo@<sha> fetches exactly that commit with --depth N history
+# below it (instead of cloning HEAD), so repeated runs scan identical inputs.
+# --no-report skips `stringer report` (the regression check only needs the scan).
 #
 # Output per repo (in $OUT/<owner>-<repo>/):
 #   scan.json, scan.stderr, report.txt, report.stderr, summary.json
@@ -22,6 +26,7 @@ BIN="stringer"
 OUT="$SCRIPT_DIR/results/bench-$(date +%Y-%m)"
 DEPTH=100
 REUSE=false
+REPORT=true
 EXCLUDE="github"
 TARGETS=()
 
@@ -32,7 +37,8 @@ while [[ $# -gt 0 ]]; do
         --depth) DEPTH="$2"; shift 2 ;;
         --exclude) EXCLUDE="$2"; shift 2 ;;
         --reuse) REUSE=true; shift ;;
-        -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+        --no-report) REPORT=false; shift ;;
+        -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
         *) TARGETS+=("$1"); shift ;;
     esac
 done
@@ -84,7 +90,29 @@ run_measured() {
     printf "  %-7s %6.1fs  peak %5d MB  exit %d\n" "$label" "$(perl -e "print $end - $start")" "$(( max_rss / 1024 ))" "$exit_code"
 }
 
+# fetch_target <owner/repo> <dest> [sha]: shallow clone of HEAD, or of exactly <sha>.
+fetch_target() {
+    local target="$1" dest="$2" pin="${3:-}" url="https://github.com/$1.git"
+    if [[ -z "$pin" ]]; then
+        git clone --quiet --depth "$DEPTH" "$url" "$dest"
+        return
+    fi
+    # A branch named main keeps gitlog's stale-branch check (which skips
+    # protected names) from firing on the local checkout as the pin ages.
+    git init --quiet "$dest" &&
+        git -C "$dest" remote add origin "$url" &&
+        git -C "$dest" fetch --quiet --depth "$DEPTH" origin "$pin" &&
+        git -C "$dest" checkout --quiet -B main FETCH_HEAD
+}
+
 for target in "${TARGETS[@]}"; do
+    pin=""
+    if [[ "$target" == *@* ]]; then
+        pin="${target##*@}"; target="${target%@*}"
+        if [[ ! "$pin" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "FATAL: pinned commit for $target must be a full 40-char SHA (got '$pin')" >&2; exit 1
+        fi
+    fi
     target="${target#https://github.com/}"; target="${target%.git}"; target="${target%/}"
     owner="${target%%/*}"; repo="${target##*/}"
     dir="$OUT/${owner}-${repo}"
@@ -93,14 +121,15 @@ for target in "${TARGETS[@]}"; do
     mkdir -p "$dir"
 
     echo "=== $target ==="
-    if [[ -d "$repo_dir/.git" && "$REUSE" == true ]]; then
+    if [[ -d "$repo_dir/.git" && "$REUSE" == true ]] &&
+        [[ -z "$pin" || "$(git -C "$repo_dir" rev-parse HEAD)" == "$pin" ]]; then
         echo "  reusing clone"
     else
         rm -rf "$repo_dir"
-        echo "  cloning --depth $DEPTH"
+        echo "  cloning --depth $DEPTH${pin:+ at $pin}"
         cloned=false
         for attempt in 1 2 3; do
-            if git clone --quiet --depth "$DEPTH" "https://github.com/$target.git" "$repo_dir"; then
+            if fetch_target "$target" "$repo_dir" "$pin"; then
                 cloned=true; break
             fi
             echo "  clone attempt $attempt failed, retrying in 60s"
@@ -119,8 +148,10 @@ for target in "${TARGETS[@]}"; do
     : > "$MEASURE_FILE"
     run_measured scan "$dir/scan.json" "$dir/scan.stderr" \
         "$BIN" scan "$repo_dir" -f json -x "$EXCLUDE" --no-color
-    run_measured report "$dir/report.txt" "$dir/report.stderr" \
-        "$BIN" report "$repo_dir" -x "$EXCLUDE" --no-color
+    if [[ "$REPORT" == true ]]; then
+        run_measured report "$dir/report.txt" "$dir/report.stderr" \
+            "$BIN" report "$repo_dir" -x "$EXCLUDE" --no-color
+    fi
 
     python3 - "$dir" "$target" "$sha" "$sha_date" "$files" "$BIN_VERSION" "$DEPTH" <<'PY'
 import json, re, sys, collections, os
@@ -139,6 +170,10 @@ try:
     summary["total_signals"] = len(sigs)
     summary["by_source"] = dict(collections.Counter(s["Source"] for s in sigs).most_common())
     summary["by_kind"] = dict(collections.Counter(s["Kind"] for s in sigs).most_common())
+    by_sk = collections.defaultdict(collections.Counter)
+    for s in sigs:
+        by_sk[s["Source"]][s["Kind"]] += 1
+    summary["by_source_kind"] = {src: dict(sorted(c.items())) for src, c in sorted(by_sk.items())}
     conf = [s["Confidence"] for s in sigs]
     summary["confidence"] = {
         "high_ge_0.8": sum(c >= 0.8 for c in conf),

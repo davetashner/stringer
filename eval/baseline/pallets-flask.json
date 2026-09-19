@@ -1,0 +1,25 @@
+{
+  "repo": "pallets/flask",
+  "sha": "d73fa1cdcbd8b1465c151db8924ba58b1dd14e35",
+  "sha_date": "2026-09-08",
+  "depth": 100,
+  "generated": "2026-09-19",
+  "stringer": "stringer dev",
+  "source_commit": "b6d2862ae8e243515db77f93c3516cafaa001931",
+  "ignored_kinds": {"gitlog": ["churn", "stale-branch"], "docstale": ["doc-code-drift"]},
+  "perf": {"max_seconds": 60, "max_ratio": 10, "ratio_floor_seconds": 5},
+  "collectors": {
+    "apidrift": {"signals": 0, "kinds": {}, "seconds": 0.0},
+    "complexity": {"signals": 14, "kinds": {"complex-function": 14}, "seconds": 0.58},
+    "configdrift": {"signals": 0, "kinds": {}, "seconds": 0.07},
+    "coupling": {"signals": 0, "kinds": {}, "seconds": 0.08},
+    "deadcode": {"signals": 1, "kinds": {"unused-function": 1}, "seconds": 0.2},
+    "docstale": {"signals": 2, "kinds": {"stale-doc": 2}, "seconds": 0.28},
+    "duplication": {"signals": 53, "kinds": {"code-clone": 12, "near-clone": 41}, "seconds": 4.03},
+    "githygiene": {"signals": 2, "kinds": {"committed-secret": 2}, "seconds": 0.49},
+    "gitlog": {"signals": 0, "kinds": {}, "seconds": 0.37},
+    "lotteryrisk": {"signals": 3, "kinds": {"low-lottery-risk": 3}, "seconds": 0.68},
+    "patterns": {"signals": 16, "kinds": {"large-file": 2, "low-test-ratio": 1, "missing-tests": 13}, "seconds": 0.66},
+    "todos": {"signals": 0, "kinds": {}, "seconds": 0.35}
+  }
+}

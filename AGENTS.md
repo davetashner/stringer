@@ -478,6 +478,8 @@ Optional but valuable:
 
 A separate [OpenSSF Scorecard](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer) workflow runs on the default branch to track supply chain security posture.
 
+The `Benchmark Regression` workflow (`.github/workflows/bench-regression.yml`, not a required check) scans gin, flask and express at pinned commits nightly and on PRs touching collectors, the pipeline, `cmd/stringer` or `eval/`, and fails when per-collector signal counts drift from `eval/baseline/*.json` or a collector exceeds its duration ceiling. Intentional count changes update the baseline in the same PR; see `eval/README.md`.
+
 **No exceptions.** Branch protection enforces these checks for all users including admins. If CI is broken, fix the checks — do not bypass them.
 
 ## Releasing

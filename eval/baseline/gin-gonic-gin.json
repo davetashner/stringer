@@ -1,0 +1,25 @@
+{
+  "repo": "gin-gonic/gin",
+  "sha": "5c6a15f8f9566612076bd209e623861bf92a6283",
+  "sha_date": "2026-09-16",
+  "depth": 100,
+  "generated": "2026-09-19",
+  "stringer": "stringer dev",
+  "source_commit": "b6d2862ae8e243515db77f93c3516cafaa001931",
+  "ignored_kinds": {"gitlog": ["churn", "stale-branch"], "docstale": ["doc-code-drift"]},
+  "perf": {"max_seconds": 60, "max_ratio": 10, "ratio_floor_seconds": 5},
+  "collectors": {
+    "apidrift": {"signals": 0, "kinds": {}, "seconds": 0.0},
+    "complexity": {"signals": 39, "kinds": {"complex-function": 39}, "seconds": 1.2},
+    "configdrift": {"signals": 0, "kinds": {}, "seconds": 0.06},
+    "coupling": {"signals": 0, "kinds": {}, "seconds": 0.07},
+    "deadcode": {"signals": 0, "kinds": {}, "seconds": 0.1},
+    "docstale": {"signals": 2, "kinds": {"doc-code-drift": 1, "stale-doc": 1}, "seconds": 0.3},
+    "duplication": {"signals": 96, "kinds": {"code-clone": 16, "near-clone": 80}, "seconds": 2.65},
+    "githygiene": {"signals": 0, "kinds": {}, "seconds": 0.3},
+    "gitlog": {"signals": 0, "kinds": {}, "seconds": 0.36},
+    "lotteryrisk": {"signals": 4, "kinds": {"low-lottery-risk": 4}, "seconds": 0.79},
+    "patterns": {"signals": 22, "kinds": {"large-file": 2, "missing-tests": 20}, "seconds": 0.84},
+    "todos": {"signals": 2, "kinds": {"todo": 2}, "seconds": 0.3}
+  }
+}
