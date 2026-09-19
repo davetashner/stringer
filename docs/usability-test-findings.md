@@ -1,5 +1,7 @@
 # Stringer Usability Test Findings
 
+> **Status (2026-09-19):** historical snapshot of a v0.5.1 usability test. Many findings were fixed in the UX3 epic (PRs #130, #133) and later releases; signal counts and timings here do not reflect v1.x. Kept for context. Current accuracy and performance numbers are in [research/benchmark-2026-09.md](research/benchmark-2026-09.md).
+
 **Date**: 2026-02-09
 **Version tested**: v0.5.1 (dev build from `feat/dephealth-collector`)
 **Tester persona**: AI coding agent helping a user generate a backlog from an existing repository
