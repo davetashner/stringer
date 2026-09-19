@@ -44,22 +44,22 @@ func TestCheckPackagistDeps_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	signals := checkPackagistDeps(ctx, client, deps, "composer.json")
+	signals := testRun().checkPackagistDeps(ctx, client, deps, "composer.json")
 	assert.Empty(t, signals, "a cancelled context should stop the loop before any check")
 }
 
 func TestCheckPackagistDeps_CapEnforced(t *testing.T) {
 	results := make(map[string]*packagistPackageInfo)
-	deps := make([]PackageQuery, 0, maxPackagistChecks+10)
-	for i := 0; i < maxPackagistChecks+10; i++ {
+	deps := make([]PackageQuery, 0, maxRegistryChecks+10)
+	for i := 0; i < maxRegistryChecks+10; i++ {
 		name := fmt.Sprintf("vendor/pkg%d", i)
 		results[name] = packagistInfo(name, true)
 		deps = append(deps, PackageQuery{Ecosystem: "Packagist", Name: name, Version: "2.0.0"})
 	}
 	client := &mockPackagistRegistryClient{results: results}
 
-	signals := checkPackagistDeps(context.Background(), client, deps, "composer.json")
-	assert.Len(t, signals, maxPackagistChecks, "loop should stop at the check cap")
+	signals := testRun().checkPackagistDeps(context.Background(), client, deps, "composer.json")
+	assert.Len(t, signals, maxRegistryChecks, "loop should stop at the check cap")
 }
 
 // --- Packagist: abandoned-reason helper ---
@@ -166,7 +166,7 @@ func TestCheckHexDeps_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	signals := checkHexDeps(ctx, client, deps, "mix.exs")
+	signals := testRun().checkHexDeps(ctx, client, deps, "mix.exs")
 	assert.Empty(t, signals, "a cancelled context should stop the loop before any check")
 }
 

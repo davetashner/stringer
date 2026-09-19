@@ -105,6 +105,16 @@ type CollectorOpts struct {
 	// (2 years) is used.
 	StalenessThreshold string
 
+	// RegistryTimeout bounds each dependency-registry lookup made by the
+	// dephealth collector (npm, crates.io, Maven Central, NuGet, PyPI,
+	// Packagist, Hex, Go proxy, GitHub). 0 uses default (10s).
+	RegistryTimeout time.Duration
+
+	// RegistryConcurrency is the number of registry lookups the dephealth
+	// collector runs at once within one ecosystem. 0 uses default (8);
+	// values below 1 are treated as 1.
+	RegistryConcurrency int
+
 	// MinFunctionLines is the minimum function body lines to analyze for
 	// complexity. Functions shorter than this are skipped. 0 uses default (5).
 	MinFunctionLines int

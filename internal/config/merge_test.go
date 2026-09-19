@@ -522,6 +522,24 @@ func TestMerge_ConfigurableThresholdsCLIOverride(t *testing.T) {
 	assert.Equal(t, 8, result.CollectorOpts["duplication"].DuplicationWindowSize)
 }
 
+func TestMerge_RegistryTimeoutFromFile(t *testing.T) {
+	fileCfg := &Config{
+		Collectors: map[string]CollectorConfig{
+			"dephealth": {RegistryTimeout: "5s", RegistryConcurrency: 3},
+		},
+	}
+	result := Merge(fileCfg, signal.ScanConfig{})
+	assert.Equal(t, 5*time.Second, result.CollectorOpts["dephealth"].RegistryTimeout)
+	assert.Equal(t, 3, result.CollectorOpts["dephealth"].RegistryConcurrency)
+
+	// Unset or unparseable values leave the zero value, so the collector
+	// applies its own defaults (10s, 8 workers).
+	fileCfg.Collectors["dephealth"] = CollectorConfig{RegistryTimeout: "soon"}
+	result = Merge(fileCfg, signal.ScanConfig{})
+	assert.Equal(t, time.Duration(0), result.CollectorOpts["dephealth"].RegistryTimeout)
+	assert.Equal(t, 0, result.CollectorOpts["dephealth"].RegistryConcurrency)
+}
+
 func TestMerge_IncludeTestsFromFile(t *testing.T) {
 	boolTrue := true
 	fileCfg := &Config{

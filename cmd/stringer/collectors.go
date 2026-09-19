@@ -63,7 +63,7 @@ var knownCollectors = map[string]collectorMeta{
 	"dephealth": {
 		Description:  "Detects deprecated, yanked, archived, and stale dependencies",
 		SignalKinds:  []string{"deprecated-dependency", "yanked-dependency", "archived-dependency", "stale-dependency"},
-		ConfigFields: []string{},
+		ConfigFields: []string{"registry_timeout", "registry_concurrency"},
 	},
 	"complexity": {
 		Description:  "Detects complex functions using composite scoring (lines/50 + branches)",
@@ -136,6 +136,10 @@ var collectorThresholds = map[string][]struct {
 	},
 	"deadcode": {
 		{"deadcode_max_files", "10000"},
+	},
+	"dephealth": {
+		{"registry_timeout", "10s"},
+		{"registry_concurrency", "8"},
 	},
 	"coupling": {
 		{"coupling_fan_out_threshold", "15"},

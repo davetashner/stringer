@@ -6,15 +6,10 @@ package collectors
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/davetashner/stringer/internal/signal"
 )
-
-// maxCratesChecks caps the number of crates.io API lookups per scan.
-const maxCratesChecks = 50
 
 // cratesBaseURL is the default crates.io API URL.
 const cratesBaseURL = "https://crates.io/api/v1"
@@ -60,12 +55,7 @@ func (c *realCratesRegistryClient) FetchCrate(ctx context.Context, name string) 
 	// crates.io requires a User-Agent header.
 	req.Header.Set("User-Agent", "stringer-dephealth (https://github.com/davetashner/stringer)")
 
-	client := c.httpClient
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
-	}
-
-	resp, err := client.Do(req)
+	resp, err := registryHTTPClient(c.httpClient).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching %s: %w", url, err)
 	}
@@ -85,51 +75,38 @@ func (c *realCratesRegistryClient) FetchCrate(ctx context.Context, name string) 
 
 // checkCratesDeps queries crates.io for each dependency and emits signals
 // for crates where the used version is yanked.
-func checkCratesDeps(ctx context.Context, client cratesRegistryClient, deps []PackageQuery) []signal.RawSignal {
-	var signals []signal.RawSignal
-	checked := 0
-
-	for _, dep := range deps {
-		if ctx.Err() != nil {
-			break
-		}
-		if checked >= maxCratesChecks {
-			slog.Info("dephealth: reached crates.io check cap", "cap", maxCratesChecks)
-			break
-		}
-		checked++
-
+func (r *registryRun) checkCratesDeps(ctx context.Context, client cratesRegistryClient, deps []PackageQuery) []signal.RawSignal {
+	return lookupEach(ctx, r, "cargo", deps, func(ctx context.Context, dep PackageQuery) []signal.RawSignal {
 		info, err := client.FetchCrate(ctx, dep.Name)
 		if err != nil {
-			slog.Debug("dephealth: crates.io lookup failed", "crate", dep.Name, "error", err)
-			continue
+			r.lookupFailed("cargo", dep.Name, err)
+			return nil
 		}
 
 		// Check if the specific version used is yanked.
 		for _, v := range info.Versions {
-			if v.Num == dep.Version && v.Yanked {
-				s := signal.RawSignal{
-					Source:      "dephealth",
-					Kind:        "yanked-dependency",
-					FilePath:    "Cargo.toml",
-					Title:       fmt.Sprintf("Yanked crate: %s@%s", dep.Name, dep.Version),
-					Description: fmt.Sprintf("Crate %s version %s has been yanked from crates.io. Yanked versions typically have critical bugs or security issues. Update to a non-yanked version.", dep.Name, dep.Version),
-					Confidence:  0.9,
-					Tags:        []string{"yanked-dependency", "dephealth", "rust"},
-				}
-				// A caret/floor requirement resolves to the newest compatible
-				// version; only the declared minimum is known to be yanked.
-				if dep.IsRange {
-					s.Title = fmt.Sprintf("Yanked crate floor: %s", declaredSpec(dep.Name, dep.Constraint))
-					s.Description = fmt.Sprintf("The declared minimum %s of crate %s has been yanked from crates.io; the installed version is not known without Cargo.lock. Raise the floor to a non-yanked version.", dep.Version, dep.Name)
-					s.Confidence = applyRangeDiscount(s.Confidence)
-					s.Tags = append(s.Tags, "version-floor")
-				}
-				signals = append(signals, s)
-				break
+			if v.Num != dep.Version || !v.Yanked {
+				continue
 			}
+			s := signal.RawSignal{
+				Source:      "dephealth",
+				Kind:        "yanked-dependency",
+				FilePath:    "Cargo.toml",
+				Title:       fmt.Sprintf("Yanked crate: %s@%s", dep.Name, dep.Version),
+				Description: fmt.Sprintf("Crate %s version %s has been yanked from crates.io. Yanked versions typically have critical bugs or security issues. Update to a non-yanked version.", dep.Name, dep.Version),
+				Confidence:  0.9,
+				Tags:        []string{"yanked-dependency", "dephealth", "rust"},
+			}
+			// A caret/floor requirement resolves to the newest compatible
+			// version; only the declared minimum is known to be yanked.
+			if dep.IsRange {
+				s.Title = fmt.Sprintf("Yanked crate floor: %s", declaredSpec(dep.Name, dep.Constraint))
+				s.Description = fmt.Sprintf("The declared minimum %s of crate %s has been yanked from crates.io; the installed version is not known without Cargo.lock. Raise the floor to a non-yanked version.", dep.Version, dep.Name)
+				s.Confidence = applyRangeDiscount(s.Confidence)
+				s.Tags = append(s.Tags, "version-floor")
+			}
+			return []signal.RawSignal{s}
 		}
-	}
-
-	return signals
+		return nil
+	})
 }

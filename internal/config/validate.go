@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/davetashner/stringer/internal/collector"
 	"github.com/davetashner/stringer/internal/output"
@@ -62,6 +63,18 @@ func Validate(cfg *Config) error {
 
 		if cc.MaxIssuesPerCollector < 0 {
 			errs = append(errs, fmt.Sprintf("collectors.%s.max_issues_per_collector: must be non-negative, got %d", name, cc.MaxIssuesPerCollector))
+		}
+
+		if cc.RegistryTimeout != "" {
+			if d, err := time.ParseDuration(cc.RegistryTimeout); err != nil {
+				errs = append(errs, fmt.Sprintf("collectors.%s.registry_timeout: invalid duration %q (use e.g. 10s, 1m)", name, cc.RegistryTimeout))
+			} else if d < 0 {
+				errs = append(errs, fmt.Sprintf("collectors.%s.registry_timeout: must be non-negative, got %s", name, cc.RegistryTimeout))
+			}
+		}
+
+		if cc.RegistryConcurrency < 0 {
+			errs = append(errs, fmt.Sprintf("collectors.%s.registry_concurrency: must be non-negative, got %d", name, cc.RegistryConcurrency))
 		}
 
 		if cc.Anonymize != "" {

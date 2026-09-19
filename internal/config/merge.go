@@ -77,6 +77,14 @@ func Merge(fileCfg *Config, cliCfg signal.ScanConfig) signal.ScanConfig {
 					co.Timeout = d
 				}
 			}
+			if co.RegistryTimeout == 0 && fc.RegistryTimeout != "" {
+				if d, err := time.ParseDuration(fc.RegistryTimeout); err == nil {
+					co.RegistryTimeout = d
+				}
+			}
+			if co.RegistryConcurrency == 0 && fc.RegistryConcurrency > 0 {
+				co.RegistryConcurrency = fc.RegistryConcurrency
+			}
 			if co.MinFunctionLines == 0 && fc.MinFunctionLines > 0 {
 				co.MinFunctionLines = fc.MinFunctionLines
 			}

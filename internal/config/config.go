@@ -56,6 +56,10 @@ type CollectorConfig struct {
 	// Timeout is the per-collector timeout (e.g. "60s", "2m").
 	Timeout string `yaml:"timeout,omitempty"`
 
+	// Dependency health collector settings.
+	RegistryTimeout     string `yaml:"registry_timeout,omitempty"`
+	RegistryConcurrency int    `yaml:"registry_concurrency,omitempty"`
+
 	// Complexity collector settings.
 	MinFunctionLines   int     `yaml:"min_function_lines,omitempty"`
 	MinComplexityScore float64 `yaml:"min_complexity_score,omitempty"`

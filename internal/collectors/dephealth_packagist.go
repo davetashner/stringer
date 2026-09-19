@@ -6,15 +6,10 @@ package collectors
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/davetashner/stringer/internal/signal"
 )
-
-// maxPackagistChecks caps the number of Packagist API lookups per scan.
-const maxPackagistChecks = 50
 
 // packagistBaseURL is the default Packagist API URL.
 const packagistBaseURL = "https://repo.packagist.org"
@@ -54,12 +49,7 @@ func (c *realPackagistRegistryClient) FetchPackage(ctx context.Context, name str
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	client := c.httpClient
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
-	}
-
-	resp, err := client.Do(req)
+	resp, err := registryHTTPClient(c.httpClient).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching %s: %w", url, err)
 	}
@@ -79,40 +69,28 @@ func (c *realPackagistRegistryClient) FetchPackage(ctx context.Context, name str
 
 // checkPackagistDeps queries Packagist for each dependency and emits signals
 // for packages that are abandoned.
-func checkPackagistDeps(ctx context.Context, client packagistRegistryClient, deps []PackageQuery, filePath string) []signal.RawSignal {
-	var signals []signal.RawSignal
-	checked := 0
-
-	for _, dep := range deps {
-		if ctx.Err() != nil {
-			break
-		}
-		if checked >= maxPackagistChecks {
-			slog.Info("dephealth: reached packagist check cap", "cap", maxPackagistChecks)
-			break
-		}
-		checked++
-
+func (r *registryRun) checkPackagistDeps(ctx context.Context, client packagistRegistryClient, deps []PackageQuery, filePath string) []signal.RawSignal {
+	return lookupEach(ctx, r, "packagist", deps, func(ctx context.Context, dep PackageQuery) []signal.RawSignal {
 		info, err := client.FetchPackage(ctx, dep.Name)
 		if err != nil {
-			slog.Debug("dephealth: packagist lookup failed", "package", dep.Name, "error", err)
-			continue
+			r.lookupFailed("packagist", dep.Name, err)
+			return nil
 		}
 
-		if reason := packagistAbandonedReason(info, dep.Name); reason != "" {
-			signals = append(signals, signal.RawSignal{
-				Source:      "dephealth",
-				Kind:        "deprecated-dependency",
-				FilePath:    filePath,
-				Title:       fmt.Sprintf("Abandoned Packagist package: %s", dep.Name),
-				Description: fmt.Sprintf("Packagist package %s is abandoned. %s", dep.Name, reason),
-				Confidence:  0.8,
-				Tags:        []string{"deprecated-dependency", "dephealth", "php"},
-			})
+		reason := packagistAbandonedReason(info, dep.Name)
+		if reason == "" {
+			return nil
 		}
-	}
-
-	return signals
+		return []signal.RawSignal{{
+			Source:      "dephealth",
+			Kind:        "deprecated-dependency",
+			FilePath:    filePath,
+			Title:       fmt.Sprintf("Abandoned Packagist package: %s", dep.Name),
+			Description: fmt.Sprintf("Packagist package %s is abandoned. %s", dep.Name, reason),
+			Confidence:  0.8,
+			Tags:        []string{"deprecated-dependency", "dephealth", "php"},
+		}}
+	})
 }
 
 // packagistAbandonedReason checks if any version of the package is marked as abandoned.

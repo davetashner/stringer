@@ -283,6 +283,34 @@ func TestValidate_MaxBlameFiles_ValidRange(t *testing.T) {
 	}
 }
 
+func TestValidate_RegistryTimeout(t *testing.T) {
+	for _, val := range []string{"5s", "1m", "0"} {
+		cfg := &Config{Collectors: map[string]CollectorConfig{"dephealth": {RegistryTimeout: val}}}
+		require.NoError(t, Validate(cfg), "registry_timeout %q should be valid", val)
+	}
+
+	cfg := &Config{Collectors: map[string]CollectorConfig{"dephealth": {RegistryTimeout: "ten seconds"}}}
+	err := Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "collectors.dephealth.registry_timeout")
+	assert.Contains(t, err.Error(), "ten seconds")
+
+	cfg = &Config{Collectors: map[string]CollectorConfig{"dephealth": {RegistryTimeout: "-5s"}}}
+	err = Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "registry_timeout: must be non-negative")
+}
+
+func TestValidate_RegistryConcurrency(t *testing.T) {
+	cfg := &Config{Collectors: map[string]CollectorConfig{"dephealth": {RegistryConcurrency: 4}}}
+	require.NoError(t, Validate(cfg))
+
+	cfg = &Config{Collectors: map[string]CollectorConfig{"dephealth": {RegistryConcurrency: -1}}}
+	err := Validate(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "collectors.dephealth.registry_concurrency: must be non-negative")
+}
+
 func TestValidate_InvalidAnonymize(t *testing.T) {
 	cfg := &Config{
 		Collectors: map[string]CollectorConfig{

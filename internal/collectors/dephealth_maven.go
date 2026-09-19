@@ -6,16 +6,12 @@ package collectors
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/davetashner/stringer/internal/signal"
 )
-
-// maxMavenChecks caps the number of Maven Central API lookups per scan.
-const maxMavenChecks = 50
 
 // mavenSearchBaseURL is the default Maven Central search URL.
 const mavenSearchBaseURL = "https://search.maven.org/solrsearch"
@@ -60,12 +56,7 @@ func (c *realMavenRegistryClient) FetchArtifact(ctx context.Context, groupID, ar
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	client := c.httpClient
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
-	}
-
-	resp, err := client.Do(req)
+	resp, err := registryHTTPClient(c.httpClient).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching %s: %w", url, err)
 	}
@@ -87,55 +78,44 @@ func (c *realMavenRegistryClient) FetchArtifact(ctx context.Context, groupID, ar
 // this are flagged as potentially unmaintained.
 const mavenStalenessThreshold = 4 * 365 * 24 * time.Hour
 
-// checkMavenDeps queries Maven Central for each dependency and emits signals
-// for artifacts that have not been updated in a long time (potentially abandoned).
-func checkMavenDeps(ctx context.Context, client mavenRegistryClient, deps []PackageQuery, filePath string) []signal.RawSignal {
-	var signals []signal.RawSignal
-	checked := 0
-
-	for _, dep := range deps {
-		if ctx.Err() != nil {
-			break
-		}
-		if checked >= maxMavenChecks {
-			slog.Info("dephealth: reached Maven Central check cap", "cap", maxMavenChecks)
-			break
-		}
-		checked++
-
+// checkMavenDeps queries Maven Central for each dependency (bounded-parallel,
+// capped at maxRegistryChecks) and emits signals for artifacts that have not
+// been updated in a long time (potentially abandoned).
+func (r *registryRun) checkMavenDeps(ctx context.Context, client mavenRegistryClient, deps []PackageQuery, filePath string) []signal.RawSignal {
+	return lookupEach(ctx, r, "maven", deps, func(ctx context.Context, dep PackageQuery) []signal.RawSignal {
 		// Split groupId:artifactId.
 		parts := strings.SplitN(dep.Name, ":", 2)
 		if len(parts) != 2 {
-			continue
+			return nil
 		}
 		groupID, artifactID := parts[0], parts[1]
 
 		info, err := client.FetchArtifact(ctx, groupID, artifactID)
 		if err != nil {
-			slog.Debug("dephealth: maven lookup failed", "artifact", dep.Name, "error", err)
-			continue
+			r.lookupFailed("maven", dep.Name, err)
+			return nil
 		}
 
-		if info.Response.NumFound == 0 {
-			continue
+		if info.Response.NumFound == 0 || len(info.Response.Docs) == 0 {
+			return nil
 		}
 
 		doc := info.Response.Docs[0]
-		if doc.Timestamp > 0 {
-			lastUpdated := time.UnixMilli(doc.Timestamp)
-			if time.Since(lastUpdated) > mavenStalenessThreshold {
-				signals = append(signals, signal.RawSignal{
-					Source:      "dephealth",
-					Kind:        "stale-dependency",
-					FilePath:    filePath,
-					Title:       fmt.Sprintf("Stale Maven artifact: %s", dep.Name),
-					Description: fmt.Sprintf("Maven artifact %s was last updated on %s (>%d years ago). The project may be unmaintained.", dep.Name, lastUpdated.Format("2006-01-02"), int(mavenStalenessThreshold.Hours()/24/365)),
-					Confidence:  0.5,
-					Tags:        []string{"stale-dependency", "dephealth", "maven"},
-				})
-			}
+		if doc.Timestamp <= 0 {
+			return nil
 		}
-	}
-
-	return signals
+		lastUpdated := time.UnixMilli(doc.Timestamp)
+		if time.Since(lastUpdated) <= mavenStalenessThreshold {
+			return nil
+		}
+		return []signal.RawSignal{{
+			Source:      "dephealth",
+			Kind:        "stale-dependency",
+			FilePath:    filePath,
+			Title:       fmt.Sprintf("Stale Maven artifact: %s", dep.Name),
+			Description: fmt.Sprintf("Maven artifact %s was last updated on %s (>%d years ago). The project may be unmaintained.", dep.Name, lastUpdated.Format("2006-01-02"), int(mavenStalenessThreshold.Hours()/24/365)),
+			Confidence:  0.5,
+			Tags:        []string{"stale-dependency", "dephealth", "maven"},
+		}}
+	})
 }

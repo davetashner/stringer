@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"time"
 
@@ -15,9 +14,6 @@ import (
 
 	"github.com/davetashner/stringer/internal/signal"
 )
-
-// maxProxyChecks caps the number of module proxy lookups.
-const maxProxyChecks = 50
 
 // proxyBaseURL is the default Go module proxy URL.
 const proxyBaseURL = "https://proxy.golang.org"
@@ -58,12 +54,7 @@ func (c *realModuleProxyClient) FetchLatest(ctx context.Context, modulePath stri
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	client := c.httpClient
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
-	}
-
-	resp, err := client.Do(req)
+	resp, err := registryHTTPClient(c.httpClient).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching %s: %w", url, err)
 	}
@@ -83,38 +74,24 @@ func (c *realModuleProxyClient) FetchLatest(ctx context.Context, modulePath stri
 
 // checkDeprecatedDeps queries the Go module proxy for each dependency and
 // emits signals for modules that declare a Deprecated field.
-func checkDeprecatedDeps(ctx context.Context, client moduleProxyClient, deps []ModuleDep) []signal.RawSignal {
-	var signals []signal.RawSignal
-	checked := 0
-
-	for _, dep := range deps {
-		if ctx.Err() != nil {
-			break
-		}
-		if checked >= maxProxyChecks {
-			slog.Info("dephealth: reached module proxy check cap", "cap", maxProxyChecks)
-			break
-		}
-		checked++
-
+func (r *registryRun) checkDeprecatedDeps(ctx context.Context, client moduleProxyClient, deps []ModuleDep) []signal.RawSignal {
+	return lookupEach(ctx, r, "go", deps, func(ctx context.Context, dep ModuleDep) []signal.RawSignal {
 		info, err := client.FetchLatest(ctx, dep.Path)
 		if err != nil {
-			slog.Debug("dephealth: proxy lookup failed", "module", dep.Path, "error", err)
-			continue
+			r.lookupFailed("go", dep.Path, err)
+			return nil
 		}
-
-		if info.Deprecated != "" {
-			signals = append(signals, signal.RawSignal{
-				Source:      "dephealth",
-				Kind:        "deprecated-dependency",
-				FilePath:    "go.mod",
-				Title:       fmt.Sprintf("Deprecated dependency: %s", dep.Path),
-				Description: fmt.Sprintf("Module %s is deprecated: %s", dep.Path, info.Deprecated),
-				Confidence:  0.8,
-				Tags:        []string{"deprecated-dependency", "dephealth"},
-			})
+		if info.Deprecated == "" {
+			return nil
 		}
-	}
-
-	return signals
+		return []signal.RawSignal{{
+			Source:      "dephealth",
+			Kind:        "deprecated-dependency",
+			FilePath:    "go.mod",
+			Title:       fmt.Sprintf("Deprecated dependency: %s", dep.Path),
+			Description: fmt.Sprintf("Module %s is deprecated: %s", dep.Path, info.Deprecated),
+			Confidence:  0.8,
+			Tags:        []string{"deprecated-dependency", "dephealth"},
+		}}
+	})
 }

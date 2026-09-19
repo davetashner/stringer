@@ -325,10 +325,21 @@ func TestCollectorsInfo_ThresholdsSection_Duplication(t *testing.T) {
 	assert.Contains(t, out, "duplication_max_files")
 	assert.Contains(t, out, "duplication_min_test_lines")
 	assert.Contains(t, out, "collectors.duplication.duplication_window_size")
+
 	// Defaults should appear.
 	assert.Contains(t, out, "6")
 	assert.Contains(t, out, "200")
 	assert.Contains(t, out, "10000")
+
+	// dephealth registry settings are listed with their defaults.
+	stdout.Reset()
+	rootCmd.SetArgs([]string{"collectors", "info", "dephealth"})
+	require.NoError(t, rootCmd.Execute())
+	out = stdout.String()
+	assert.Contains(t, out, "registry_timeout")
+	assert.Contains(t, out, "10s")
+	assert.Contains(t, out, "registry_concurrency")
+	assert.Contains(t, out, "collectors.dephealth.registry_concurrency")
 }
 
 func TestCollectorsInfo_NoThresholdsSection_Todos(t *testing.T) {

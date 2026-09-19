@@ -22,6 +22,26 @@ collector_timeout: 60s
 When a collector exceeds the timeout it is cancelled and its partial results
 are discarded. The scan continues with the remaining collectors.
 
+### Registry lookups (dephealth)
+
+The `dephealth` collector queries package registries (npm, crates.io, Maven
+Central, NuGet, PyPI, Packagist, Hex, the Go proxy, GitHub) for up to 50
+dependencies per ecosystem. Lookups run 8 at a time with a 10s limit each
+(before v1.11 they ran one at a time with a fixed 30s limit, so a slow
+registry could cost 20+ minutes on a large Gradle build). Tune both in
+`.stringer.yaml`:
+
+```yaml
+collectors:
+  dephealth:
+    registry_timeout: 5s      # 0 or unset = 10s
+    registry_concurrency: 4   # 0 or unset = 8; minimum 1
+```
+
+Each lookup that hits the limit logs a WARN line naming the ecosystem and
+package, and the collector reports the total as `TimedOut` in its metrics.
+Raise `registry_timeout` on a slow network to retry them.
+
 ## Duplication Collector
 
 The duplication collector caps file input at 10,000 files and output at 200

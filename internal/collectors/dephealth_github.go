@@ -6,7 +6,6 @@ package collectors
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -14,9 +13,6 @@ import (
 
 	"github.com/davetashner/stringer/internal/signal"
 )
-
-// maxGitHubDepChecks caps the number of unique GitHub repos queried.
-const maxGitHubDepChecks = 50
 
 // defaultStalenessThreshold is 2 years — repos with no push activity beyond
 // this are flagged as stale.
@@ -54,39 +50,31 @@ func repoKey(owner, repo string) string {
 
 // checkGitHubDeps queries the GitHub API for each unique GitHub-hosted
 // dependency and emits signals for archived and stale repositories.
-func checkGitHubDeps(ctx context.Context, api dephealthGitHubAPI, deps []ModuleDep, stalenessThreshold time.Duration) []signal.RawSignal {
+func (r *registryRun) checkGitHubDeps(ctx context.Context, api dephealthGitHubAPI, deps []ModuleDep, stalenessThreshold time.Duration) []signal.RawSignal {
+	// Dedup GitHub-hosted modules by repo before capping, so the cap counts
+	// unique repositories rather than module paths.
 	seen := make(map[string]bool)
-	var signals []signal.RawSignal
-	checked := 0
-
+	var repos [][2]string
 	for _, dep := range deps {
-		if ctx.Err() != nil {
-			break
-		}
 		owner, repo, ok := extractGitHubOwnerRepo(dep.Path)
-		if !ok {
+		if !ok || seen[repoKey(owner, repo)] {
 			continue
 		}
-		key := repoKey(owner, repo)
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
+		seen[repoKey(owner, repo)] = true
+		repos = append(repos, [2]string{owner, repo})
+	}
 
-		if checked >= maxGitHubDepChecks {
-			slog.Info("dephealth: reached GitHub API call cap", "cap", maxGitHubDepChecks)
-			break
-		}
-		checked++
-
+	return lookupEach(ctx, r, "github", repos, func(ctx context.Context, pair [2]string) []signal.RawSignal {
+		owner, repo := pair[0], pair[1]
 		ghRepo, _, err := api.GetRepository(ctx, owner, repo)
 		if err != nil {
-			slog.Debug("dephealth: failed to fetch GitHub repo", "owner", owner, "repo", repo, "error", err)
-			continue
+			r.lookupFailed("github", repoKey(owner, repo), err)
+			return nil
 		}
 
 		if ghRepo.GetArchived() {
-			signals = append(signals, signal.RawSignal{
+			// Archived repos skip the stale check (avoid double-flagging).
+			return []signal.RawSignal{{
 				Source:      "dephealth",
 				Kind:        "archived-dependency",
 				FilePath:    "go.mod",
@@ -94,25 +82,21 @@ func checkGitHubDeps(ctx context.Context, api dephealthGitHubAPI, deps []ModuleD
 				Description: fmt.Sprintf("GitHub repository %s/%s is archived. Archived repos receive no updates, bug fixes, or security patches. Consider migrating to an actively maintained alternative.", owner, repo),
 				Confidence:  0.9,
 				Tags:        []string{"archived-dependency", "dephealth"},
-			})
-			// Skip stale check for archived repos (avoid double-flagging).
-			continue
+			}}
 		}
 
-		if pushedAt := ghRepo.GetPushedAt(); !pushedAt.IsZero() {
-			if time.Since(pushedAt.Time) > stalenessThreshold {
-				signals = append(signals, signal.RawSignal{
-					Source:      "dephealth",
-					Kind:        "stale-dependency",
-					FilePath:    "go.mod",
-					Title:       fmt.Sprintf("Stale dependency: %s/%s", owner, repo),
-					Description: fmt.Sprintf("GitHub repository %s/%s has not been pushed to since %s (>%d months). The project may be unmaintained.", owner, repo, pushedAt.Format("2006-01-02"), int(stalenessThreshold.Hours()/24/30)),
-					Confidence:  0.6,
-					Tags:        []string{"stale-dependency", "dephealth"},
-				})
-			}
+		pushedAt := ghRepo.GetPushedAt()
+		if pushedAt.IsZero() || time.Since(pushedAt.Time) <= stalenessThreshold {
+			return nil
 		}
-	}
-
-	return signals
+		return []signal.RawSignal{{
+			Source:      "dephealth",
+			Kind:        "stale-dependency",
+			FilePath:    "go.mod",
+			Title:       fmt.Sprintf("Stale dependency: %s/%s", owner, repo),
+			Description: fmt.Sprintf("GitHub repository %s/%s has not been pushed to since %s (>%d months). The project may be unmaintained.", owner, repo, pushedAt.Format("2006-01-02"), int(stalenessThreshold.Hours()/24/30)),
+			Confidence:  0.6,
+			Tags:        []string{"stale-dependency", "dephealth"},
+		}}
+	})
 }
