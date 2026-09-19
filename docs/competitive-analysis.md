@@ -1,5 +1,7 @@
 # Competitive Analysis: TODO/Signal Scanners
 
+> **Status (2026-09-19):** written for v0.x positioning and not re-verified since. Stringer now also emits JSON, Markdown, SARIF, tasks and HTML, and positioning beyond Beads is tracked in `stringer-kqf`. Treat competitor details below as of February 2026.
+
 **Date:** 2026-02-07
 **Context:** UX1.6 (stringer-4qs.6) — Understand the landscape of TODO scanning and code archaeology tools to position stringer clearly.
 
