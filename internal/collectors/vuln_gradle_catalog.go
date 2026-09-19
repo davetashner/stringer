@@ -21,10 +21,11 @@ const maxGradleBuildFiles = 100
 type gradleCatalog struct {
 	versions map[string]string // normalized version alias -> version
 	libs     map[string]string // normalized library alias -> "group:artifact[:version]"
+	locals   map[string]string // script-level "def x = '1.0'" variables, by exact name
 }
 
 func newGradleCatalog() *gradleCatalog {
-	return &gradleCatalog{versions: map[string]string{}, libs: map[string]string{}}
+	return &gradleCatalog{versions: map[string]string{}, libs: map[string]string{}, locals: map[string]string{}}
 }
 
 // gradleCatalogs is keyed by accessor name ("libs" by default).
@@ -71,6 +72,16 @@ func (cs gradleCatalogs) interpolate(s string) string {
 		return ""
 	}
 	return out
+}
+
+// interpolateOrKeep is interpolate for dependency lines: a string that cannot
+// be fully resolved is returned unchanged so the caller can drop it with a log
+// line instead of silently discarding it.
+func (cs gradleCatalogs) interpolateOrKeep(s string) string {
+	if out := cs.interpolate(s); out != "" {
+		return out
+	}
+	return s
 }
 
 // tomlVersionCatalog is the subset of a Gradle version catalog we read.
@@ -160,6 +171,11 @@ var (
 	reGroovyString   = regexp.MustCompile(`"([^"]*)"|'([^']*)'`)
 	// $versions.foo, ${versions.foo}, $foo, ${foo}
 	reGroovyInterp = regexp.MustCompile(`\$\{([\w.]+)\}|\$([\w.]+)`)
+	// def defaultScalaVersion = '2.13.18'
+	reGroovyDef = regexp.MustCompile(`^def\s+([A-Za-z_]\w*)\s*=\s*(.+)$`)
+	// versions.scala.substring(0, versions.scala.lastIndexOf(".")) — the Scala
+	// binary-version idiom ("2.13.18" -> "2.13") used for _<baseScala> artifact suffixes.
+	reGroovyBaseVersion = regexp.MustCompile(`^versions\.(\w+)\.substring\(\s*0\s*,\s*versions\.(\w+)\.lastIndexOf\(\s*['"]\.['"]\s*\)\s*\)$`)
 )
 
 // parseGroovyCatalog reads Groovy ext-map version tables (gradle/dependencies.gradle
@@ -191,19 +207,24 @@ func parseGroovyCatalog(data []byte, cat *gradleCatalog) {
 				key = m[3]
 			}
 			cat.setGroovy(m[1], key, m[4])
+			continue
+		}
+		if m := reGroovyDef.FindStringSubmatch(trimmed); m != nil {
+			if v, ok := cat.groovyValue(m[2]); ok {
+				if cat.locals == nil {
+					cat.locals = map[string]string{}
+				}
+				cat.locals[m[1]] = v
+			}
 		}
 	}
 }
 
-// setGroovy records one versions/libs entry from a Groovy expression. The last
-// string literal wins so ternary fallbacks resolve; entries whose interpolation
-// cannot be resolved are dropped rather than recorded with a literal "$versions.x".
+// setGroovy records one versions/libs entry from a Groovy expression; entries
+// whose value cannot be resolved are dropped rather than recorded with a
+// literal "$versions.x".
 func (c *gradleCatalog) setGroovy(section, key, expr string) {
-	lits := reGroovyString.FindAllStringSubmatch(expr, -1)
-	if len(lits) == 0 {
-		return
-	}
-	resolved, ok := c.interpolate(lits[len(lits)-1][1] + lits[len(lits)-1][2])
+	resolved, ok := c.groovyValue(expr)
 	if !ok {
 		return
 	}
@@ -212,6 +233,56 @@ func (c *gradleCatalog) setGroovy(section, key, expr string) {
 		target = c.versions
 	}
 	target[normalizeGradleAlias(key)] = resolved
+}
+
+// groovyValue evaluates the right-hand side of an assignment: the Scala
+// base-version idiom, a bare "def" local, or else the last top-level string
+// literal (so ternary fallbacks resolve) with $versions.x interpolated.
+// Literals inside call arguments such as lastIndexOf(".") are never values.
+func (c *gradleCatalog) groovyValue(expr string) (string, bool) {
+	expr = strings.TrimSpace(expr)
+	if m := reGroovyBaseVersion.FindStringSubmatch(expr); m != nil && m[1] == m[2] {
+		v := c.versions[normalizeGradleAlias(m[1])]
+		if i := strings.LastIndex(v, "."); i > 0 {
+			return v[:i], true
+		}
+		return "", false
+	}
+	if v, found := c.locals[expr]; found {
+		return v, true
+	}
+	lits := groovyTopLevelLiterals(expr)
+	if len(lits) == 0 {
+		return "", false
+	}
+	return c.interpolate(lits[len(lits)-1])
+}
+
+// groovyTopLevelLiterals returns the string literals of expr that are not
+// call arguments: `p.has('x') ? 'a' : "b"` yields [a b], `s.lastIndexOf(".")` nothing.
+func groovyTopLevelLiterals(expr string) []string {
+	var lits []string
+	depth := 0
+	for i := 0; i < len(expr); i++ {
+		switch ch := expr[i]; ch {
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case '"', '\'':
+			end := strings.IndexByte(expr[i+1:], ch)
+			if end < 0 {
+				return lits
+			}
+			if depth == 0 {
+				lits = append(lits, expr[i+1:i+1+end])
+			}
+			i += end + 1
+		}
+	}
+	return lits
 }
 
 // interpolate expands $versions.x / ${x} from the versions map; false if any is unknown.

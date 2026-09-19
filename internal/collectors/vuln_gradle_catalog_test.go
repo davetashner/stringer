@@ -313,3 +313,122 @@ commons-validator = "commons-validator:commons-validator:1.9.0"
 	assert.Contains(t, signals[0].Title, "commons-validator:commons-validator@1.9.0")
 	assert.Contains(t, signals[0].Tags, "java")
 }
+
+// Kafka-style table: baseScala comes from a def local through the
+// substring/lastIndexOf idiom and is spliced into the artifact segment.
+func TestParseGroovyCatalog_ArtifactInterpolationAndBaseVersion(t *testing.T) {
+	data := []byte(`def defaultScala213Version = '2.13.18'
+def unresolvedDefault = someProperty
+if (hasProperty('scalaVersion')) {
+  versions["scala"] = scalaVersion
+} else {
+  versions["scala"] = defaultScala213Version
+}
+if ( !versions.scala.contains('-') ) {
+  versions["baseScala"] = versions.scala.substring(0, versions.scala.lastIndexOf("."))
+} else {
+  versions["baseScala"] = versions.scala
+}
+versions["noDots"] = "42"
+versions["baseNoDots"] = versions.noDots.substring(0, versions.noDots.lastIndexOf("."))
+versions["baseMismatch"] = versions.scala.substring(0, versions.other.lastIndexOf("."))
+versions["envOnly"] = System.getenv("FOO_VERSION")
+versions += [
+  scalaLogging: "3.9.6",
+  fromLocal: defaultScala213Version,
+  fromUnresolved: unresolvedDefault,
+]
+libs += [
+  scalaLogging: "com.typesafe.scala-logging:scala-logging_$versions.baseScala:$versions.scalaLogging",
+  scalaLoggingBraced: "com.typesafe.scala-logging:scala-logging_${versions.baseScala}:${versions.scalaLogging}",
+  scalaReflect: "org.scala-lang:scala-reflect:$versions.scala",
+]
+`)
+	cat := newGradleCatalog()
+	parseGroovyCatalog(data, cat)
+
+	assert.Equal(t, map[string]string{"defaultScala213Version": "2.13.18"}, cat.locals)
+	assert.Equal(t, map[string]string{
+		"scala":        "2.13.18",
+		"basescala":    "2.13",
+		"nodots":       "42",
+		"scalalogging": "3.9.6",
+		"fromlocal":    "2.13.18",
+	}, cat.versions, "call-argument literals such as lastIndexOf(\".\") and getenv(\"X\") are never values")
+	assert.Equal(t, map[string]string{
+		"scalalogging":       "com.typesafe.scala-logging:scala-logging_2.13:3.9.6",
+		"scalaloggingbraced": "com.typesafe.scala-logging:scala-logging_2.13:3.9.6",
+		"scalareflect":       "org.scala-lang:scala-reflect:2.13.18",
+	}, cat.libs)
+
+	// A catalog built as a literal (nil locals) still records defs.
+	lit := &gradleCatalog{versions: map[string]string{}, libs: map[string]string{}}
+	parseGroovyCatalog([]byte("def x = '1'\nversions.y = x\n"), lit)
+	assert.Equal(t, map[string]string{"y": "1"}, lit.versions)
+}
+
+func TestGroovyTopLevelLiterals(t *testing.T) {
+	assert.Equal(t, []string{"a", "b"}, groovyTopLevelLiterals(`project.hasProperty('x') ? 'a' : "b"`))
+	assert.Empty(t, groovyTopLevelLiterals(`versions.scala.substring(0, versions.scala.lastIndexOf("."))`))
+	assert.Equal(t, []string{"1.0"}, groovyTopLevelLiterals(`f(g("x")) ?: "1.0"`), "nested call arguments are skipped")
+	assert.Equal(t, []string{"ok"}, groovyTopLevelLiterals(`"ok" + 'unterminated`), "unterminated literal ends the scan")
+	assert.Equal(t, []string{"a)b"}, groovyTopLevelLiterals(`"a)b"`), "a stray paren inside a literal is text")
+	assert.Empty(t, groovyTopLevelLiterals(`someVariable`))
+}
+
+func TestGradleCatalogs_InterpolateOrKeep(t *testing.T) {
+	cats := gradleCatalogs{"libs": {versions: map[string]string{"base": "2.13"}}}
+	assert.Equal(t, "g:a_2.13:1", cats.interpolateOrKeep("g:a_$versions.base:1"))
+	assert.Equal(t, "g:a_$versions.missing:1", cats.interpolateOrKeep("g:a_$versions.missing:1"), "unresolved strings are kept for the caller to drop")
+	assert.Equal(t, "g:a:1", gradleCatalogs(nil).interpolateOrKeep("g:a:1"))
+}
+
+func TestParseGradleDeps_ArtifactInterpolation(t *testing.T) {
+	cats := gradleCatalogs{"libs": {
+		versions: map[string]string{"basescala": "2.13", "logging": "3.9.6", "grp": "org.example"},
+		libs: map[string]string{
+			"scala.logging": "com.typesafe.scala-logging:scala-logging_2.13:3.9.6",
+			"dangling":      "org.example:dangling_:1.0",
+		},
+	}}
+	data := []byte(`dependencies {
+    implementation "org.scala-lang.modules:scala-collection-compat_$versions.baseScala:2.10.0"
+    implementation "org.scala-lang.modules:scala-java8-compat_${versions.baseScala}:${versions.logging}"
+    implementation "${versions.grp}:by-group:1.0"
+    implementation libs.scala.logging
+    implementation libs.dangling
+    implementation group: 'org.example', name: "map-style_${versions.baseScala}", version: '1.0'
+    implementation group: 'org.example', name: "map-unresolved_${versions.missing}", version: '1.0'
+    implementation "org.example:unresolved_$versions.missing:1.0"
+    implementation "org.example:trailing_.:1.0"
+    implementation "org.example:trailing-:1.0"
+    implementation "org.example:braces:{1.0}"
+}
+`)
+	queries, err := parseGradleDepsWithCatalogs(data, cats)
+	require.NoError(t, err)
+
+	var got []string
+	for _, q := range queries {
+		got = append(got, q.Name+"@"+q.Version)
+	}
+	assert.Equal(t, []string{
+		"org.scala-lang.modules:scala-collection-compat_2.13@2.10.0",
+		"org.scala-lang.modules:scala-java8-compat_2.13@3.9.6",
+		"org.example:by-group@1.0",
+		"com.typesafe.scala-logging:scala-logging_2.13@3.9.6",
+		"org.example:map-style_2.13@1.0",
+	}, got, "unresolved placeholders and dangling suffixes never become queries")
+}
+
+func TestMalformedGradleSegment(t *testing.T) {
+	for _, s := range []string{"", "$versions.x", "${x}", "a{b}", "scala-logging_.", "scala-logging_", "trailing-"} {
+		assert.True(t, malformedGradleSegment(s), s)
+	}
+	for _, s := range []string{"scala-logging_2.13", "com.typesafe.scala-logging", "3.9.6", "[1.0,2.0)", "1.0+", "31.1-jre", "b_c"} {
+		assert.False(t, malformedGradleSegment(s), s)
+	}
+	assert.Nil(t, gradleQuery("g", "a_.", "1"))
+	assert.Nil(t, gradleQuery("", "a", "1"))
+	assert.NotNil(t, gradleQuery("g", "a_2.13", "1"))
+}
