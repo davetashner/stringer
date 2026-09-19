@@ -13,7 +13,7 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/davetashner/stringer/badge)](https://securityscorecards.dev/viewer/?uri=github.com/davetashner/stringer)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/11942/badge?v=2)](https://www.bestpractices.dev/projects/11942)
 
-> **v1.10.0** is a maintenance release: the minimum Go version moves to 1.26+ (carrying the GO-2026-5972/6088/5026 stdlib security fixes), plus routine dependency and CI action updates. Full details in the [release notes](https://github.com/davetashner/stringer/releases/latest).
+> **v1.11.0** is an accuracy and performance release driven by a 13-repository benchmark: signal totals fall 29% to 70% per repository and the dead-code collector goes from 52 minutes to about a minute on Kafka (kubernetes 2 hours to 11 minutes). Version floors are reported as floors, test code no longer counts as complexity or dead code, duplication windows are merged, shallow clones are flagged in lottery risk, missing-tests finds mirrored test trees, and monorepo workspaces no longer repeat each other's signals. New: C# in complexity, dead code and coupling; NuGet Central Package Management and Gradle version catalogs; configurable, parallel registry lookups; per-collector progress logging. Full details in the [release notes](https://github.com/davetashner/stringer/releases/latest) and [docs/research/benchmark-2026-09.md](docs/research/benchmark-2026-09.md).
 
 **Codebase archaeology for developers and AI agents.** Stringer scans a repo for the tech debt already recorded in it — TODOs, vulnerable dependencies, single-owner code, complexity hotspots, stale branches — and turns it into structured output you can act on.
 
@@ -115,7 +115,7 @@ Collectors run concurrently, then signals are deduplicated (content-based SHA-25
 ## Real-world results
 
 Runs against 13 open-source repositories, from a 130-file library to a
-31k-file monorepo, on the v1.10.0 release binary. "High" is the share of
+31k-file monorepo, on the v1.11.0 build (main 0e10cf5). "High" is the share of
 signals at confidence 0.8 or above, the ones worth acting on first.
 
 | Repository | Language | Files | Signals | High | Scan | Highlights |
@@ -134,7 +134,7 @@ signals at confidence 0.8 or above, the ones worth acting on first.
 | [next.js](https://github.com/vercel/next.js) | JS/TS | 32,691 | 4,922 | 10% | 1m 39s | 1,093 complex functions, 92 vulnerable deps, 79 coupling issues |
 | [kubernetes](https://github.com/kubernetes/kubernetes) | Go | 31,379 | 17,694 | 10% | 10m 59s | 5,939 complex functions, 2,520 TODOs, 97 vulnerable deps |
 
-<sub>Tested 2026-09-19 on a build of main at 0e10cf5 (post v1.10.0, after the accuracy and performance fixes in PRs #431 to #459) on a 10-core Apple Silicon laptop. Repos cloned with `--depth 100`, GitHub collector excluded. Scan is the collector phase of `stringer scan`; `stringer report` takes about the same. Lottery-risk signals on shallow clones are capped at 0.5 and annotated. The v1.10.0 numbers, the method, per-collector counts, commit SHAs and the false-positive review are in [docs/research/benchmark-2026-09.md](docs/research/benchmark-2026-09.md).</sub>
+<sub>Tested 2026-09-19 on the v1.11.0 code (main 0e10cf5, after the accuracy and performance fixes in PRs #431 to #459) on a 10-core Apple Silicon laptop. Repos cloned with `--depth 100`, GitHub collector excluded. Scan is the collector phase of `stringer scan`; `stringer report` takes about the same. Lottery-risk signals on shallow clones are capped at 0.5 and annotated. The v1.10.0 numbers, the method, per-collector counts, commit SHAs and the false-positive review are in [docs/research/benchmark-2026-09.md](docs/research/benchmark-2026-09.md).</sub>
 
 Signal counts are dominated by three collectors (complexity, missing tests,
 duplication) and the "High" column is small by design: most signals are
