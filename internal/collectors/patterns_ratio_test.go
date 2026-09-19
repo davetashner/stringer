@@ -60,7 +60,7 @@ func TestPatterns_RatioCreditsMavenMirror(t *testing.T) {
 	assert.Empty(t, filterByKind(signals, "low-test-ratio"))
 	missing := filterByKind(signals, "missing-tests")
 	require.Len(t, missing, 1)
-	assert.Equal(t, filepath.FromSlash("core/src/main/java/org/apache/kafka/raft/LeaderState.java"), missing[0].FilePath)
+	assert.Equal(t, "core/src/main/java/org/apache/kafka/raft/LeaderState.java", missing[0].FilePath)
 }
 
 func TestPatterns_RatioCreditsPHPTestsMirror(t *testing.T) {

@@ -113,7 +113,7 @@ public class ItemServiceTests
 	unused, ok := byName["Unused"]
 	require.True(t, ok, "expected Unused to be flagged; got %v", byName)
 	assert.Equal(t, "unused-function", unused.Kind)
-	assert.Equal(t, filepath.Join("src", "ItemService.cs"), unused.FilePath)
+	assert.Equal(t, "src/ItemService.cs", unused.FilePath)
 	assert.Equal(t, 13, unused.Line)
 	assert.InDelta(t, 0.5, unused.Confidence, 0.001)
 

@@ -169,7 +169,7 @@ func TestPatterns_MavenTestInDifferentPackageCovers(t *testing.T) {
 	writeSourceFile(t, dir, "clients/src/main/java/org/apache/kafka/clients/Untested.java")
 
 	got := missingTestPaths(t, dir, signal.CollectorOpts{})
-	assert.Equal(t, []string{filepath.FromSlash("clients/src/main/java/org/apache/kafka/clients/Untested.java")}, got)
+	assert.Equal(t, []string{"clients/src/main/java/org/apache/kafka/clients/Untested.java"}, got)
 }
 
 func TestPatterns_CSharpSiblingTestProjectUnderTestsRoot(t *testing.T) {
@@ -179,7 +179,7 @@ func TestPatterns_CSharpSiblingTestProjectUnderTestsRoot(t *testing.T) {
 	writeSourceFile(t, dir, "Emby.Naming/TV/EpisodeResolver.cs")
 
 	got := missingTestPaths(t, dir, signal.CollectorOpts{})
-	assert.Equal(t, []string{filepath.FromSlash("Emby.Naming/TV/EpisodeResolver.cs")}, got)
+	assert.Equal(t, []string{"Emby.Naming/TV/EpisodeResolver.cs"}, got)
 }
 
 func TestPatterns_PHPExactNameInDifferentTree(t *testing.T) {
@@ -189,7 +189,7 @@ func TestPatterns_PHPExactNameInDifferentTree(t *testing.T) {
 	writeSourceFile(t, dir, "src/Illuminate/Cache/RedisStore.php")
 
 	got := missingTestPaths(t, dir, signal.CollectorOpts{})
-	assert.Equal(t, []string{filepath.FromSlash("src/Illuminate/Cache/RedisStore.php")}, got)
+	assert.Equal(t, []string{"src/Illuminate/Cache/RedisStore.php"}, got)
 }
 
 func TestPatterns_PHPPrefixedTestName(t *testing.T) {
@@ -208,7 +208,7 @@ func TestPatterns_PythonTestPrefixAnywhere(t *testing.T) {
 	writeSourceFile(t, dir, "src/pkg/sub/other.py")
 
 	got := missingTestPaths(t, dir, signal.CollectorOpts{})
-	assert.Equal(t, []string{filepath.FromSlash("src/pkg/sub/other.py")}, got)
+	assert.Equal(t, []string{"src/pkg/sub/other.py"}, got)
 }
 
 func TestPatterns_JSSpecAnywhere(t *testing.T) {
@@ -247,7 +247,7 @@ func TestPatterns_MultiModuleMavenTestHelpersNotFlagged(t *testing.T) {
 	writeSourceFile(t, dir, "raft/src/main/java/org/apache/kafka/raft/Quorum.java")
 
 	got := missingTestPaths(t, dir, signal.CollectorOpts{})
-	assert.Equal(t, []string{filepath.FromSlash("raft/src/main/java/org/apache/kafka/raft/Quorum.java")}, got)
+	assert.Equal(t, []string{"raft/src/main/java/org/apache/kafka/raft/Quorum.java"}, got)
 }
 
 func TestPatterns_GoTestSameDirStillDetectedAndMissingReported(t *testing.T) {
@@ -257,7 +257,7 @@ func TestPatterns_GoTestSameDirStillDetectedAndMissingReported(t *testing.T) {
 	writeSourceFile(t, dir, "internal/b/server.go")
 
 	got := missingTestPaths(t, dir, signal.CollectorOpts{})
-	assert.Equal(t, []string{filepath.FromSlash("internal/b/server.go")}, got)
+	assert.Equal(t, []string{"internal/b/server.go"}, got)
 }
 
 // --- Non-source exclusions ---
@@ -443,7 +443,7 @@ func TestPatterns_ConfigAndDataClassesNotFlagged(t *testing.T) {
 	writeSourceFile(t, dir, "src/Illuminate/Cache/RedisStore.php")
 
 	got := missingTestPaths(t, dir, signal.CollectorOpts{IncludeDemoPaths: true})
-	assert.Equal(t, []string{filepath.FromSlash("src/Illuminate/Cache/RedisStore.php")}, got)
+	assert.Equal(t, []string{"src/Illuminate/Cache/RedisStore.php"}, got)
 }
 
 func TestPatterns_DocsSrcAndTutorialNotFlaggedByDefault(t *testing.T) {
@@ -455,12 +455,12 @@ func TestPatterns_DocsSrcAndTutorialNotFlaggedByDefault(t *testing.T) {
 	writeSourceFile(t, dir, "src/app.py")
 
 	got := missingTestPaths(t, dir, signal.CollectorOpts{})
-	assert.Equal(t, []string{filepath.FromSlash("src/app.py")}, got)
+	assert.Equal(t, []string{"src/app.py"}, got)
 
 	// --include-demo-paths brings docs_src/ and tutorial*/ back.
 	got = missingTestPaths(t, dir, signal.CollectorOpts{IncludeDemoPaths: true})
-	assert.Contains(t, got, filepath.FromSlash("docs_src/tutorial/main.py"))
-	assert.Contains(t, got, filepath.FromSlash("tutorial01/app.py"))
+	assert.Contains(t, got, "docs_src/tutorial/main.py")
+	assert.Contains(t, got, "tutorial01/app.py")
 }
 
 // --- Directory ratios exclude the same non-source directories (stringer-89b) ---
@@ -488,7 +488,7 @@ func TestPatterns_DirectoryRatiosExcludeNonSourceDirs(t *testing.T) {
 	m, ok := c.Metrics().(*PatternsMetrics)
 	require.True(t, ok)
 	require.Len(t, m.DirectoryTestRatios, 1)
-	assert.Equal(t, filepath.FromSlash("src/core"), m.DirectoryTestRatios[0].Path)
+	assert.Equal(t, "src/core", m.DirectoryTestRatios[0].Path)
 	assert.Equal(t, 1, m.DirectoryTestRatios[0].SourceFiles)
 	assert.Equal(t, 1, m.DirectoryTestRatios[0].TestFiles)
 }
@@ -506,7 +506,7 @@ func TestPatterns_DirectoryRatiosIncludeDemoOptIn(t *testing.T) {
 	require.True(t, ok)
 	// docs_src/ is opted back in; config/ stays excluded.
 	require.Len(t, m.DirectoryTestRatios, 1)
-	assert.Equal(t, filepath.FromSlash("docs_src/tutorial"), m.DirectoryTestRatios[0].Path)
+	assert.Equal(t, "docs_src/tutorial", m.DirectoryTestRatios[0].Path)
 }
 
 func TestPatterns_LowTestRatioSkipsConfigDirs(t *testing.T) {
@@ -543,9 +543,9 @@ func TestPatterns_SourcePackagesNamedConfigAreSource(t *testing.T) {
 
 	got := missingTestPaths(t, dir, signal.CollectorOpts{})
 	assert.Equal(t, []string{
-		filepath.FromSlash("config/Kernel.php"),
-		filepath.FromSlash("internal/config/keypath.go"),
-		filepath.FromSlash("src/config/Loader.java"),
+		"config/Kernel.php",
+		"internal/config/keypath.go",
+		"src/config/Loader.java",
 	}, got)
 
 	m, ok := c.Metrics().(*PatternsMetrics)
