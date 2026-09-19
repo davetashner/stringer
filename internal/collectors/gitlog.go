@@ -6,14 +6,15 @@ package collectors
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
-
-	"errors"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -72,6 +73,34 @@ type FileChurn struct {
 	AuthorCount int
 }
 
+// gitlogHistory is the outcome of one commit walk over a repository: the
+// revert signals found and the per-file change counts and author sets for
+// the churn window. It is shared read-only between workspaces of the same
+// repository through gitlogHistories.
+type gitlogHistory struct {
+	reverts     []signal.RawSignal
+	fileChanges map[string]int             // repo-root-relative path -> modification count
+	fileAuthors map[string]map[string]bool // repo-root-relative path -> set of authors
+}
+
+// gitlogHistoryKey identifies one commit walk. Every option that changes
+// which commits or files the walk sees is part of the key, so a different
+// repository, HEAD, depth or since window always gets its own walk.
+type gitlogHistoryKey struct {
+	gitRoot string
+	head    plumbing.Hash
+	depth   int
+	since   string
+}
+
+// gitlogHistories memoises the most recent commit walk so that a monorepo
+// scan walks the repository history once rather than once per workspace.
+var gitlogHistories historyMemo[gitlogHistoryKey, *gitlogHistory]
+
+// resetGitlogHistoryCache drops the memoised commit walk. Tests call it to
+// force a fresh walk.
+func resetGitlogHistoryCache() { gitlogHistories.reset() }
+
 // GitlogCollector examines git history for reverts, high-churn files, and
 // stale branches.
 type GitlogCollector struct {
@@ -103,13 +132,15 @@ func (c *GitlogCollector) Collect(ctx context.Context, repoPath string, opts sig
 
 	var signals []signal.RawSignal
 
-	// Collect reverts and build churn data in a single commit walk.
-	reverts, churnSignals, fileChanges, fileAuthors, err := c.walkCommits(ctx, repo, opts)
+	// Reverts and churn data come from a single commit walk, shared across
+	// the workspaces of a monorepo scan.
+	hist, err := c.loadHistory(ctx, repo, gitRoot, opts)
 	if err != nil {
 		return nil, fmt.Errorf("walking commits: %w", err)
 	}
+	reverts := cloneSignals(hist.reverts)
 	signals = append(signals, reverts...)
-	signals = append(signals, churnSignals...)
+	signals = append(signals, buildChurnSignals(hist.fileChanges, hist.fileAuthors)...)
 
 	// Check context before stale-branch scan.
 	if err := ctx.Err(); err != nil {
@@ -124,8 +155,8 @@ func (c *GitlogCollector) Collect(ctx context.Context, repoPath string, opts sig
 
 	// Build metrics from all files (not just above-threshold).
 	var churns []FileChurn
-	for path, count := range fileChanges {
-		authorCount := len(fileAuthors[path])
+	for path, count := range hist.fileChanges {
+		authorCount := len(hist.fileAuthors[path])
 		churns = append(churns, FileChurn{
 			Path:        path,
 			ChangeCount: count,
@@ -145,17 +176,36 @@ func (c *GitlogCollector) Collect(ctx context.Context, repoPath string, opts sig
 	return signals, nil
 }
 
-// walkCommits iterates over the most recent commits and returns revert signals,
-// churn signals, and the raw file-change/author maps for metrics.
-func (c *GitlogCollector) walkCommits(ctx context.Context, repo testable.GitRepository, opts signal.CollectorOpts) ([]signal.RawSignal, []signal.RawSignal, map[string]int, map[string]map[string]bool, error) {
+// loadHistory returns the commit history for the repository at gitRoot,
+// walking it on the first call for a given (root, HEAD, depth, since) and
+// serving every later workspace of the same scan from gitlogHistories.
+// Repositories without a resolvable HEAD yield an empty history.
+func (c *GitlogCollector) loadHistory(ctx context.Context, repo testable.GitRepository, gitRoot string, opts signal.CollectorOpts) (*gitlogHistory, error) {
 	head, err := repo.Head()
 	if err != nil {
 		// Empty repo or detached HEAD with no commits.
-		return nil, nil, nil, nil, nil //nolint:nilerr // gracefully handle repos with no commits
+		return &gitlogHistory{}, nil //nolint:nilerr // gracefully handle repos with no commits
 	}
+	maxWalk := maxCommitWalk
+	if opts.GitDepth > 0 {
+		maxWalk = opts.GitDepth
+	}
+	key := gitlogHistoryKey{
+		gitRoot: filepath.Clean(gitRoot),
+		head:    head.Hash(),
+		depth:   maxWalk,
+		since:   opts.GitSince,
+	}
+	return gitlogHistories.load(ctx, key, func(ctx context.Context) (*gitlogHistory, error) {
+		return c.walkCommits(ctx, repo, head.Hash(), maxWalk, opts)
+	})
+}
 
+// walkCommits iterates over the most recent commits from head and returns the
+// revert signals and raw file-change/author maps for the churn window.
+func (c *GitlogCollector) walkCommits(ctx context.Context, repo testable.GitRepository, from plumbing.Hash, maxWalk int, opts signal.CollectorOpts) (*gitlogHistory, error) {
 	logOpts := &git.LogOptions{
-		From:  head.Hash(),
+		From:  from,
 		Order: git.LogOrderCommitterTime,
 	}
 	if opts.GitSince != "" {
@@ -167,18 +217,14 @@ func (c *GitlogCollector) walkCommits(ctx context.Context, repo testable.GitRepo
 
 	iter, err := repo.Log(logOpts)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("creating log iterator: %w", err)
+		return nil, fmt.Errorf("creating log iterator: %w", err)
 	}
 
-	maxWalk := maxCommitWalk
-	if opts.GitDepth > 0 {
-		maxWalk = opts.GitDepth
+	hist := &gitlogHistory{
+		fileChanges: make(map[string]int),
+		fileAuthors: make(map[string]map[string]bool),
 	}
-
-	var reverts []signal.RawSignal
 	churnWindow := time.Now().AddDate(0, 0, -churnWindowDays)
-	fileChanges := make(map[string]int)             // filepath -> modification count
-	fileAuthors := make(map[string]map[string]bool) // filepath -> set of authors
 	count := 0
 
 	err = iter.ForEach(func(commit *object.Commit) error {
@@ -196,7 +242,7 @@ func (c *GitlogCollector) walkCommits(ctx context.Context, repo testable.GitRepo
 
 		// --- Revert detection ---
 		if sig, ok := detectRevert(commit); ok {
-			reverts = append(reverts, sig)
+			hist.reverts = append(hist.reverts, sig)
 		}
 
 		// --- Churn counting (only within the time window) ---
@@ -205,11 +251,11 @@ func (c *GitlogCollector) walkCommits(ctx context.Context, repo testable.GitRepo
 			if filesErr == nil {
 				author := commit.Author.Name
 				for _, name := range files {
-					fileChanges[name]++
-					if fileAuthors[name] == nil {
-						fileAuthors[name] = make(map[string]bool)
+					hist.fileChanges[name]++
+					if hist.fileAuthors[name] == nil {
+						hist.fileAuthors[name] = make(map[string]bool)
 					}
-					fileAuthors[name][author] = true
+					hist.fileAuthors[name][author] = true
 				}
 			}
 		}
@@ -219,15 +265,27 @@ func (c *GitlogCollector) walkCommits(ctx context.Context, repo testable.GitRepo
 	if err != nil && err != errStopIter {
 		// Shallow clones may lack parent objects — degrade gracefully.
 		if errors.Is(err, plumbing.ErrObjectNotFound) {
-			return reverts, buildChurnSignals(fileChanges, fileAuthors), fileChanges, fileAuthors, nil
+			return hist, nil
 		}
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 
-	// Build churn signals from aggregated data.
-	churnSignals := buildChurnSignals(fileChanges, fileAuthors)
+	return hist, nil
+}
 
-	return reverts, churnSignals, fileChanges, fileAuthors, nil
+// cloneSignals returns a copy of signals whose Tags slices are independent
+// of the originals, so callers can mutate what they receive from the shared
+// history without affecting later workspaces.
+func cloneSignals(signals []signal.RawSignal) []signal.RawSignal {
+	if signals == nil {
+		return nil
+	}
+	out := make([]signal.RawSignal, len(signals))
+	for i, sig := range signals {
+		sig.Tags = slices.Clone(sig.Tags)
+		out[i] = sig
+	}
+	return out
 }
 
 // errStopIter is a sentinel used to stop the commit iterator after reaching

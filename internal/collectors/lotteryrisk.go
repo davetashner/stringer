@@ -20,6 +20,7 @@ import (
 	"github.com/davetashner/stringer/internal/collector"
 	"github.com/davetashner/stringer/internal/gitcli"
 	"github.com/davetashner/stringer/internal/signal"
+	"github.com/davetashner/stringer/internal/testable"
 )
 
 // defaultLotteryRiskThreshold is the lottery risk threshold below or at which a
@@ -404,23 +405,64 @@ func blameDirectories(ctx context.Context, gitDir string, repoPath string, owner
 	return g.Wait()
 }
 
+// numstatHistoryKey identifies one `git log --numstat` walk: the repository,
+// its HEAD and the depth/since window. Any change to these forces a new walk.
+type numstatHistoryKey struct {
+	gitDir string
+	head   string
+	depth  int
+	since  string
+}
+
+// numstatHistories memoises the most recent numstat walk so that a monorepo
+// scan runs `git log --numstat` once per repository rather than once per
+// workspace (stringer-jfh.5). The commits are shared read-only.
+var numstatHistories historyMemo[numstatHistoryKey, []gitcli.NumstatCommit]
+
+// resetNumstatHistoryCache drops the memoised numstat walk. Tests call it to
+// force a fresh walk.
+func resetNumstatHistoryCache() { numstatHistories.reset() }
+
+// repoHeadHash returns the HEAD commit hash of the repository at gitDir, or
+// "" when it cannot be resolved (empty repository, not a repository). It is
+// only used to key history memos, so failures are not errors.
+func repoHeadHash(gitDir string) string {
+	repo, err := testable.DefaultGitOpener.PlainOpen(gitDir)
+	if err != nil {
+		return ""
+	}
+	head, err := repo.Head()
+	if err != nil {
+		return ""
+	}
+	return head.Hash().String()
+}
+
 // walkCommitsForOwnership runs `git log --numstat` and applies recency-weighted
 // attribution to directories based on changed files. This replaced the earlier
-// go-git tree-diff approach for performance (DR-011).
+// go-git tree-diff approach for performance (DR-011). The numstat output is
+// memoised per repository so every workspace of a monorepo scan shares it.
 func walkCommitsForOwnership(ctx context.Context, gitDir string, ownership map[string]*dirOwnership, opts signal.CollectorOpts) error {
 	maxWalk := maxCommitWalk
 	if opts.GitDepth > 0 {
 		maxWalk = opts.GitDepth
 	}
 
-	var since string
-	if opts.GitSince != "" {
-		if d, parseErr := ParseDuration(opts.GitSince); parseErr == nil {
-			since = time.Now().Add(-d).Format(time.RFC3339)
-		}
+	key := numstatHistoryKey{
+		gitDir: filepath.Clean(gitDir),
+		head:   repoHeadHash(gitDir),
+		depth:  maxWalk,
+		since:  opts.GitSince,
 	}
-
-	commits, err := gitcli.LogNumstat(ctx, gitDir, maxWalk, since)
+	commits, err := numstatHistories.load(ctx, key, func(ctx context.Context) ([]gitcli.NumstatCommit, error) {
+		var since string
+		if opts.GitSince != "" {
+			if d, parseErr := ParseDuration(opts.GitSince); parseErr == nil {
+				since = time.Now().Add(-d).Format(time.RFC3339)
+			}
+		}
+		return gitcli.LogNumstat(ctx, gitDir, maxWalk, since)
+	})
 	if err != nil {
 		errMsg := err.Error()
 		// Empty repos, shallow clones, and other non-fatal git errors —
