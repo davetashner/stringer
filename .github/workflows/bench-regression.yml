@@ -1,0 +1,91 @@
+name: Benchmark Regression
+
+# Scans small open-source repos pinned to fixed commits (eval/baseline/*.json)
+# and fails when per-collector signal counts drift from the committed baseline
+# or a collector blows through its duration ceiling. See eval/README.md.
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "internal/collectors/**"
+      - "internal/pipeline/**"
+      - "internal/gitcli/**"
+      - "cmd/stringer/**"
+      - "eval/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/bench-regression.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bench-regression-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    name: Benchmark Regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26"
+      - name: Build stringer
+        run: go build -o "$RUNNER_TEMP/stringer" ./cmd/stringer
+      - name: Scan pinned repos and compare with baseline
+        env:
+          BENCH_CHECK_MARKDOWN: ${{ runner.temp }}/bench-results/check.md
+        run: eval/bench-regression.sh --bin "$RUNNER_TEMP/stringer" --out "$RUNNER_TEMP/bench-results"
+      - name: Job summary
+        if: always()
+        run: cat "$RUNNER_TEMP/bench-results/check.md" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bench-regression-results
+          path: |
+            ${{ runner.temp }}/bench-results
+            !${{ runner.temp }}/bench-results/*/repo
+          retention-days: 14
+
+  report:
+    name: Open or update regression issue
+    needs: bench
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bench-regression-results
+          path: results
+        continue-on-error: true
+      - name: Open or comment on the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Benchmark regression on main"
+          {
+            echo "The nightly benchmark regression check failed on \`$GITHUB_SHA\`: $RUN_URL"
+            echo
+            cat results/check.md 2>/dev/null || echo "No check report was produced (build or clone failure?); see the run log."
+          } > body.md
+          num=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$title\"" \
+            --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -1)
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --repo "$GITHUB_REPOSITORY" --body-file body.md
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file body.md
+          fi
