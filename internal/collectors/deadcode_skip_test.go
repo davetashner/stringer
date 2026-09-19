@@ -338,6 +338,8 @@ func TestManifestKind(t *testing.T) {
 		{"pyproject scripts", map[string]string{"pyproject.toml": "[project]\n[project.scripts]\nx = \"x:main\"\n"}, false, false},
 		{"composer lib", map[string]string{"composer.json": `{"type" : "library"}`}, true, false},
 		{"composer project", map[string]string{"composer.json": `{"type": "project"}`}, false, false},
+		{"composer default type", map[string]string{"composer.json": `{"name": "laravel/framework", "require": {}}`}, true, false},
+		{"composer plugin", map[string]string{"composer.json": `{"type": "composer-plugin"}`}, false, false},
 		{"setup.py", map[string]string{"setup.py": "from setuptools import setup\n"}, true, false},
 	}
 	for _, tt := range tests {
@@ -353,10 +355,50 @@ func TestManifestKind(t *testing.T) {
 	}
 }
 
-func TestDeadCode_LibraryPublicAPI(t *testing.T) {
+// collectDeadCodeMetrics writes files into a temp dir, runs the collector
+// and returns both the signals and the metrics.
+func collectDeadCodeMetrics(t *testing.T, files map[string]string, opts signal.CollectorOpts) ([]signal.RawSignal, *DeadCodeMetrics) {
+	t.Helper()
+	dir := t.TempDir()
+	for rel, content := range files {
+		p := filepath.Join(dir, rel)
+		require.NoError(t, os.MkdirAll(filepath.Dir(p), 0o750))
+		require.NoError(t, os.WriteFile(p, []byte(content), 0o600))
+	}
+	c := &DeadCodeCollector{}
+	signals, err := c.Collect(context.Background(), dir, opts)
+	require.NoError(t, err)
+	return signals, c.Metrics().(*DeadCodeMetrics)
+}
+
+func TestDeadCode_LibraryPublicAPI_SuppressedByDefault(t *testing.T) {
 	rs := "pub fn reader_pin_mut() {}\nfn private_fn() {}\npub struct Exported;\n"
-	// No entry point and no manifest: treated as a library.
-	signals := writeDeadCodeFixture(t, map[string]string{"src/lib.rs": rs}, signal.CollectorOpts{})
+	// No entry point and no manifest: treated as a library. Public symbols
+	// are counted, not reported; private ones keep their tier.
+	signals, m := collectDeadCodeMetrics(t, map[string]string{"src/lib.rs": rs}, signal.CollectorOpts{})
+	assert.Nil(t, findSignal(signals, "reader_pin_mut"), "public fn suppressed")
+	assert.Nil(t, findSignal(signals, "Exported"), "public type suppressed")
+	priv := findSignal(signals, "private_fn")
+	require.NotNil(t, priv)
+	assert.InDelta(t, 0.6, priv.Confidence, 0.01)
+	assert.NotContains(t, priv.Tags, "public-api")
+	assert.True(t, m.IsLibrary)
+	assert.Equal(t, 2, m.PublicSuppressed)
+	assert.Equal(t, 1, m.DeadSymbols, "suppressed symbols are not dead-symbol findings")
+
+	// Cargo [lib] wins over an entry point.
+	signals, m = collectDeadCodeMetrics(t, map[string]string{
+		"src/lib.rs": rs, "src/main.rs": "fn main() {}\n", "Cargo.toml": "[package]\n[lib]\n",
+	}, signal.CollectorOpts{})
+	assert.Nil(t, findSignal(signals, "reader_pin_mut"))
+	assert.True(t, m.IsLibrary)
+	assert.Equal(t, 2, m.PublicSuppressed)
+}
+
+func TestDeadCode_LibraryPublicAPI_OptIn(t *testing.T) {
+	rs := "pub fn reader_pin_mut() {}\nfn private_fn() {}\npub struct Exported;\n"
+	signals, m := collectDeadCodeMetrics(t, map[string]string{"src/lib.rs": rs},
+		signal.CollectorOpts{IncludePublicAPI: true})
 	pub := findSignal(signals, "reader_pin_mut")
 	require.NotNil(t, pub)
 	assert.InDelta(t, 0.3, pub.Confidence, 0.01)
@@ -368,39 +410,54 @@ func TestDeadCode_LibraryPublicAPI(t *testing.T) {
 	require.NotNil(t, priv)
 	assert.InDelta(t, 0.6, priv.Confidence, 0.01)
 	assert.NotContains(t, priv.Tags, "public-api")
+	assert.True(t, m.IsLibrary)
+	assert.Equal(t, 0, m.PublicSuppressed, "nothing suppressed when opted in")
+	assert.Equal(t, 3, m.DeadSymbols)
 
 	// Cargo [lib] wins over an entry point.
-	signals = writeDeadCodeFixture(t, map[string]string{
+	signals, _ = collectDeadCodeMetrics(t, map[string]string{
 		"src/lib.rs": rs, "src/main.rs": "fn main() {}\n", "Cargo.toml": "[package]\n[lib]\n",
-	}, signal.CollectorOpts{})
+	}, signal.CollectorOpts{IncludePublicAPI: true})
 	assert.Contains(t, findSignal(signals, "reader_pin_mut").Tags, "public-api")
+}
 
-	// An entry point without a library manifest keeps the 0.4 tier.
-	signals = writeDeadCodeFixture(t, map[string]string{
-		"src/lib.rs": rs, "src/main.rs": "fn main() {}\n",
-	}, signal.CollectorOpts{})
-	pub = findSignal(signals, "reader_pin_mut")
-	require.NotNil(t, pub)
-	assert.InDelta(t, 0.4, pub.Confidence, 0.01)
-	assert.NotContains(t, pub.Tags, "public-api")
+func TestDeadCode_ApplicationUnchanged(t *testing.T) {
+	rs := "pub fn reader_pin_mut() {}\nfn private_fn() {}\npub struct Exported;\n"
+	files := map[string]string{"src/lib.rs": rs, "src/main.rs": "fn main() {}\n"}
+	// An entry point without a library manifest keeps the 0.4 tier and
+	// suppresses nothing, with or without the flag.
+	for _, include := range []bool{false, true} {
+		signals, m := collectDeadCodeMetrics(t, files, signal.CollectorOpts{IncludePublicAPI: include})
+		pub := findSignal(signals, "reader_pin_mut")
+		require.NotNil(t, pub, "include=%v", include)
+		assert.InDelta(t, 0.4, pub.Confidence, 0.01)
+		assert.NotContains(t, pub.Tags, "public-api")
+		assert.False(t, m.IsLibrary)
+		assert.Equal(t, 0, m.PublicSuppressed)
+		assert.Equal(t, 3, m.DeadSymbols)
+	}
 }
 
 func TestDeadCode_LibraryPublicAPI_GoAndPHP(t *testing.T) {
-	signals := writeDeadCodeFixture(t, map[string]string{
+	files := map[string]string{
 		"go.mod":                 "module example.com/lib\n",
 		"lib.go":                 "package lib\n\nfunc Exported() {}\n\nfunc unexported() {}\n",
 		"internal/x/x.go":        "package x\n\nfunc InternalExported() {}\n",
 		"src/Hasher.php":         "<?php\nclass Hasher {\n    public function setHasher() {}\n    private function secret() {}\n}\n",
 		"src/Events/Lockout.php": "<?php\nclass Lockout {}\n",
 		"composer.json":          `{"type": "library"}`,
-	}, signal.CollectorOpts{})
+	}
 
-	sig := findSignal(signals, "Exported")
-	require.NotNil(t, sig)
-	assert.InDelta(t, 0.3, sig.Confidence, 0.01)
-	assert.Contains(t, sig.Tags, "public-api")
+	// Default: the four public symbols (Exported, Hasher, setHasher, Lockout) are
+	// suppressed; internal/ and private symbols are unaffected.
+	signals, m := collectDeadCodeMetrics(t, files, signal.CollectorOpts{})
+	for _, name := range []string{"Exported", "Hasher", "setHasher", "Lockout"} {
+		assert.Nil(t, findSignal(signals, name), name)
+	}
+	assert.Equal(t, 4, m.PublicSuppressed)
+	assert.True(t, m.IsLibrary)
 
-	sig = findSignal(signals, "unexported")
+	sig := findSignal(signals, "unexported")
 	require.NotNil(t, sig)
 	assert.InDelta(t, 0.7, sig.Confidence, 0.01)
 	assert.NotContains(t, sig.Tags, "public-api")
@@ -410,15 +467,19 @@ func TestDeadCode_LibraryPublicAPI_GoAndPHP(t *testing.T) {
 	assert.InDelta(t, 0.6, sig.Confidence, 0.01, "internal/ is not public API")
 	assert.NotContains(t, sig.Tags, "public-api")
 
-	for _, name := range []string{"setHasher", "Lockout"} {
+	sig = findSignal(signals, "secret")
+	require.NotNil(t, sig)
+	assert.InDelta(t, 0.5, sig.Confidence, 0.01)
+
+	// Opt-in restores the public symbols at the 0.3 tier, tagged.
+	signals, m = collectDeadCodeMetrics(t, files, signal.CollectorOpts{IncludePublicAPI: true})
+	assert.Equal(t, 0, m.PublicSuppressed)
+	for _, name := range []string{"Exported", "Hasher", "setHasher", "Lockout"} {
 		sig = findSignal(signals, name)
 		require.NotNil(t, sig, name)
 		assert.InDelta(t, 0.3, sig.Confidence, 0.01, name)
 		assert.Contains(t, sig.Tags, "public-api", name)
 	}
-	sig = findSignal(signals, "secret")
-	require.NotNil(t, sig)
-	assert.InDelta(t, 0.5, sig.Confidence, 0.01)
 }
 
 func TestDeadCode_RubyElixirPredicateNames(t *testing.T) {

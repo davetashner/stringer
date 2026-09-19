@@ -224,12 +224,16 @@ func isEntryPointPath(relPath string, isDir bool) bool {
 	return !strings.Contains(rel, "/") && deadCodeRootEntryNames[base]
 }
 
-var composerLibraryType = regexp.MustCompile(`"type"\s*:\s*"library"`)
+// composerType matches a top-level composer.json "type" value. Composer's
+// documented default when the key is absent is "library", so a manifest
+// without one (laravel/framework, most packages) is a library too.
+var composerType = regexp.MustCompile(`"type"\s*:\s*"([^"]*)"`)
 
 // manifestKind inspects the package manifests at the repo root and reports
 // whether one declares the repository a library (Cargo `[lib]`,
 // package.json `main`/`exports` without `bin`, pyproject `[project]` without
-// `[project.scripts]`, composer `"type": "library"`, a `setup.py`) or an
+// `[project.scripts]`, composer `"type": "library"` or no `type` (the
+// composer default), a `setup.py`) or an
 // application (Cargo `[[bin]]`, package.json `bin`).
 func manifestKind(repoPath string) (lib, app bool) {
 	read := func(name string) (string, bool) {
@@ -250,7 +254,8 @@ func manifestKind(repoPath string) (lib, app bool) {
 		lib = lib || (!hasScripts && strings.Contains(c, "[project]"))
 	}
 	if c, ok := read("composer.json"); ok {
-		lib = lib || composerLibraryType.MatchString(c)
+		m := composerType.FindStringSubmatch(c)
+		lib = lib || m == nil || m[1] == "library"
 	}
 	if _, err := FS.Stat(filepath.Join(repoPath, "setup.py")); err == nil {
 		lib = true

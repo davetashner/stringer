@@ -82,6 +82,28 @@ collectors:
 	require.NoError(t, Validate(&cfg))
 }
 
+func TestConfig_IncludePublicAPIYAML(t *testing.T) {
+	data := []byte(`
+collectors:
+  deadcode:
+    include_public_api: true
+    include_tests: false
+`)
+	var cfg Config
+	require.NoError(t, yaml.Unmarshal(data, &cfg))
+	dc := cfg.Collectors["deadcode"]
+	require.NotNil(t, dc.IncludePublicAPI)
+	assert.True(t, *dc.IncludePublicAPI)
+	require.NotNil(t, dc.IncludeTests)
+	assert.False(t, *dc.IncludeTests)
+	require.NoError(t, Validate(&cfg))
+
+	// Absent key stays nil so Merge can distinguish unset from false.
+	var empty Config
+	require.NoError(t, yaml.Unmarshal([]byte("collectors:\n  deadcode:\n    deadcode_max_files: 5\n"), &empty))
+	assert.Nil(t, empty.Collectors["deadcode"].IncludePublicAPI)
+}
+
 func TestConfig_EmptyYAML(t *testing.T) {
 	var cfg Config
 	require.NoError(t, yaml.Unmarshal([]byte(""), &cfg))

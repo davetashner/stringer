@@ -128,6 +128,12 @@ type CollectorOpts struct {
 	// Default false: test code is skipped by the complexity collector.
 	IncludeTests bool
 
+	// IncludePublicAPI keeps deadcode findings for exported symbols of a
+	// library repository (confidence 0.3, tagged "public-api"). Default
+	// false: a library's public API is assumed to be consumed downstream and
+	// is not reported; the suppressed count is exposed in DeadCodeMetrics.
+	IncludePublicAPI bool
+
 	// DuplicationWindowSize overrides the sliding window size for duplication
 	// detection. 0 uses default (6).
 	DuplicationWindowSize int

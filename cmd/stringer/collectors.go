@@ -73,7 +73,7 @@ var knownCollectors = map[string]collectorMeta{
 	"deadcode": {
 		Description:  "Detects unused functions and types via regex heuristic and reference search",
 		SignalKinds:  []string{"unused-function", "unused-type"},
-		ConfigFields: []string{},
+		ConfigFields: []string{"deadcode_max_files", "include_tests", "include_public_api"},
 	},
 	"duplication": {
 		Description:  "Detects copy-paste code duplication using token-based clone detection (output capped per scanned workspace)",
@@ -136,6 +136,7 @@ var collectorThresholds = map[string][]struct {
 	},
 	"deadcode": {
 		{"deadcode_max_files", "10000"},
+		{"include_public_api", "false"},
 	},
 	"dephealth": {
 		{"registry_timeout", "10s"},
@@ -344,6 +345,9 @@ func buildThresholds(name string, cc config.CollectorConfig) []ThresholdInfo {
 		current := def.DefaultVal
 		if idx, found := tagIdx[def.Field]; found {
 			fv := rv.Field(idx)
+			if fv.Kind() == reflect.Ptr && !fv.IsNil() {
+				fv = fv.Elem() // *bool flags: show the value, not the address
+			}
 			if !fv.IsZero() {
 				current = fmt.Sprintf("%v", fv.Interface())
 			}
