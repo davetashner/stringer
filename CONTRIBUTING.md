@@ -120,6 +120,10 @@ All pull requests are reviewed by the maintainer before merge. Direct pushes to 
 - **Size**: PRs stay under 500 non-test lines when possible (CI warns at 500, fails at 1000)
 - **Documentation**: Exported types and functions have doc comments; AGENTS.md updated if interfaces change
 
+### Self-scan gate
+
+CI runs stringer on itself (`./scripts/self-scan.sh`) and fails when your change adds a finding at confidence >= 0.8 that `.stringer/baseline.json` does not cover, for example a new function with cyclomatic complexity >= 16. Simplify the code, or, if the finding is intentional, run the `stringer baseline suppress sts-…` command printed in the job log from the repository root (or `go run ./cmd/stringer baseline suppress …`) and commit the baseline change. See [DR-027](docs/decisions/027-self-scan-gate.md).
+
 ### Requirements to merge
 
 - All CI checks pass (tests, lint, vet, coverage, security scans, DCO sign-off)

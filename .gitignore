@@ -46,8 +46,11 @@ Thumbs.db
 *.swo
 *~
 
-# Stringer state
+# Stringer state (the root self-scan baseline is committed, DR-027)
 .stringer/
+!/.stringer/
+/.stringer/*
+!/.stringer/baseline.json
 
 # Beads lock
 .beads/.jsonl.lock
