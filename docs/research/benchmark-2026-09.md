@@ -330,7 +330,81 @@ What changed in the tool between the two runs:
 | C# | Added to complexity, deadcode and coupling | #443 |
 | pipeline | Per-collector completion logged as it happens | #440 |
 
-COMPARISON_TABLES
+#### Signals and timing: v1.10.0 versus main
+
+| Repository | Signals before | Signals after | Change | High before | High after | Scan before | Scan after | Report before | Report after |
+|------------|---------------:|--------------:|-------:|------------:|-----------:|------------:|-----------:|--------------:|-------------:|
+| gin-gonic/gin | 299 | 166 | -44% | 7% | 8% | 4s | 2s | 4s | 2s |
+| expressjs/express | 259 | 97 | -63% | 5% | 0% | 6s | 2s | 10s | 2s |
+| pallets/flask | 283 | 100 | -65% | 3% | 0% | 4s | 2s | 3s | 2s |
+| rust-lang/rustlings | 499 | 356 | -29% | 14% | 1% | 4s | 3s | 4s | 3s |
+| tokio-rs/tokio | 1,834 | 1,141 | -38% | 1% | 1% | 36s | 21s | 37s | 21s |
+| jellyfin/jellyfin | 2,542 | 2,969 | +17% | 9% | 11% | 46s | 35s | 46s | 34s |
+| tiangolo/fastapi | 868 | 407 | -53% | 16% | 12% | 8s | 7s | 9s | 7s |
+| laravel/framework | 4,169 | 1,589 | -62% | 3% | 2% | 3m 29s | 18s | 3m 26s | 18s |
+| django/django | 4,297 | 1,293 | -70% | 10% | 13% | 2m 35s | 21s | 2m 37s | 20s |
+| facebook/react | 8,970 | 5,587 | -38% | 5% | 9% | 2m 48s | 1m 46s | 2m 47s | 1m 47s |
+| apache/kafka | 12,069 | 4,509 | -63% | 4% | 8% | 52m 32s | 1m 09s | 52m 18s | 1m 07s |
+| kubernetes/kubernetes | 51,542 | 28,388 | -45% | 20% | 10% | 1h 57m | 34m 43s | 1h 50m | 34m 09s |
+| vercel/next.js | 14,027 | 5,027 | -64% | 17% | 9% | 34m 59s | 9m 40s | 35m 05s | 9m 29s |
+
+#### Signals by collector: before -> after
+
+| Repository | complexity | coupling | deadcode | dephealth | docstale | duplication | githygiene | gitlog | lotteryrisk | patterns | todos | vuln |
+|------------|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| gin-gonic/gin | 57 -> 39 | 0 -> 0 | 1 -> 0 | 0 -> 0 | 2 -> 2 | 200 -> 96 | 0 -> 0 | 0 -> 0 | 7 -> 4 | 29 -> 22 | 2 -> 2 | 1 -> 1 |
+| expressjs/express | 39 -> 4 | 0 -> 0 | 0 -> 0 | 0 -> 0 | 1 -> 1 | 200 -> 78 | 0 -> 0 | 1 -> 1 | 6 -> 4 | 10 -> 7 | 0 -> 0 | 2 -> 2 |
+| pallets/flask | 36 -> 14 | 0 -> 0 | 43 -> 1 | 0 -> 0 | 2 -> 2 | 158 -> 53 | 9 -> 2 | 0 -> 0 | 6 -> 3 | 20 -> 16 | 0 -> 0 | 9 -> 9 |
+| rust-lang/rustlings | 29 -> 14 | 0 -> 0 | 3 -> 1 | 0 -> 0 | 1 -> 1 | 161 -> 106 | 0 -> 0 | 1 -> 1 | 65 -> 30 | 97 -> 62 | 141 -> 141 | 1 -> 0 |
+| tokio-rs/tokio | 365 -> 76 | 1 -> 1 | 180 -> 6 | 2 -> 2 | 8 -> 8 | 692 -> 436 | 0 -> 0 | 40 -> 90 | 0 -> 0 | 455 -> 431 | 76 -> 76 | 15 -> 15 |
+| jellyfin/jellyfin | 0 -> 915 | 0 -> 42 | 0 -> 227 | 0 -> 0 | 1 -> 1 | 200 -> 200 | 9 -> 8 | 30 -> 30 | 228 -> 122 | 1,918 -> 1,268 | 156 -> 156 | 0 -> 0 |
+| tiangolo/fastapi | 111 -> 67 | 0 -> 0 | 104 -> 1 | 0 -> 0 | 39 -> 0 | 200 -> 200 | 32 -> 13 | 2 -> 2 | 90 -> 35 | 233 -> 32 | 50 -> 50 | 7 -> 7 |
+| laravel/framework | 1,140 -> 261 | 0 -> 0 | 1,208 -> 364 | 0 -> 0 | 1 -> 0 | 200 -> 200 | 24 -> 12 | 0 -> 0 | 57 -> 32 | 1,505 -> 686 | 0 -> 0 | 34 -> 34 |
+| django/django | 1,626 -> 520 | 15 -> 15 | 1,491 -> 7 | 0 -> 0 | 2 -> 2 | 200 -> 200 | 88 -> 76 | 2 -> 4 | 236 -> 111 | 563 -> 284 | 68 -> 68 | 6 -> 6 |
+| facebook/react | 1,748 -> 1,043 | 29 -> 29 | 514 -> 2 | 0 -> 0 | 36 -> 36 | 3,807 -> 2,147 | 0 -> 0 | 120 -> 120 | 4 -> 0 | 1,606 -> 1,104 | 1,020 -> 1,020 | 86 -> 86 |
+| apache/kafka | 5,208 -> 1,367 | 0 -> 0 | 1,186 -> 594 | 0 -> 0 | 530 -> 0 | 200 -> 200 | 63 -> 47 | 0 -> 0 | 96 -> 63 | 4,625 -> 2,077 | 161 -> 161 | 0 -> 0 |
+| kubernetes/kubernetes | 24,140 -> 8,823 | 102 -> 102 | 952 -> 934 | 187 -> 187 | 72 -> 105 | 5,166 -> 3,174 | 199 -> 199 | 4,998 -> 4,624 | 89 -> 40 | 11,937 -> 6,581 | 3,531 -> 3,522 | 169 -> 97 |
+| vercel/next.js | 8,262 -> 1,093 | 79 -> 79 | 145 -> 92 | 0 -> 0 | 20 -> 20 | 1,564 -> 1,087 | 3 -> 1 | 1,012 -> 176 | 1 -> 0 | 2,051 -> 1,610 | 802 -> 777 | 88 -> 92 |
+
+#### Slowest collector after the fixes
+
+| Repository | Collector | Time | Share of scan |
+|------------|-----------|-----:|--------------:|
+| gin-gonic/gin | duplication | 2s | 100% |
+| expressjs/express | duplication | 2s | 100% |
+| pallets/flask | vuln | 2s | 100% |
+| rust-lang/rustlings | todos | 3s | 100% |
+| tokio-rs/tokio | gitlog | 16s | 78% |
+| jellyfin/jellyfin | patterns | 35s | 100% |
+| tiangolo/fastapi | duplication | 7s | 100% |
+| laravel/framework | patterns | 18s | 100% |
+| django/django | complexity | 21s | 100% |
+| facebook/react | gitlog | 1m 33s | 87% |
+| apache/kafka | patterns | 1m 09s | 100% |
+| kubernetes/kubernetes | gitlog | 30m 23s | 88% |
+| vercel/next.js | gitlog | 9m 39s | 100% |
+
+
+#### Pinned commits (re-run)
+
+| Repository | Commit | Date | Errors/Warnings (scan stderr) |
+|------------|--------|------|------------------------------|
+| gin-gonic/gin | `5c6a15f8f9` | 2026-09-16 | 0/1 |
+| expressjs/express | `9a34acf03c` | 2026-09-15 | 0/1 |
+| pallets/flask | `d73fa1cdcb` | 2026-09-08 | 0/1 |
+| rust-lang/rustlings | `a650509c78` | 2026-08-29 | 0/1 |
+| tokio-rs/tokio | `cf782c5b91` | 2026-09-17 | 0/10 |
+| jellyfin/jellyfin | `50866380c9` | 2026-09-16 | 0/1 |
+| tiangolo/fastapi | `50113da16f` | 2026-09-01 | 0/1 |
+| laravel/framework | `1d9727160a` | 2026-09-18 | 0/1 |
+| facebook/react | `59aff3e18c` | 2026-09-18 | 0/40 |
+| django/django | `862ade3409` | 2026-09-18 | 0/1 |
+| apache/kafka | `995cfcf99f` | 2026-09-19 | 0/1 |
+| vercel/next.js | `7b58e5880c` | 2026-09-18 | 0/44 |
+| kubernetes/kubernetes | `96b5e4e3ae` | 2026-09-18 | 0/34 |
+
+Kafka dependency health in this run reported nothing because repo1.maven.org rate-limited every lookup (HTTP 429) after concurrent test runs; re-measured alone afterwards: 5 stale Maven artifacts (jopt-simple, jaxb-api, activation, metrics-core, argparse4j) in under one second (stringer-jfh.6 tracks making rate limiting visible). The warning counts in the last column are the per-workspace shallow-history notices from the lottery-risk collector, not errors.
+
 
 Reading the comparison:
 
@@ -343,7 +417,7 @@ Reading the comparison:
   above is a shorter, honest list.
 - Timing is dominated by the dead-code fix. Kafka's scan goes from 52
   minutes of collector time to about a minute, next.js from 35 minutes to
-  under ten, kubernetes from two hours to KUBERNETES_SCAN. Dependency health
+  under ten, kubernetes from two hours to 35 minutes. Dependency health
   on Gradle repos is bounded by the registry timeout.
 - Duplication still hits its per-workspace cap on the larger repos. The
   cap is now applied to merged regions rather than raw windows, so the 200
@@ -351,7 +425,11 @@ Reading the comparison:
 
 ### Open follow-ups
 
-FOLLOWUPS
+- stringer-jfh.5: gitlog re-walks the shared history once per workspace; it is now the slowest collector on kubernetes (30 min summed over 34 workspaces) and next.js.
+- stringer-jfh.6: registry rate limiting (HTTP 429) is invisible; dephealth reports zero findings instead of "lookups failed".
+- Jellyfin still reports 1,268 missing-tests; the C# data-class rule may need to cover `Dto` suffixes and `Models/` directories.
+- Duplication reaches its per-workspace cap on every repository over 3k files. The cap is per workspace and applied after merging, so the count is a floor, not a measurement.
+- The "High" share is now 0% on express and flask: their only high-confidence signals were the version floors that are now reported at 0.5. A repository with no real findings above 0.8 should read as such.
 
 ### Beads filed
 
