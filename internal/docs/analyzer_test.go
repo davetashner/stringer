@@ -82,8 +82,8 @@ func TestBuildDirectoryTree(t *testing.T) {
 	assert.True(t, paths["cmd"], "should contain cmd/")
 	assert.True(t, paths["internal"], "should contain internal/")
 	assert.True(t, paths["go.mod"], "should contain go.mod")
-	assert.True(t, paths[filepath.Join("cmd", "app")], "should contain cmd/app/")
-	assert.True(t, paths[filepath.Join("cmd", "app", "main.go")], "should contain cmd/app/main.go")
+	assert.True(t, paths["cmd/app"], "should contain cmd/app/")
+	assert.True(t, paths["cmd/app/main.go"], "should contain cmd/app/main.go")
 }
 
 func TestBuildDirectoryTree_DepthLimit(t *testing.T) {
