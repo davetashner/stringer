@@ -15,7 +15,7 @@ It has no dependencies and no build step. Open `index.html` in any modern browse
 ## Replayability
 
 - Five number ranges: Tadpole (0–5), Froglet (0–10), Frog (0–20), Bullfrog (0–50) and Pond King (0–100).
-- Every game mixes adding and taking away evenly.
+- Every game mixes adding and subtracting evenly.
 - Every game awards up to 3 stars, with a best score kept for each game, range and mode.
 - Stars unlock 48 stickers and 7 hats for Nug. Every sticker makes its own sound, like "Ribbit!" or "Moo!", with a speech bubble: when it opens, when you tap 🔊 Hear it, and when you tap it on a sticker page. Tapping a sticker in the sticker book zooms it up into a thick, two-sided 3D sticker. Kids can drag it to spin it any direction, or tap **Spin it!** for a big twirl. **Add to a page** puts the sticker straight onto the current sticker page. A sticker earned at the end of a game shows up on the results screen as a card, and tapping the card opens that sticker in the same viewer.
 - **Sticker pages** (Stickers & hats → Decorate sticker pages): a scrapbook where kids place their unlocked stickers on pages. They can tap or drag stickers onto a page, drag to move them, and turn or resize them with the yellow handle or a two-finger pinch. They can remove a sticker with ✕, pick a background (Pond, Sky, Meadow, Night, Sunset or Paper) and add up to 30 pages. Every change saves automatically. Kids also see a daily play streak.

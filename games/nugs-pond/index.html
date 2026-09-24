@@ -442,7 +442,7 @@ button.sticker:active{transform:scale(.92)!important}
         <div class="brand-nug" id="homeNug"></div>
         <div>
           <h1>Nug's Pond</h1>
-          <p class="tag">Hop, pop, race and match your way through adding and taking away.</p>
+          <p class="tag">Hop, pop, race and match your way through adding and subtracting.</p>
         </div>
       </div>
       <div class="top-actions">
@@ -536,7 +536,7 @@ button.sticker:active{transform:scale(.92)!important}
     </div>
     <div>
       <h3>How it works</h3>
-      <p class="muted">Pick a number size on the home screen: Tadpole (0–5), Froglet (0–10), Frog (0–20), Bullfrog (0–50) or Pond King (0–100). Every game mixes adding and taking away, and subtraction never goes below zero. Stars from every game unlock stickers and hats for Nug. Pond Race adjusts the duck's speed after each race so it stays a close contest. Fast wrong guesses are discouraged: the first gets a reminder to slow down, and a second soon after pauses the game for a few seconds while the clock keeps running. Bubble Pop allows one tap per question, Pond Race two tries, and Fish Friends three tries before the answer is shown.</p>
+      <p class="muted">Pick a number size on the home screen: Tadpole (0–5), Froglet (0–10), Frog (0–20), Bullfrog (0–50) or Pond King (0–100). Every game mixes adding and subtracting, and subtraction never goes below zero. Stars from every game unlock stickers and hats for Nug. Pond Race adjusts the duck's speed after each race so it stays a close contest. Fast wrong guesses are discouraged: the first gets a reminder to slow down, and a second soon after pauses the game for a few seconds while the clock keeps running. Bubble Pop allows one tap per question, Pond Race two tries, and Fish Friends three tries before the answer is shown.</p>
     </div>
     <div>
       <h3>Play full screen on iPad</h3>
@@ -592,7 +592,7 @@ const RACE_BASE = [7, 6, 7, 9, 11]; // seconds per question the duck allows, by 
 const fresh = () => ({stars:0, level:1, op:'add', hat:'none', sound:true, best:{}, plays:0, missed:{}, streak:0, lastDay:'', raceAdj:{}, racer:'pip', pages:[]});
 let P = load();
 if (!Array.isArray(P.pages)) P.pages = [];
-P.op = 'mix'; // every game mixes adding and taking away
+P.op = 'mix'; // every game mixes adding and subtracting
 function load(){
   try { const raw = localStorage.getItem(KEY); if (raw) return Object.assign(fresh(), JSON.parse(raw)); } catch (e) {}
   return fresh();
@@ -610,7 +610,7 @@ const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const level = () => LEVELS[P.level];
 
 /* ---------- problems ---------- */
-// a shuffled bag keeps adding and taking away evenly mixed within each game
+// a shuffled bag keeps adding and subtracting evenly mixed within each game
 let opBag = [];
 function chooseOp(){ if (!opBag.length) opBag = shuffle(['add', 'sub', 'add', 'sub']); return opBag.pop(); }
 function mk(a, b, op){
@@ -1490,7 +1490,7 @@ const GAMES = {
       }
       const filler = () => op === 'add' ? rnd(lo, target) : rnd(0, max);
       const isPair = (u, v) => op === 'add' ? u + v === target : Math.abs(u - v) === target;
-      // the two picked numbers in sentence order (bigger first when taking away)
+      // the two picked numbers in sentence order (bigger first when subtracting)
       function ordered(){
         const v = picks.map(i => vals[i]);
         return op === 'sub' && v.length === 2 && v[0] < v[1] ? [v[1], v[0]] : v;
