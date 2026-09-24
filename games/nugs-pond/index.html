@@ -280,6 +280,10 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 .res-earn{font-family:var(--display);font-weight:800;font-size:22px}
 .unlocks{display:flex;flex-direction:column;gap:8px;width:100%}
 .unlock{display:flex;align-items:center;gap:12px;text-align:left;background:#FFF1B8;border:3px dashed var(--ink);border-radius:20px;padding:10px 14px}
+.unlock.tap{width:100%;border-style:solid;box-shadow:0 4px 0 var(--ink);cursor:pointer;transition:transform .08s,box-shadow .08s}
+.unlock.tap:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+.unlock.tap .u-art{animation:bounce .7s ease-in-out infinite alternate}
+.unlock .u-go{margin-left:auto;font-size:22px}
 .unlock .u-art{flex:none;width:60px;font-size:46px;line-height:1;text-align:center}
 .unlock .u-art svg{width:60px}
 .res-actions{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:6px}
@@ -550,7 +554,7 @@ button.sticker:active{transform:scale(.92)!important}
   </div>
   <p class="viewer-name" id="vName"></p>
   <p class="viewer-hint">Drag the sticker to spin it around</p>
-  <div class="viewer-actions"><button class="btn" id="vHear" type="button">🔊 Hear it</button><button class="btn ghost" id="vSpin" type="button">Spin it!</button><button class="btn ghost" id="vClose" type="button">Done</button></div>
+  <div class="viewer-actions"><button class="btn" id="vHear" type="button">🔊 Hear it</button><button class="btn ghost" id="vSpin" type="button">Spin it!</button><button class="btn ghost" id="vAdd" type="button">Add to a page</button><button class="btn ghost" id="vClose" type="button">Done</button></div>
 </div>
 <canvas id="confetti" aria-hidden="true"></canvas>
 
@@ -1016,7 +1020,7 @@ function finish(id, {stars, headline, detail}){
   $('#resEarn').innerHTML = `+${stars} <span class="star">★</span> &nbsp;·&nbsp; ${P.stars} total`;
   const unlocks = [];
   for (let i = stickerCount(before); i < stickerCount(P.stars); i++) {
-    unlocks.push(`<div class="unlock"><div class="u-art">${STICKERS[i]}</div><div><b>New sticker!</b><br>It's waiting in Nug's sticker book.</div></div>`);
+    unlocks.push(`<button type="button" class="unlock tap" data-s="${i}"><div class="u-art">${STICKERS[i]}</div><div><b>New sticker: ${STICKER_NAMES[i]}!</b><br>Tap to spin it, hear it, or put it on a page.</div><span class="u-go" aria-hidden="true">▶</span></button>`);
   }
   HATS.filter(h => h.at > before && h.at <= P.stars).forEach(h => {
     unlocks.push(`<div class="unlock"><div class="u-art">${nug(h.id)}</div><div><b>New hat: ${h.name}!</b><br>Tap Stickers &amp; hats to put it on Nug.</div></div>`);
@@ -1634,7 +1638,12 @@ function renderBook(){
   renderPage();
   requestAnimationFrame(fitPage);
 }
-function openBook(){ selIdx = -1; show('book'); renderBook(); }
+let bookReturn = 'closet'; // where the Back button on the sticker pages goes
+function openBook(){
+  const from = screens.find(id => !$('#' + id).hidden);
+  bookReturn = from === 'results' ? 'results' : 'closet';
+  selIdx = -1; show('book'); renderBook();
+}
 function addItem(si, x, y){
   const items = curPage().items;
   if (items.length >= 80) { sfx.bad(); return; }
@@ -1749,7 +1758,7 @@ window.addEventListener('pointerup', e => {
 window.addEventListener('pointercancel', e => { if (tdrag && e.pointerId === tdrag.id) { if (tdrag.ghost) tdrag.ghost.remove(); tdrag = null; } });
 
 $('#openBook').addEventListener('click', openBook);
-$('#bookBack').addEventListener('click', () => { renderCloset(); show('closet'); });
+$('#bookBack').addEventListener('click', () => { if (bookReturn === 'closet') renderCloset(); show(bookReturn); });
 $('#pgPrev').addEventListener('click', () => { pageIdx--; selIdx = -1; renderBook(); sfx.tap(); });
 $('#pgNext').addEventListener('click', () => { pageIdx++; selIdx = -1; renderBook(); sfx.tap(); });
 $('#pgNew').addEventListener('click', () => {
@@ -1848,6 +1857,15 @@ vStage.addEventListener('pointercancel', endDrag);
 $('#vSpin').addEventListener('click', () => { vy += (Math.random() < .5 ? -1 : 1) * 1300; vx += rnd(-200, 200); tone(300, .45, {type: 'triangle', slide: 3.5, vol: .09}); });
 $('#vClose').addEventListener('click', closeSticker);
 $('#vHear').addEventListener('click', hearSticker);
+// put the sticker being viewed onto the current sticker page
+$('#vAdd').addEventListener('click', () => {
+  const i = vIdx;
+  closeSticker(); openBook();
+  requestAnimationFrame(() => { fitPage(); addItem(i, .5 + rnd(-10, 10) / 100, .5 + rnd(-10, 10) / 100); });
+});
+$('#resUnlock').addEventListener('click', e => {
+  const b = e.target.closest('[data-s]'); if (b) openSticker(+b.dataset.s, b.querySelector('.u-art'));
+});
 viewer.addEventListener('click', e => { if (e.target === viewer) closeSticker(); });
 document.addEventListener('keydown', e => {
   if (viewer.hidden) return;
