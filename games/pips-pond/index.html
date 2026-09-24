@@ -910,7 +910,8 @@ const GAMES = {
       let left = DUR, score = 0, combo = 0, best = 0, speed = 1, p = null, bubbles = [], waveOn = false, missedThis = false, last = performance.now(), shownSec = -1;
       stage.innerHTML = `<div class="pop-wrap"><div class="prob-card small" id="popProb">Get ready…</div><div class="pop-field" id="field"><div class="combo" id="combo"></div><div class="lvl-banner" id="banner"></div></div></div>`;
       const probEl = $('#popProb'), field = $('#field'), comboEl = $('#combo'), banner = $('#banner');
-      const riseTime = () => Math.max(2.6, (7.5 + (P.level >= 3 ? 1.5 : 0)) * Math.pow(.84, speed - 1));
+      // seconds for a bubble to cross the tank: gentle start, 10% faster per speed level, never quicker than 6.5s
+      const riseTime = () => Math.max(6.5, (12 + (P.level >= 3 ? 2 : 0)) * Math.pow(.9, speed - 1));
 
       function clearBubbles(){ bubbles.forEach(b => { b.dead = true; b.el.classList.add('fade'); setTimeout(() => b.el.remove(), 320); }); bubbles = []; }
       function wave(){
@@ -928,7 +929,7 @@ const GAMES = {
           el.style.width = el.style.height = size + 'px';
           el.setAttribute('aria-label', String(v));
           el.innerHTML = `<div class="skin" style="font-size:${Math.round(size * (String(v).length > 2 ? .3 : .38))}px">${v}</div>`;
-          const b = {el, v, size, dead: false, x: clamp(laneW * i + (laneW - size) / 2 + rnd(-10, 10), 0, W - size), y: H - size * .35 + rnd(0, Math.round(H * .18)), speed: (H + size) / rise * (.88 + Math.random() * .24), wob: Math.random() * 6.28, dx: 0};
+          const b = {el, v, size, dead: false, x: clamp(laneW * i + (laneW - size) / 2 + rnd(-10, 10), 0, W - size), y: H - size * .35 + rnd(0, Math.round(H * .18)), speed: (H + size) / rise * (.94 + Math.random() * .12), wob: Math.random() * 6.28, dx: 0};
           el.addEventListener('pointerdown', ev => { ev.preventDefault(); hit(b); });
           field.appendChild(el); bubbles.push(b);
         });
@@ -1016,7 +1017,7 @@ const GAMES = {
         bubbles = bubbles.filter(b => !b.dead);
         drawHud();
         if (left <= 0) {
-          const stars = score >= 14 ? 3 : score >= 8 ? 2 : 1;
+          const stars = score >= 12 ? 3 : score >= 6 ? 2 : 1;
           finish({stars, headline: `${score} bubbles popped!`, detail: `You reached speed level ${speed}.` + (best >= 3 ? ` Your longest run was ${best} in a row.` : '')});
           return;
         }
