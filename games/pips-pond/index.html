@@ -282,6 +282,41 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 button.sticker{padding:0;cursor:pointer;transition:transform .12s}
 button.sticker:active{transform:scale(.92)!important}
 
+/* sticker pages */
+.book-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
+.book-body{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;padding-bottom:12px}
+.book-nav{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px}
+.pg-nav{display:flex;align-items:center;gap:8px}
+.pg-label{font-family:var(--display);font-weight:800;font-size:18px;min-width:6.5em;text-align:center;font-variant-numeric:tabular-nums}
+.btn:disabled{opacity:.4;pointer-events:none}
+.bg-picks{display:flex;gap:8px}
+.swatch{width:40px;height:40px;border-radius:50%;border:3px solid var(--ink);padding:0}
+.swatch[aria-pressed="true"]{box-shadow:0 0 0 3px var(--paper),0 0 0 6px var(--ink)}
+.page-area{flex:1;min-height:0;display:grid;place-items:center}
+.page{position:relative;overflow:hidden;border:4px solid var(--ink);border-radius:24px;box-shadow:0 6px 0 var(--ink);touch-action:none}
+.placed{position:absolute;line-height:1;touch-action:none;cursor:grab}
+.placed .em{display:block;padding:.06em;filter:drop-shadow(2px 0 0 #fff) drop-shadow(-2px 0 0 #fff) drop-shadow(0 2px 0 #fff) drop-shadow(0 -2px 0 #fff) drop-shadow(0 4px 3px rgba(23,54,58,.35))}
+.placed.new .em{animation:boing .35s}
+.placed.sel{outline:3px dashed var(--ink);outline-offset:4px;border-radius:14px;z-index:2}
+.handle{position:absolute;width:36px;height:36px;border-radius:50%;border:3px solid var(--ink);display:grid;place-items:center;font-family:var(--display);font-weight:900;font-size:17px;line-height:1;padding:0;touch-action:none;color:var(--ink)}
+.h-rot{right:-24px;bottom:-24px;background:var(--sun);cursor:nwse-resize}
+.h-del{left:-24px;top:-24px;background:var(--coral);color:#fff}
+.placed:not(.sel) .handle{display:none}
+.tray{display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;background:var(--paper);border:3px solid var(--ink);border-radius:20px;padding:8px;touch-action:pan-x;flex:none}
+.tray p{padding:10px;color:var(--ink-soft)}
+.tray-st{flex:none;width:62px;height:62px;border-radius:16px;border:3px solid var(--ink);background:#fff;font-size:38px;line-height:1;padding:0;box-shadow:0 3px 0 var(--ink);touch-action:pan-x}
+.tray-st:active{transform:translateY(2px);box-shadow:0 1px 0 var(--ink)}
+.tray-hint{font-size:14px;color:var(--ink-soft);text-align:center}
+.drag-ghost{position:fixed;z-index:40;pointer-events:none;font-size:64px;line-height:1;transform:translate(-50%,-50%) scale(1.1);filter:drop-shadow(0 8px 6px rgba(23,54,58,.35))}
+.saved-pill{transition:background .2s}
+.saved-pill.flash{background:var(--lily)}
+.bg-pond{background:radial-gradient(ellipse 16% 9% at 18% 78%,#6CC04A 0 70%,transparent 72%),radial-gradient(ellipse 11% 6% at 80% 62%,#6CC04A 0 70%,transparent 72%),radial-gradient(ellipse 8% 4% at 55% 88%,#8BD46A 0 70%,transparent 72%),linear-gradient(#CFF0F5,#6FC0CF)}
+.bg-sky{background:radial-gradient(ellipse 18% 8% at 22% 24%,#fff 0 70%,transparent 72%),radial-gradient(ellipse 14% 6% at 74% 42%,#fff 0 70%,transparent 72%),radial-gradient(ellipse 10% 5% at 45% 75%,#fff 0 70%,transparent 72%),linear-gradient(#7FD0F5,#DDF5FF)}
+.bg-meadow{background:radial-gradient(circle at 15% 80%,#FF9FC0 0 1.6%,transparent 1.9%),radial-gradient(circle at 38% 70%,#FFD84D 0 1.6%,transparent 1.9%),radial-gradient(circle at 62% 86%,#fff 0 1.6%,transparent 1.9%),radial-gradient(circle at 85% 74%,#FF9FC0 0 1.6%,transparent 1.9%),radial-gradient(ellipse 60% 30% at 30% 55%,#9BDA78 0 70%,transparent 71%),linear-gradient(#D8F3FF 0 50%,#7CCB55 50%)}
+.bg-night{background:radial-gradient(circle at 80% 22%,#FFF3A8 0 7%,transparent 7.4%),radial-gradient(circle at 12% 18%,#fff 0 .5%,transparent .8%),radial-gradient(circle at 30% 40%,#fff 0 .4%,transparent .7%),radial-gradient(circle at 52% 14%,#fff 0 .5%,transparent .8%),radial-gradient(circle at 66% 52%,#fff 0 .4%,transparent .7%),radial-gradient(circle at 20% 70%,#fff 0 .4%,transparent .7%),radial-gradient(circle at 88% 78%,#fff 0 .5%,transparent .8%),linear-gradient(#1D2B55,#434A8C)}
+.bg-sunset{background:radial-gradient(circle at 50% 78%,#FFE27A 0 12%,transparent 12.5%),linear-gradient(#FFB36B,#FF7A9C 62%,#8E6BD8)}
+.bg-paper{background:radial-gradient(circle,rgba(23,54,58,.16) 1.2px,transparent 1.6px) 0 0/22px 22px,#FFF8E6}
+
 /* 3D sticker viewer */
 .viewer{position:fixed;inset:0;z-index:25;background:rgba(23,54,58,.62);-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:max(16px,env(safe-area-inset-top,0px)) 16px max(16px,env(safe-area-inset-bottom,0px))}
 .viewer-stage{--sz:min(64vw,46vh,340px);width:calc(var(--sz) * 1.25);height:calc(var(--sz) * 1.25);max-width:100%;display:grid;place-items:center;perspective:1100px;touch-action:none;cursor:grab}
@@ -419,6 +454,29 @@ button.sticker:active{transform:scale(.92)!important}
     </div>
   </section>
 
+  <section id="book" class="screen" hidden>
+    <header class="playbar">
+      <button class="btn small ghost" id="bookBack" type="button">← Back</button>
+      <h2>My sticker pages</h2>
+      <div class="hud"><span class="hud-pill saved-pill" id="savedPill">Saved</span></div>
+    </header>
+    <div class="book-body">
+      <div class="book-nav">
+        <div class="pg-nav">
+          <button class="btn small ghost" id="pgPrev" type="button" aria-label="Previous page">◀</button>
+          <span class="pg-label" id="pgLabel"></span>
+          <button class="btn small ghost" id="pgNext" type="button" aria-label="Next page">▶</button>
+          <button class="btn small" id="pgNew" type="button">+ New page</button>
+        </div>
+        <div class="bg-picks" id="bgPicks" role="group" aria-label="Page background"></div>
+        <button class="btn small danger" id="pgDel" type="button">Delete page</button>
+      </div>
+      <div class="page-area" id="pageArea"><div class="page" id="page"></div></div>
+      <div class="tray" id="tray"></div>
+      <p class="tray-hint">Tap a sticker to add it, or drag it onto the page. Drag to move. Use the yellow handle, or two fingers, to turn and resize.</p>
+    </div>
+  </section>
+
   <section id="closet" class="screen" hidden>
     <header class="playbar">
       <button class="btn small ghost" id="closetBack" type="button">← Back</button>
@@ -428,7 +486,7 @@ button.sticker:active{transform:scale(.92)!important}
     <div class="closet-body">
       <h3>Hats <small>Tap a hat to put it on Pip</small></h3>
       <div class="hat-grid" id="hatGrid"></div>
-      <h3>Sticker book <small id="stickerCount"></small></h3>
+      <div class="book-head"><h3>Sticker book <small id="stickerCount"></small></h3><button class="btn small" id="openBook" type="button">Decorate sticker pages</button></div>
       <div class="sticker-grid" id="stickerGrid"></div>
     </div>
   </section>
@@ -499,8 +557,9 @@ const HATS = [
 ];
 const RACE_BASE = [7, 6, 7, 9, 11]; // seconds per question the duck allows, by level
 
-const fresh = () => ({stars:0, level:1, op:'add', hat:'none', sound:true, best:{}, plays:0, missed:{}, streak:0, lastDay:'', raceAdj:{}, racer:'pip'});
+const fresh = () => ({stars:0, level:1, op:'add', hat:'none', sound:true, best:{}, plays:0, missed:{}, streak:0, lastDay:'', raceAdj:{}, racer:'pip', pages:[]});
 let P = load();
+if (!Array.isArray(P.pages)) P.pages = [];
 P.op = 'mix'; // every game mixes adding and taking away
 function load(){
   try { const raw = localStorage.getItem(KEY); if (raw) return Object.assign(fresh(), JSON.parse(raw)); } catch (e) {}
@@ -720,7 +779,7 @@ const ART = {
 };
 
 /* ---------- screens ---------- */
-const screens = ['home', 'play', 'results', 'closet'];
+const screens = ['home', 'play', 'results', 'closet', 'book'];
 function show(id){ screens.forEach(s => { $('#' + s).hidden = s !== id; }); }
 
 function starsHTML(n, total = 3){ let s = ''; for (let i = 0; i < total; i++) s += `<span class="${i < n ? 'on' : ''}">★</span>`; return s; }
@@ -1304,6 +1363,195 @@ function renderCloset(){
 }
 $('#openCloset').addEventListener('click', () => { renderCloset(); show('closet'); });
 $('#closetBack').addEventListener('click', () => { renderHome(); show('home'); });
+
+/* ---------- sticker pages ---------- */
+const BGS = ['pond', 'sky', 'meadow', 'night', 'sunset', 'paper'];
+const BG_NAMES = {pond:'Pond', sky:'Sky', meadow:'Meadow', night:'Night', sunset:'Sunset', paper:'Paper'};
+const pageEl = $('#page'), pageArea = $('#pageArea'), tray = $('#tray');
+let pageIdx = 0, selIdx = -1, delArmed = 0, act = null, savedTimer = 0;
+const pointers = new Map();
+
+function curPage(){
+  if (!P.pages.length) P.pages.push({bg: 'pond', items: []});
+  pageIdx = clamp(pageIdx, 0, P.pages.length - 1);
+  return P.pages[pageIdx];
+}
+function persist(){
+  save();
+  const pill = $('#savedPill');
+  pill.textContent = 'Saved ✓'; pill.classList.add('flash');
+  clearTimeout(savedTimer); savedTimer = setTimeout(() => { pill.textContent = 'Saved'; pill.classList.remove('flash'); }, 900);
+}
+function fitPage(){
+  const w = Math.min(pageArea.clientWidth, pageArea.clientHeight * 4 / 3);
+  if (w <= 0) return;
+  pageEl.style.width = w + 'px'; pageEl.style.height = (w * .75) + 'px';
+  pageEl.style.setProperty('--u', (w / 100) + 'px');
+}
+function itemStyle(it){ return `left:${it.x * 100}%;top:${it.y * 100}%;transform:translate(-50%,-50%) rotate(${it.r}deg);font-size:calc(var(--u) * ${(14 * it.k).toFixed(2)})`; }
+function renderPage(newIdx = -1){
+  const pg = curPage();
+  pageEl.className = 'page bg-' + pg.bg;
+  pageEl.setAttribute('aria-label', `Sticker page ${pageIdx + 1}, ${pg.items.length} stickers`);
+  pageEl.innerHTML = pg.items.map((it, i) => `<div class="placed ${i === selIdx ? 'sel' : ''} ${i === newIdx ? 'new' : ''}" data-i="${i}" style="${itemStyle(it)}"><span class="em">${STICKERS[it.s] || '⭐'}</span><button type="button" class="handle h-del" data-act="del" aria-label="Remove sticker">✕</button><span class="handle h-rot" data-act="rot" aria-hidden="true">↻</span></div>`).join('');
+}
+function applyItem(i){
+  const el = pageEl.querySelector(`[data-i="${i}"]`); if (el) el.setAttribute('style', itemStyle(curPage().items[i]));
+}
+function select(i){
+  selIdx = i;
+  pageEl.querySelectorAll('.placed').forEach(el => el.classList.toggle('sel', +el.dataset.i === i));
+}
+function renderBook(){
+  const pg = curPage();
+  $('#pgLabel').textContent = `Page ${pageIdx + 1} of ${P.pages.length}`;
+  $('#pgPrev').disabled = pageIdx === 0;
+  $('#pgNext').disabled = pageIdx >= P.pages.length - 1;
+  $('#pgDel').textContent = 'Delete page'; delArmed = 0;
+  $('#bgPicks').innerHTML = BGS.map(b => `<button type="button" class="swatch bg-${b}" data-bg="${b}" aria-label="${BG_NAMES[b]} background" aria-pressed="${pg.bg === b}"></button>`).join('');
+  const have = stickerCount(P.stars);
+  tray.innerHTML = have
+    ? STICKERS.slice(0, have).map((st, i) => `<button type="button" class="tray-st" data-s="${i}" aria-label="Add ${STICKER_NAMES[i]}">${st}</button>`).join('')
+    : '<p>Earn stars in the games to collect stickers for your pages.</p>';
+  renderPage();
+  requestAnimationFrame(fitPage);
+}
+function openBook(){ selIdx = -1; show('book'); renderBook(); }
+function addItem(si, x, y){
+  const items = curPage().items;
+  if (items.length >= 80) { sfx.bad(); return; }
+  items.push({s: si, x: clamp(x, .03, .97), y: clamp(y, .03, .97), k: 1, r: rnd(-12, 12)});
+  selIdx = items.length - 1;
+  renderPage(selIdx); persist();
+  tone(500, .08, {slide: 2, vol: .12}); tone(900, .12, {at: .07, type: 'triangle', vol: .1});
+}
+function removeItem(i){
+  curPage().items.splice(i, 1); selIdx = -1;
+  renderPage(); persist();
+  tone(600, .15, {slide: .4, vol: .12});
+}
+function bringToFront(i){
+  const items = curPage().items;
+  if (i === items.length - 1) return i;
+  items.push(items.splice(i, 1)[0]);
+  selIdx = items.length - 1; renderPage();
+  return selIdx;
+}
+const rel = (cx, cy) => { const r = pageEl.getBoundingClientRect(); return {x: (cx - r.left) / r.width, y: (cy - r.top) / r.height, w: r.width, h: r.height}; };
+function startPinch(){
+  const [a, b] = [...pointers.values()], it = curPage().items[act.i];
+  const m = rel((a.x + b.x) / 2, (a.y + b.y) / 2);
+  act = {type: 'pinch', i: act.i, k0: it.k, r0: it.r, x0: it.x, y0: it.y, d0: Math.hypot(b.x - a.x, b.y - a.y) || 1, a0: Math.atan2(b.y - a.y, b.x - a.x), mx0: m.x, my0: m.y};
+}
+function startMove(cx, cy){
+  const it = curPage().items[act.i], p = rel(cx, cy);
+  act = {type: 'move', i: act.i, dx: it.x - p.x, dy: it.y - p.y};
+}
+pageEl.addEventListener('pointerdown', e => {
+  pointers.set(e.pointerId, {x: e.clientX, y: e.clientY});
+  try { pageEl.setPointerCapture(e.pointerId); } catch (err) {}
+  if (act && pointers.size === 2) { startPinch(); return; }
+  const el = e.target.closest('.placed');
+  if (!el) { select(-1); act = null; return; }
+  e.preventDefault();
+  const h = e.target.closest('[data-act]');
+  if (h && h.dataset.act === 'del') { pointers.delete(e.pointerId); act = null; removeItem(+el.dataset.i); return; }
+  const i = bringToFront(+el.dataset.i);
+  select(i);
+  const it = curPage().items[i];
+  if (h && h.dataset.act === 'rot') {
+    const r = pageEl.querySelector(`[data-i="${i}"] .em`).getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    act = {type: 'rot', i, cx, cy, k0: it.k, r0: it.r, a0: Math.atan2(e.clientY - cy, e.clientX - cx), d0: Math.hypot(e.clientX - cx, e.clientY - cy) || 1};
+  } else { act = {i}; startMove(e.clientX, e.clientY); }
+});
+pageEl.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, {x: e.clientX, y: e.clientY});
+  if (!act || act.type == null) return;
+  const it = curPage().items[act.i]; if (!it) return;
+  if (act.type === 'move') {
+    const p = rel(e.clientX, e.clientY);
+    it.x = clamp(p.x + act.dx, 0, 1); it.y = clamp(p.y + act.dy, 0, 1);
+  } else if (act.type === 'rot') {
+    it.r = act.r0 + (Math.atan2(e.clientY - act.cy, e.clientX - act.cx) - act.a0) * 180 / Math.PI;
+    it.k = clamp(act.k0 * Math.hypot(e.clientX - act.cx, e.clientY - act.cy) / act.d0, .35, 4);
+  } else if (act.type === 'pinch' && pointers.size >= 2) {
+    const [a, b] = [...pointers.values()], m = rel((a.x + b.x) / 2, (a.y + b.y) / 2);
+    it.k = clamp(act.k0 * Math.hypot(b.x - a.x, b.y - a.y) / act.d0, .35, 4);
+    it.r = act.r0 + (Math.atan2(b.y - a.y, b.x - a.x) - act.a0) * 180 / Math.PI;
+    it.x = clamp(act.x0 + m.x - act.mx0, 0, 1); it.y = clamp(act.y0 + m.y - act.my0, 0, 1);
+  }
+  applyItem(act.i);
+});
+const endPointer = e => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+  if (!act) return;
+  if (pointers.size === 1 && act.type === 'pinch') { const [p] = [...pointers.values()]; startMove(p.x, p.y); return; }
+  if (pointers.size === 0) { if (act.type) persist(); act = null; }
+};
+pageEl.addEventListener('pointerup', endPointer);
+pageEl.addEventListener('pointercancel', endPointer);
+
+// stickers from the tray: tap to add, or drag up onto the page
+let tdrag = null;
+tray.addEventListener('pointerdown', e => {
+  const b = e.target.closest('[data-s]'); if (!b) return;
+  tdrag = {s: +b.dataset.s, x0: e.clientX, y0: e.clientY, id: e.pointerId, ghost: null};
+});
+window.addEventListener('pointermove', e => {
+  if (!tdrag || e.pointerId !== tdrag.id) return;
+  const dx = e.clientX - tdrag.x0, dy = e.clientY - tdrag.y0;
+  if (!tdrag.ghost) {
+    if (Math.abs(dy) < 12 || Math.abs(dy) < Math.abs(dx)) return;
+    tdrag.ghost = document.createElement('div'); tdrag.ghost.className = 'drag-ghost'; tdrag.ghost.textContent = STICKERS[tdrag.s];
+    document.body.appendChild(tdrag.ghost);
+  }
+  tdrag.ghost.style.left = e.clientX + 'px'; tdrag.ghost.style.top = e.clientY + 'px';
+});
+window.addEventListener('pointerup', e => {
+  if (!tdrag || e.pointerId !== tdrag.id) return;
+  const t = tdrag; tdrag = null;
+  if (t.ghost) {
+    t.ghost.remove();
+    const p = rel(e.clientX, e.clientY);
+    if (p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1) addItem(t.s, p.x, p.y);
+  } else if (Math.hypot(e.clientX - t.x0, e.clientY - t.y0) < 10) {
+    addItem(t.s, .5 + rnd(-18, 18) / 100, .5 + rnd(-18, 18) / 100);
+  }
+});
+window.addEventListener('pointercancel', e => { if (tdrag && e.pointerId === tdrag.id) { if (tdrag.ghost) tdrag.ghost.remove(); tdrag = null; } });
+
+$('#openBook').addEventListener('click', openBook);
+$('#bookBack').addEventListener('click', () => { renderCloset(); show('closet'); });
+$('#pgPrev').addEventListener('click', () => { pageIdx--; selIdx = -1; renderBook(); sfx.tap(); });
+$('#pgNext').addEventListener('click', () => { pageIdx++; selIdx = -1; renderBook(); sfx.tap(); });
+$('#pgNew').addEventListener('click', () => {
+  if (P.pages.length >= 30) { sfx.bad(); return; }
+  curPage();
+  P.pages.push({bg: BGS[P.pages.length % BGS.length], items: []});
+  pageIdx = P.pages.length - 1; selIdx = -1; persist(); renderBook(); sfx.good();
+});
+$('#pgDel').addEventListener('click', e => {
+  if (Date.now() - delArmed < 4000) {
+    P.pages.splice(pageIdx, 1); pageIdx = Math.max(0, pageIdx - 1); selIdx = -1;
+    persist(); renderBook(); return;
+  }
+  delArmed = Date.now(); e.target.textContent = 'Tap again to delete';
+});
+$('#bgPicks').addEventListener('click', e => {
+  const b = e.target.closest('[data-bg]'); if (!b) return;
+  curPage().bg = b.dataset.bg; persist(); sfx.tap();
+  $('#bgPicks').querySelectorAll('[data-bg]').forEach(x => x.setAttribute('aria-pressed', x === b));
+  pageEl.className = 'page bg-' + b.dataset.bg;
+});
+addEventListener('resize', () => { if (!$('#book').hidden) fitPage(); });
+document.addEventListener('keydown', e => {
+  if ($('#book').hidden || selIdx < 0) return;
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); removeItem(selIdx); }
+  else if (e.key === 'Escape') select(-1);
+});
 /* ---------- 3D sticker viewer ---------- */
 const viewer = $('#viewer'), vStage = $('#vStage'), s3d = $('#s3d');
 // thickness: a stack of dark layers between the front and back faces

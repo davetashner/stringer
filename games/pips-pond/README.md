@@ -17,7 +17,8 @@ It has no dependencies and no build step. Open `index.html` in any modern browse
 - Five number ranges: Tadpole (0–5), Froglet (0–10), Frog (0–20), Bullfrog (0–50) and Pond King (0–100).
 - Every game mixes adding and taking away evenly.
 - Every game awards up to 3 stars, with a best score kept for each game, range and mode.
-- Stars unlock 24 stickers and 7 hats for Pip. Tapping a sticker in the sticker book zooms it up into a thick, two-sided 3D sticker. Kids can drag it to spin it any direction, or tap **Spin it!** for a big twirl. Kids also see a daily play streak.
+- Stars unlock 24 stickers and 7 hats for Pip. Tapping a sticker in the sticker book zooms it up into a thick, two-sided 3D sticker. Kids can drag it to spin it any direction, or tap **Spin it!** for a big twirl.
+- **Sticker pages** (Stickers & hats → Decorate sticker pages): a scrapbook where kids place their unlocked stickers on pages. They can tap or drag stickers onto a page, drag to move them, and turn or resize them with the yellow handle or a two-finger pinch. They can remove a sticker with ✕, pick a background (Pond, Sky, Meadow, Night, Sunset or Paper) and add up to 30 pages. Every change saves automatically. Kids also see a daily play streak.
 - Adaptive practice: missed facts come back more often until they're answered correctly. Grown-ups can see them under **Grown-ups → Tricky facts**.
 
 ## iPad and touch support
