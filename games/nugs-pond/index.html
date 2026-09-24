@@ -115,8 +115,18 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 .pad{flex:1 1 0;max-width:96px;aspect-ratio:1;border-radius:50%;border:3px solid var(--ink);background:radial-gradient(circle at 50% 50%,#9BDA78 0 38%,var(--lily) 39%);font-family:var(--display);font-weight:900;font-size:clamp(14px,3.3vw,32px);display:grid;place-items:center;padding:0;font-variant-numeric:tabular-nums;box-shadow:0 4px 0 var(--lily-dark);transition:transform .1s}
 .pad:active{transform:scale(.94)}
 .pad.picked{box-shadow:0 0 0 5px var(--paper),0 4px 0 var(--lily-dark)}
-.pad.yes{background:var(--sun);animation:glow .9s ease-in-out 2}
-.pad.no{background:#FFB3A7;animation:shake .4s}
+.pad{position:relative}
+.pad.yes{background:#3CC05C;color:#fff;-webkit-text-stroke:3px var(--ink);paint-order:stroke fill;box-shadow:0 0 0 6px #A4EEAE,0 4px 0 var(--lily-dark);animation:ring .8s ease-in-out 3}
+@keyframes ring{50%{box-shadow:0 0 0 14px rgba(164,238,174,.85),0 4px 0 var(--lily-dark)}}
+.pad.no{background:var(--bad);color:#fff;-webkit-text-stroke:3px var(--ink);paint-order:stroke fill;animation:shake .5s 2}
+.pad-badge{position:absolute;top:-42%;right:-34%;width:62%;min-width:26px;z-index:3;animation:boing .35s}
+.pad-badge svg{width:100%;display:block}
+.prob-card.wrong{animation:shake .5s}
+.right-num{color:var(--good)}
+.bad-num{color:var(--bad)}
+.oops{position:absolute;left:50%;top:40%;z-index:7;display:flex;align-items:center;gap:12px;background:var(--bad);color:#fff;border:4px solid var(--ink);border-radius:26px;box-shadow:0 6px 0 var(--ink);padding:10px 26px 10px 14px;font-family:var(--display);font-weight:900;font-size:clamp(30px,6vw,56px);white-space:nowrap;-webkit-text-stroke:3px var(--ink);paint-order:stroke fill;pointer-events:none;animation:oops 1.9s ease-out forwards}
+.oops svg{width:1.3em;flex:none}
+@keyframes oops{0%{transform:translate(-50%,-50%) scale(.3) rotate(-6deg);opacity:0}12%{transform:translate(-50%,-50%) scale(1.1) rotate(2deg);opacity:1}22%{transform:translate(-50%,-50%) scale(1) rotate(0)}80%{opacity:1}100%{transform:translate(-50%,-50%) scale(.95);opacity:0}}
 .pad:disabled{cursor:default}
 .rider{position:absolute;left:0;z-index:2;transition:left .3s ease-in-out;pointer-events:none}
 .rider svg{width:100%;display:block}
@@ -233,7 +243,7 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 @keyframes shimmer{from{opacity:.25;transform:scaleX(.8)}to{opacity:.8;transform:scaleX(1.1)}}
 @keyframes flap{from{transform:scaleX(1)}to{transform:scaleX(.35)}}
 @keyframes flit{0%{transform:translate(0,0)}20%{transform:translate(22vw,-6vh)}40%{transform:translate(40vw,4vh)}60%{transform:translate(18vw,10vh)}80%{transform:translate(-4vw,-4vh)}100%{transform:translate(0,0)}}
-.float-num{position:absolute;z-index:6;pointer-events:none;font-family:var(--display);font-weight:900;line-height:1;color:var(--sun);-webkit-text-stroke:4px var(--ink);paint-order:stroke fill;animation:floatUp 2s cubic-bezier(.35,.1,.3,1) forwards}
+.float-num{position:absolute;z-index:6;pointer-events:none;font-family:var(--display);font-weight:900;line-height:1;color:#3CC05C;-webkit-text-stroke:4px var(--ink);paint-order:stroke fill;animation:floatUp 2s cubic-bezier(.35,.1,.3,1) forwards}
 .float-num.plain{color:#fff}
 @keyframes floatUp{0%{transform:translate(-50%,-50%) scale(1);opacity:1}15%{transform:translate(-50%,-70%) scale(1.5)}75%{opacity:1}100%{transform:translate(-50%,calc(-50% - 58vh)) scale(4.5) rotate(-8deg);opacity:0}}
 .hop-wrap .spark{position:absolute}
@@ -761,6 +771,7 @@ const sfx = {
   pop(){ tone(700, .09, {slide:2.2, vol:.16}); },
   hop(){ tone(380, .13, {type:'triangle', slide:1.7, vol:.12}); },
   tap(){ tone(560, .05, {vol:.07}); },
+  oops(){ tone(330, .28, {type: 'triangle', slide: .85, vol: .2}); tone(260, .5, {at: .3, type: 'triangle', slide: .7, vol: .2}); },
   tick(){ tone(880, .05, {vol:.07, type:'square'}); },
   yay(n = 1){
     const k = Math.pow(2, Math.min(n - 1, 7) / 12);
@@ -1013,6 +1024,7 @@ const GAMES = {
         }
       }
 
+      function badge(pad, svg){ const b = document.createElement('span'); b.className = 'pad-badge'; b.innerHTML = svg; pad.appendChild(b); }
       function padFor(n){ return pads.querySelector(`[data-n="${n}"]`); }
       function place(n, animate){
         const pad = padFor(n); if (!pad) return;
@@ -1075,12 +1087,25 @@ const GAMES = {
         if (!(await hopTo(p.ans))) return;
         const ok = n === p.ans;
         record(p, ok); results[round - 1] = ok; drawHud();
-        padFor(p.ans).classList.add('yes');
-        floatUp(padFor(p.ans), ok);
-        probEl.textContent = `${p.text} = ${p.ans}`;
-        if (ok) { right++; sfx.good(); probEl.classList.add('win'); say.textContent = `Yes! Nug landed on ${p.ans}.`; }
-        else { sfx.bad(); pad.classList.add('no'); probEl.classList.add('reveal'); say.textContent = p.b === 0 ? `Zero hops means Nug stays on ${p.ans}.` : `Nug landed on ${p.ans}. Count the hops with Nug next time!`; }
-        later(next, ok ? 1300 : 2200);
+        const good = padFor(p.ans);
+        good.classList.add('yes'); badge(good, CHECK_SVG);
+        if (ok) {
+          right++; sfx.good(); floatUp(good, true);
+          probEl.classList.add('win'); probEl.textContent = `${p.text} = ${p.ans}`;
+          say.textContent = `Yes! Nug landed on ${p.ans}.`;
+        } else {
+          sfx.oops();
+          pad.classList.add('no'); badge(pad, X_SVG);
+          probEl.classList.add('reveal', 'wrong');
+          probEl.innerHTML = `${p.text} = <span class="right-num">${p.ans}</span>`;
+          say.innerHTML = `You picked <b class="bad-num">${n}</b>. Nug landed on <b class="right-num">${p.ans}</b>, so ${p.text} = ${p.ans}.`;
+          const oops = document.createElement('div');
+          oops.className = 'oops'; oops.innerHTML = `${X_SVG}<span>Oops! Not quite</span>`;
+          stage.appendChild(oops); setTimeout(() => oops.remove(), 1900);
+          const svg = rider.querySelector('svg');
+          if (!reduced && svg.animate) svg.animate([{transform: 'rotate(0)'}, {transform: 'rotate(-12deg)'}, {transform: 'rotate(10deg)'}, {transform: 'rotate(-6deg)'}, {transform: 'rotate(0)'}], {duration: 700});
+        }
+        later(next, ok ? 1300 : 3000);
       });
       const onResize = () => place(pos, false);
       addEventListener('resize', onResize);
