@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Pip's Pond">
+<meta name="apple-mobile-web-app-title" content="Nug's Pond">
 <meta name="theme-color" content="#D2EFE1">
-<title>Pip's Pond</title>
+<title>Nug's Pond</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Grandstander:wght@600;800;900&family=Lexend:wght@400;500;700&display=swap">
@@ -59,7 +59,7 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 #home{overflow-y:auto;-webkit-overflow-scrolling:touch;padding-block:14px 28px;gap:18px}
 .top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 16px}
 .brand{display:flex;align-items:center;gap:12px}
-.brand-pip{width:clamp(72px,11vw,104px);flex:none;animation:bob 2.8s ease-in-out infinite alternate}
+.brand-nug{width:clamp(72px,11vw,104px);flex:none;animation:bob 2.8s ease-in-out infinite alternate}
 .brand h1{font-size:clamp(34px,6vw,56px);letter-spacing:-.01em}
 .brand .tag{color:var(--ink-soft);font-size:15px;max-width:30ch}
 .top-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
@@ -172,7 +172,7 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 .lane-row:last-child{border-bottom:0}
 .racer{position:absolute;bottom:0;left:0;width:var(--rw)}
 .racer svg{width:100%;display:block}
-.racer.pip-r{transition:left .35s ease-out}
+.racer.racer-me{transition:left .35s ease-out}
 .finish{position:absolute;right:12px;top:8px;bottom:8px;width:42px;border:3px solid var(--ink);border-radius:10px;background:repeating-conic-gradient(var(--ink) 0 25%,#fff 0 50%) 0 0/20px 20px}
 .race-play{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;gap:16px 32px;flex-wrap:wrap}
 @media (orientation:portrait){.race-play{flex-direction:column;flex-wrap:nowrap;gap:12px}}
@@ -250,7 +250,7 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 /* results */
 #results{overflow-y:auto;padding-block:20px}
 .results-card{margin:auto;width:min(560px,100%);background:var(--paper);border:3px solid var(--ink);border-radius:32px;box-shadow:0 8px 0 var(--ink);padding:22px 20px 26px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
-.res-pip{width:140px;animation:bounce .8s ease-in-out infinite alternate}
+.res-nug{width:140px;animation:bounce .8s ease-in-out infinite alternate}
 .results-card h2{font-size:clamp(30px,5vw,44px)}
 .res-detail{color:var(--ink-soft);font-size:18px}
 .res-stars{font-size:clamp(56px,11vw,76px);line-height:1;letter-spacing:6px}
@@ -332,6 +332,10 @@ button.sticker:active{transform:scale(.92)!important}
 .sticker3d .back b{font-size:calc(var(--sz) * .09);-webkit-text-stroke:2px var(--ink)}
 .viewer-name{font-family:var(--display);font-weight:900;font-size:clamp(30px,5vw,44px);color:#fff;-webkit-text-stroke:4px var(--ink);paint-order:stroke fill}
 .viewer-hint{color:#fff;font-weight:500;font-size:16px}
+.speech{position:absolute;z-index:30;pointer-events:none;background:#fff;border:3px solid var(--ink);border-radius:20px;padding:6px 14px;font-family:var(--display);font-weight:900;font-size:clamp(20px,3.4vw,30px);white-space:nowrap;box-shadow:0 4px 0 var(--ink);animation:speech 1.5s ease-out forwards}
+.speech::after{content:"";position:absolute;left:50%;bottom:-11px;width:16px;height:16px;background:#fff;border-right:3px solid var(--ink);border-bottom:3px solid var(--ink);transform:translateX(-50%) rotate(45deg)}
+#viewer .speech{position:fixed}
+@keyframes speech{0%{transform:translate(-50%,-100%) scale(.3);opacity:0}12%{transform:translate(-50%,-100%) scale(1.12);opacity:1}22%{transform:translate(-50%,-100%) scale(1)}80%{opacity:1}100%{transform:translate(-50%,calc(-100% - 20px));opacity:0}}
 .viewer-actions{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
 
 /* grown-ups sheet */
@@ -362,8 +366,8 @@ button.sticker:active{transform:scale(.92)!important}
 @keyframes swimIn{from{transform:translateX(140%);opacity:0}to{transform:translateX(0);opacity:1}}
 @media (prefers-reduced-motion:reduce){
   .cloud,.bfly,.bfly svg,.rip,.lotus,.hop-scene .sun{animation:none}
-  .brand-pip,.fish svg,.res-pip{animation:none}
-  .rider,.racer.pip-r{transition-duration:.01s}
+  .brand-nug,.fish svg,.res-nug{animation:none}
+  .rider,.racer.racer-me{transition-duration:.01s}
 }
 </style>
 </head>
@@ -410,9 +414,9 @@ button.sticker:active{transform:scale(.92)!important}
   <section id="home" class="screen" aria-label="Pick a game">
     <header class="top">
       <div class="brand">
-        <div class="brand-pip" id="homePip"></div>
+        <div class="brand-nug" id="homeNug"></div>
         <div>
-          <h1>Pip's Pond</h1>
+          <h1>Nug's Pond</h1>
           <p class="tag">Hop, pop, race and match your way through adding and taking away.</p>
         </div>
       </div>
@@ -441,7 +445,7 @@ button.sticker:active{transform:scale(.92)!important}
 
   <section id="results" class="screen" hidden>
     <div class="results-card">
-      <div class="res-pip" id="resPip"></div>
+      <div class="res-nug" id="resNug"></div>
       <h2 id="resHead"></h2>
       <p class="res-detail" id="resDetail"></p>
       <div class="res-stars" id="resStars"></div>
@@ -480,11 +484,11 @@ button.sticker:active{transform:scale(.92)!important}
   <section id="closet" class="screen" hidden>
     <header class="playbar">
       <button class="btn small ghost" id="closetBack" type="button">← Back</button>
-      <h2>Pip's collection</h2>
+      <h2>Nug's collection</h2>
       <div class="hud"><span class="hud-pill"><span class="star">★</span><b id="closetStars">0</b></span></div>
     </header>
     <div class="closet-body">
-      <h3>Hats <small>Tap a hat to put it on Pip</small></h3>
+      <h3>Hats <small>Tap a hat to put it on Nug</small></h3>
       <div class="hat-grid" id="hatGrid"></div>
       <div class="book-head"><h3>Sticker book <small id="stickerCount"></small></h3><button class="btn small" id="openBook" type="button">Decorate sticker pages</button></div>
       <div class="sticker-grid" id="stickerGrid"></div>
@@ -507,7 +511,7 @@ button.sticker:active{transform:scale(.92)!important}
     </div>
     <div>
       <h3>How it works</h3>
-      <p class="muted">Pick a number size on the home screen: Tadpole (0–5), Froglet (0–10), Frog (0–20), Bullfrog (0–50) or Pond King (0–100). Every game mixes adding and taking away, and subtraction never goes below zero. Stars from every game unlock stickers and hats for Pip. Pond Race adjusts the duck's speed after each race so it stays a close contest.</p>
+      <p class="muted">Pick a number size on the home screen: Tadpole (0–5), Froglet (0–10), Frog (0–20), Bullfrog (0–50) or Pond King (0–100). Every game mixes adding and taking away, and subtraction never goes below zero. Stars from every game unlock stickers and hats for Nug. Pond Race adjusts the duck's speed after each race so it stays a close contest.</p>
     </div>
     <div>
       <h3>Play full screen on iPad</h3>
@@ -520,12 +524,12 @@ button.sticker:active{transform:scale(.92)!important}
   <div class="viewer-stage" id="vStage">
     <div class="sticker3d" id="s3d">
       <div class="face front"><span id="vEmoji"></span></div>
-      <div class="face back"><span>Pip's Pond</span><b id="vNum"></b></div>
+      <div class="face back"><span>Nug's Pond</span><b id="vNum"></b></div>
     </div>
   </div>
   <p class="viewer-name" id="vName"></p>
   <p class="viewer-hint">Drag the sticker to spin it around</p>
-  <div class="viewer-actions"><button class="btn" id="vSpin" type="button">Spin it!</button><button class="btn ghost" id="vClose" type="button">Done</button></div>
+  <div class="viewer-actions"><button class="btn" id="vHear" type="button">🔊 Hear it</button><button class="btn ghost" id="vSpin" type="button">Spin it!</button><button class="btn ghost" id="vClose" type="button">Done</button></div>
 </div>
 <canvas id="confetti" aria-hidden="true"></canvas>
 
@@ -534,7 +538,7 @@ button.sticker:active{transform:scale(.92)!important}
 'use strict';
 
 /* ---------- data ---------- */
-const KEY = 'pips-pond-v1';
+const KEY = 'pips-pond-v1'; // storage key kept from the game's first name so saved progress carries over
 const LEVELS = [
   {name:'Tadpole',   range:'0–5',   max:5},
   {name:'Froglet',   range:'0–10',  max:10},
@@ -542,8 +546,11 @@ const LEVELS = [
   {name:'Bullfrog',  range:'0–50',  max:50},
   {name:'Pond King', range:'0–100', max:100},
 ];
-const STICKERS = ['🐸','🦆','🐢','🐟','🐞','🦋','🐌','🐝','🦀','🐠','🦦','🐙','🦔','🦉','🐳','🍄','🌻','🌈','🦩','🐉','🦄','🚀','🌟','🏆'];
-const STICKER_NAMES = ['Frog','Duck','Turtle','Fish','Ladybug','Butterfly','Snail','Bee','Crab','Tropical Fish','Otter','Octopus','Hedgehog','Owl','Whale','Mushroom','Sunflower','Rainbow','Flamingo','Dragon','Unicorn','Rocket','Shooting Star','Trophy'];
+// new stickers are only ever appended: saved sticker pages refer to stickers by position
+const STICKERS = ['🐸','🦆','🐢','🐟','🐞','🦋','🐌','🐝','🦀','🐠','🦦','🐙','🦔','🦉','🐳','🍄','🌻','🌈','🦩','🐉','🦄','🚀','🌟','🏆',
+  '🐷','🐮','🐶','🐱','🐴','🐑','🐓','🐤','🐭','🐐','🦗','🐧','🦜','🐬','🐍','🐒','🐻','🐺','🐘','🐯','🦁','🐊','🦅','🦖'];
+const STICKER_NAMES = ['Frog','Duck','Turtle','Fish','Ladybug','Butterfly','Snail','Bee','Crab','Tropical Fish','Otter','Octopus','Hedgehog','Owl','Whale','Mushroom','Sunflower','Rainbow','Flamingo','Dragon','Unicorn','Rocket','Shooting Star','Trophy',
+  'Pig','Cow','Puppy','Kitten','Horse','Sheep','Rooster','Chick','Mouse','Goat','Cricket','Penguin','Parrot','Dolphin','Snake','Monkey','Bear','Wolf','Elephant','Tiger','Lion','Crocodile','Eagle','T. rex'];
 const STICKER_STEP = 4;
 const HATS = [
   {id:'none',   name:'No hat',      at:0},
@@ -656,6 +663,98 @@ function tone(f, d, {type = 'sine', vol = .18, at = 0, slide = 0} = {}){
   g.gain.exponentialRampToValueAtTime(.0001, t + d);
   o.connect(g).connect(a.destination); o.start(t); o.stop(t + d + .05);
 }
+// richer synth voice: pitch curves, vibrato, tremolo and a filter to shape animal-ish sounds
+function voice(f, d, {type = 'sawtooth', vol = .15, at = 0, to = 0, curve = null, vib = 0, vibRate = 6, trem = 0, tremRate = 20, filter = null} = {}){
+  const a = audio(); if (!a) return;
+  const t = a.currentTime + at, o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t);
+  if (curve) curve.forEach(([p, fr]) => o.frequency.linearRampToValueAtTime(fr, t + d * p));
+  else if (to) o.frequency.exponentialRampToValueAtTime(to, t + d);
+  const lfo = (rate, depth, param) => { const l = a.createOscillator(), lg = a.createGain(); l.frequency.value = rate; lg.gain.value = depth; l.connect(lg).connect(param); l.start(t); l.stop(t + d + .05); };
+  if (vib) lfo(vibRate, vib, o.frequency);
+  let node = o;
+  if (filter) { const bq = a.createBiquadFilter(); bq.type = filter.type || 'bandpass'; bq.frequency.value = filter.f; bq.Q.value = filter.q || 1; node.connect(bq); node = bq; }
+  if (trem) { const tg = a.createGain(); tg.gain.value = 1 - trem; lfo(tremRate, trem, tg.gain); node.connect(tg); node = tg; }
+  g.gain.setValueAtTime(.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + Math.min(.03, d * .2));
+  g.gain.setValueAtTime(vol, t + d * .75);
+  g.gain.exponentialRampToValueAtTime(.0001, t + d);
+  node.connect(g).connect(a.destination); o.start(t); o.stop(t + d + .05);
+}
+let noiseBuf = null;
+function noise(d, {at = 0, vol = .2, filter = {type: 'bandpass', f: 1000, q: 1}, to = 0, attack = .01} = {}){
+  const a = audio(); if (!a) return;
+  if (!noiseBuf) { noiseBuf = a.createBuffer(1, a.sampleRate * 2, a.sampleRate); const ch = noiseBuf.getChannelData(0); for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1; }
+  const t = a.currentTime + at, src = a.createBufferSource(), bq = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = noiseBuf;
+  bq.type = filter.type; bq.frequency.setValueAtTime(filter.f, t); bq.Q.value = filter.q || 1;
+  if (to) bq.frequency.exponentialRampToValueAtTime(to, t + d);
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+  src.connect(bq).connect(g).connect(a.destination); src.start(t); src.stop(t + d + .05);
+}
+const times = (n, gap, fn) => { for (let i = 0; i < n; i++) fn(i * gap, i); };
+const notes = (fs, gap, d, o = {}) => fs.forEach((f, i) => voice(f, d, {type: 'sine', vol: .08, ...o, at: (o.at || 0) + i * gap}));
+const roar = (f, d, cut, vol = .35) => { voice(f, d, {to: f * .55, vib: 9, vibRate: 14, filter: {type: 'lowpass', f: cut}, vol}); noise(d, {vol: vol * .7, filter: {type: 'lowpass', f: cut * 1.6}, to: 300, attack: .08}); };
+// one [speech-bubble word, sound] per sticker, in the same order as STICKERS
+const STICKER_SOUNDS = [
+  ['Ribbit!', () => times(2, .22, (at, i) => voice(170 + i * 30, .15, {type: 'square', at, trem: .5, tremRate: 45, filter: {type: 'lowpass', f: 900}, vol: .22}))],
+  ['Quack quack!', () => times(2, .26, at => voice(520, .18, {at, to: 330, filter: {f: 1100, q: 4}, trem: .3, tremRate: 30, vol: .4}))],
+  ['Blub blub!', () => times(3, .18, (at, i) => voice(180 + i * 40, .12, {type: 'sine', at, to: 420 + i * 60, vol: .25}))],
+  ['Blub!', () => times(4, .12, (at, i) => voice(300 + i * 80, .08, {type: 'sine', at, to: 700 + i * 100, vol: .2}))],
+  ['Flutter!', () => voice(1300, .5, {type: 'triangle', trem: .5, tremRate: 28, vol: .1})],
+  ['Flutter flutter!', () => notes([1568, 1976, 2349, 2637, 2349], .07, .12)],
+  ['Slurrrp!', () => voice(320, .8, {type: 'sine', to: 140, vib: 20, vibRate: 7, vol: .22})],
+  ['Bzzzz!', () => voice(210, 1, {vib: 18, vibRate: 7, filter: {type: 'lowpass', f: 1400}, vol: .18})],
+  ['Click clack!', () => times(4, .11, at => noise(.04, {at, vol: .35, filter: {type: 'highpass', f: 2500}}))],
+  ['Bubble bubble!', () => times(4, .1, (at, i) => voice(500 + i * 120, .07, {type: 'sine', at, to: 1100 + i * 120, vol: .18}))],
+  ['Squeak!', () => times(3, .13, at => voice(1200, .09, {type: 'sine', at, to: 1700, vol: .16}))],
+  ['Bloop!', () => times(2, .3, at => voice(420, .25, {type: 'sine', at, to: 110, vib: 15, vibRate: 10, vol: .26}))],
+  ['Snuffle!', () => times(4, .12, at => noise(.07, {at, vol: .3, filter: {type: 'lowpass', f: 900}}))],
+  ['Hoo hoo!', () => { voice(390, .28, {type: 'sine', to: 360, vol: .3}); voice(370, .5, {type: 'sine', at: .4, to: 330, vib: 4, vibRate: 5, vol: .3}); }],
+  ['Whale song!', () => voice(260, 1.6, {type: 'sine', curve: [[.35, 560], [.7, 420], [1, 220]], vib: 10, vibRate: 4, vol: .3})],
+  ['Boing!', () => voice(180, .4, {type: 'sine', curve: [[.3, 700], [.6, 380], [1, 520]], vol: .26})],
+  ['Ta-da!', () => [523, 659, 784].forEach(f => voice(f, .7, {type: 'triangle', vol: .1}))],
+  ['Sparkle!', () => notes([523, 659, 784, 988, 1175, 1319, 1568, 1976], .05, .18, {vol: .1})],
+  ['Honk honk!', () => times(2, .25, at => voice(620, .18, {at, to: 560, filter: {f: 900, q: 6}, vol: .4}))],
+  ['ROAR!', () => roar(110, 1.1, 700)],
+  ['Magic!', () => { voice(600, .7, {type: 'sine', curve: [[.5, 1400], [1, 900]], vib: 40, vibRate: 9, vol: .12}); notes([1568, 2093, 2637, 3136], .08, .14, {at: .3, vol: .06}); }],
+  ['Whoosh!', () => noise(1.1, {vol: .35, filter: {type: 'bandpass', f: 200, q: 2}, to: 4000, attack: .2})],
+  ['Twinkle!', () => notes([2093, 2637, 3136, 2637, 3136, 4186], .08, .12, {vol: .07})],
+  ['Hooray!', () => sfx.win()],
+  ['Oink oink!', () => times(2, .22, at => voice(260, .16, {at, to: 200, filter: {f: 800, q: 3}, trem: .4, tremRate: 35, vol: .4}))],
+  ['Moooo!', () => voice(150, 1.2, {curve: [[.2, 165], [1, 115]], filter: {type: 'lowpass', f: 700}, vib: 3, vibRate: 5, vol: .4})],
+  ['Woof woof!', () => times(2, .28, at => { voice(420, .14, {at, to: 220, filter: {type: 'lowpass', f: 1200}, vol: .4}); noise(.08, {at, vol: .15, filter: {type: 'bandpass', f: 800}}); })],
+  ['Meow!', () => voice(520, .7, {curve: [[.35, 820], [1, 480]], filter: {f: 1500, q: 2}, vol: .32})],
+  ['Neigh!', () => voice(900, 1, {curve: [[.2, 1100], [1, 420]], vib: 60, vibRate: 13, filter: {f: 1400, q: 2}, vol: .3})],
+  ['Baaa!', () => voice(420, .8, {to: 380, trem: .5, tremRate: 17, filter: {f: 1200, q: 2}, vol: .32})],
+  ['Cock-a-doodle-doo!', () => [[520, .12], [700, .12], [640, .14], [900, .6]].reduce((at, [f, d]) => { voice(f, d, {at, to: f * (d > .3 ? .8 : 1.05), filter: {f: 1500, q: 3}, vol: .32}); return at + d + .03; }, 0)],
+  ['Cheep cheep!', () => times(3, .15, at => voice(2600, .09, {type: 'sine', at, to: 3300, vol: .14}))],
+  ['Squeak squeak!', () => times(2, .15, at => voice(2800, .08, {type: 'sine', at, to: 3500, vol: .13}))],
+  ['Meh-eh-eh!', () => voice(500, .7, {trem: .5, tremRate: 11, vib: 20, vibRate: 11, filter: {f: 1200, q: 2}, vol: .32})],
+  ['Chirp chirp!', () => times(3, .25, at => voice(4400, .15, {type: 'sine', at, trem: .5, tremRate: 40, vol: .07}))],
+  ['Squawk!', () => times(3, .2, at => voice(480, .14, {at, filter: {f: 1000, q: 5}, trem: .3, tremRate: 30, vol: .35}))],
+  ['Hello! Squawk!', () => { voice(1300, .22, {to: 850, filter: {f: 1600, q: 3}, vol: .32}); voice(1500, .18, {type: 'sine', at: .32, to: 2300, vol: .14}); voice(1500, .18, {type: 'sine', at: .52, to: 2300, vol: .14}); }],
+  ['Eee-eee!', () => { times(5, .04, at => noise(.015, {at, vol: .3, filter: {type: 'highpass', f: 3000}})); voice(1500, .5, {type: 'sine', at: .25, curve: [[.4, 3000], [1, 1800]], vol: .15}); }],
+  ['Hisss!', () => noise(1.1, {vol: .25, filter: {type: 'highpass', f: 3500}, attack: .1})],
+  ['Ooh ooh ah ah!', () => { times(2, .2, at => voice(420, .16, {type: 'triangle', at, to: 720, vol: .26})); times(2, .22, at => voice(760, .18, {type: 'triangle', at: at + .45, to: 520, vol: .26})); }],
+  ['Grrr!', () => voice(70, .9, {trem: .4, tremRate: 18, filter: {type: 'lowpass', f: 400}, vol: .55})],
+  ['Awoooo!', () => voice(380, 1.6, {type: 'sine', curve: [[.3, 760], [.75, 720], [1, 480]], vib: 8, vibRate: 5, vol: .3})],
+  ['Toot toot!', () => voice(420, .9, {curve: [[.25, 950], [.7, 880], [1, 520]], vib: 14, vibRate: 8, filter: {f: 1300, q: 1.5}, vol: .32})],
+  ['Grrrowl!', () => voice(85, 1, {trem: .5, tremRate: 24, filter: {type: 'lowpass', f: 500}, vol: .5})],
+  ['ROAR!', () => roar(160, 1, 900)],
+  ['Snap snap!', () => times(2, .3, at => { noise(.05, {at, vol: .5, filter: {type: 'bandpass', f: 1800}}); voice(90, .12, {type: 'sine', at, to: 50, vol: .45}); })],
+  ['Screech!', () => voice(2200, .7, {curve: [[.2, 2600], [1, 1500]], vib: 80, vibRate: 30, filter: {f: 2500, q: 2}, vol: .22})],
+  ['ROOOAR!', () => roar(70, 1.4, 600, .42)],
+];
+function stickerSound(i){ const snd = STICKER_SOUNDS[i]; if (snd) snd[1](); return snd ? snd[0] : ''; }
+function speech(host, word, x, y){
+  if (!word) return;
+  host.querySelectorAll('.speech').forEach(x => x.remove()); // one bubble at a time
+  const b = document.createElement('div');
+  b.className = 'speech'; b.textContent = word;
+  b.style.left = x + 'px'; b.style.top = y + 'px';
+  host.appendChild(b); setTimeout(() => b.remove(), 1500);
+}
 const sfx = {
   good(){ tone(660, .14, {type:'triangle'}); tone(990, .24, {at:.1, type:'triangle'}); },
   bad(){ tone(240, .3, {type:'triangle', vol:.2, slide:.6}); },
@@ -690,7 +789,7 @@ const HAT_SVG = {
   wizard:'<path d="M36 26 L64 -36 L84 26 Z" fill="#6B4BC8" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><ellipse cx="60" cy="26" rx="32" ry="6" fill="#553AA8" stroke="#17363A" stroke-width="3"/><path d="M62 -8 l3.5 7 7.5 1 -5.5 5.3 1.3 7.5 -6.8 -3.6 -6.8 3.6 1.3 -7.5 -5.5 -5.3 7.5 -1z" fill="#FFC93C"/>',
   crown:'<path d="M36 26 L36 0 L48 12 L60 -8 L72 12 L84 0 L84 26 Z" fill="#FFC93C" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><circle cx="60" cy="16" r="4.5" fill="#FF7A61" stroke="#17363A" stroke-width="2"/><circle cx="46" cy="19" r="3.5" fill="#6CCBEF" stroke="#17363A" stroke-width="2"/><circle cx="74" cy="19" r="3.5" fill="#6CCBEF" stroke="#17363A" stroke-width="2"/>',
 };
-function pip(hat = P.hat, attrs = ''){
+function nug(hat = P.hat, attrs = ''){
   return `<svg viewBox="0 -44 120 154" ${attrs} aria-hidden="true">
     <ellipse cx="60" cy="104" rx="42" ry="6" fill="rgba(23,54,58,.16)"/>
     <ellipse cx="28" cy="98" rx="16" ry="7" fill="#3E9A2E" stroke="#17363A" stroke-width="3"/>
@@ -722,7 +821,7 @@ function duck(attrs = ''){
 const X_SVG = '<svg class="mark" viewBox="0 0 64 64" aria-label="Wrong"><circle cx="32" cy="32" r="28" fill="#E5484D" stroke="#17363A" stroke-width="4"/><path d="M22 22 L42 42 M42 22 L22 42" stroke="#fff" stroke-width="8" stroke-linecap="round"/></svg>';
 const CHECK_SVG = '<svg class="mark" viewBox="0 0 64 64" aria-label="Correct"><circle cx="32" cy="32" r="28" fill="#2FA84F" stroke="#17363A" stroke-width="4"/><path d="M19 33 L28 42 L45 23" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>';
 const RACERS = [
-  {id:'pip',     name:'Pip'},
+  {id:'pip',     name:'Nug'},
   {id:'bunny',   name:'Bun Bun', fur:'#FFFFFF', belly:'#FFE6EE', inner:'#FFB3C7', ears:'long'},
   {id:'kitty',   name:'Miso',    fur:'#FFB36B', belly:'#FFE3C2', inner:'#FF9AA8', ears:'pointy'},
   {id:'puppy',   name:'Biscuit', fur:'#D9A273', belly:'#F6E2CC', inner:'#8A5A36', ears:'floppy'},
@@ -760,7 +859,7 @@ function critter(r){
     ${r.beak ? `<path d="M53 60 L67 60 L60 69 Z" fill="#FFA53D" ${S} ${J}/>` : `<ellipse cx="60" cy="60" rx="4" ry="3" fill="#17363A"/><path d="M54 65 Q57 69 60 65 Q63 69 66 65" stroke="#17363A" stroke-width="2.5" fill="none" stroke-linecap="round"/>`}
   </svg>`;
 }
-function racerArt(id){ const r = RACERS.find(x => x.id === id) || RACERS[0]; return r.id === 'pip' ? pip() : critter(r); }
+function racerArt(id){ const r = RACERS.find(x => x.id === id) || RACERS[0]; return r.id === 'pip' ? nug() : critter(r); }
 const FISH_COLORS = [['#FF9E6B','#E86F3A'],['#FFD54A','#E0A800'],['#8FD3F4','#4AA3D0'],['#C6A4F5','#8E6BD8'],['#FF8FB1','#E0457B'],['#9BE08A','#4FAF3A']];
 function fish(n, [c, d]){
   return `<svg viewBox="0 0 110 70" aria-hidden="true">
@@ -772,7 +871,7 @@ function fish(n, [c, d]){
   </svg>`;
 }
 const ART = {
-  hop: () => `<svg viewBox="0 0 120 120"><ellipse cx="60" cy="98" rx="52" ry="16" fill="#3F8F2A"/><ellipse cx="60" cy="94" rx="50" ry="14" fill="#7CCB55" stroke="#17363A" stroke-width="3"/>${pip(P.hat, 'x="22" y="4" width="76" height="92"')}</svg>`,
+  hop: () => `<svg viewBox="0 0 120 120"><ellipse cx="60" cy="98" rx="52" ry="16" fill="#3F8F2A"/><ellipse cx="60" cy="94" rx="50" ry="14" fill="#7CCB55" stroke="#17363A" stroke-width="3"/>${nug(P.hat, 'x="22" y="4" width="76" height="92"')}</svg>`,
   pop: () => `<svg viewBox="0 0 120 120">${[[40,76,26,'7'],[84,48,22,'4'],[48,30,15,'9']].map(([x,y,r,t]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="rgba(255,255,255,.55)" stroke="#17363A" stroke-width="3"/><circle cx="${x - r*.35}" cy="${y - r*.4}" r="${r*.18}" fill="#fff"/><text x="${x}" y="${y + 1}" text-anchor="middle" dominant-baseline="central" font-family="Grandstander, sans-serif" font-weight="900" font-size="${r}" fill="#17363A">${t}</text>`).join('')}</svg>`,
   race: () => `<svg viewBox="0 0 120 120"><rect x="88" y="18" width="5" height="80" fill="#17363A"/><path d="M93 20 h22 v16 h-22z" fill="#fff" stroke="#17363A" stroke-width="3"/><path d="M93 20 h7.3 v8 h-7.3z M107.6 20 h7.3 v8 h-7.3z M100.3 28 h7.3 v8 h-7.3z" fill="#17363A"/>${duck('x="4" y="46" width="84" height="68"')}</svg>`,
   fish: () => `<svg viewBox="0 0 120 120"><g transform="translate(6 12) scale(.8)">${fish(3, FISH_COLORS[0]).replace(/<\/?svg[^>]*>/g, '')}</g><g transform="translate(26 62) scale(.8)">${fish(7, FISH_COLORS[2]).replace(/<\/?svg[^>]*>/g, '')}</g></svg>`,
@@ -787,7 +886,7 @@ const bestKey = id => `${id}:${P.level}:${P.op}`;
 const stickerCount = stars => Math.min(STICKERS.length, Math.floor(stars / STICKER_STEP));
 
 function renderHome(){
-  $('#homePip').innerHTML = pip();
+  $('#homeNug').innerHTML = nug();
   $('#starCount').textContent = P.stars;
   const chip = $('#streakChip');
   const y = new Date(); y.setDate(y.getDate() - 1);
@@ -852,7 +951,7 @@ function finish(id, {stars, headline, detail}){
   P.stars += stars; P.plays++;
   bumpStreak(); save();
 
-  $('#resPip').innerHTML = pip();
+  $('#resNug').innerHTML = nug();
   $('#resHead').textContent = headline;
   $('#resDetail').textContent = detail;
   $('#resStars').innerHTML = starsHTML(stars);
@@ -860,10 +959,10 @@ function finish(id, {stars, headline, detail}){
   $('#resEarn').innerHTML = `+${stars} <span class="star">★</span> &nbsp;·&nbsp; ${P.stars} total`;
   const unlocks = [];
   for (let i = stickerCount(before); i < stickerCount(P.stars); i++) {
-    unlocks.push(`<div class="unlock"><div class="u-art">${STICKERS[i]}</div><div><b>New sticker!</b><br>It's waiting in Pip's sticker book.</div></div>`);
+    unlocks.push(`<div class="unlock"><div class="u-art">${STICKERS[i]}</div><div><b>New sticker!</b><br>It's waiting in Nug's sticker book.</div></div>`);
   }
   HATS.filter(h => h.at > before && h.at <= P.stars).forEach(h => {
-    unlocks.push(`<div class="unlock"><div class="u-art">${pip(h.id)}</div><div><b>New hat: ${h.name}!</b><br>Tap Stickers &amp; hats to put it on Pip.</div></div>`);
+    unlocks.push(`<div class="unlock"><div class="u-art">${nug(h.id)}</div><div><b>New hat: ${h.name}!</b><br>Tap Stickers &amp; hats to put it on Nug.</div></div>`);
   });
   $('#resUnlock').innerHTML = unlocks.join('');
   show('results');
@@ -878,16 +977,16 @@ const GAMES = {
   /* Lily Hop: predict the landing pad on a number line */
   hop: {
     name: 'Lily Hop', color: '#9BDA78',
-    blurb: 'Guess which lily pad Pip lands on, then count the hops.',
+    blurb: 'Guess which lily pad Nug lands on, then count the hops.',
     start({token, alive, finish}){
       const ROUNDS = 8;
       let round = 0, right = 0, busy = true, p, pos = 0;
       const results = [];
       stage.innerHTML = `<div class="hop-wrap">
         <div class="prob-card" id="hopProb"></div>
-        <p class="say" id="hopSay">Tap the lily pad where Pip will land.</p>
+        <p class="say" id="hopSay">Tap the lily pad where Nug will land.</p>
         <div class="lane" id="lane">
-          <div class="rider" id="rider"><div class="hopcount" id="hopCount"></div>${pip()}</div>
+          <div class="rider" id="rider"><div class="hopcount" id="hopCount"></div>${nug()}</div>
           <div class="pads" id="pads"></div>
         </div>
       </div>`;
@@ -946,7 +1045,7 @@ const GAMES = {
         pads.innerHTML = Array.from({length: size}, (_, i) => `<button type="button" class="pad" data-n="${lo + i}">${lo + i}</button>`).join('');
         probEl.className = 'prob-card';
         probEl.textContent = `${p.text} = ?`;
-        say.textContent = p.op === 'add' ? `Pip starts on ${p.a} and hops forward ${p.b}. Where does Pip land?` : `Pip starts on ${p.a} and hops back ${p.b}. Where does Pip land?`;
+        say.textContent = p.op === 'add' ? `Nug starts on ${p.a} and hops forward ${p.b}. Where does Nug land?` : `Nug starts on ${p.a} and hops back ${p.b}. Where does Nug land?`;
         count.textContent = '';
         pos = p.a;
         requestAnimationFrame(() => { place(pos, false); busy = false; });
@@ -971,7 +1070,7 @@ const GAMES = {
         busy = true;
         const n = +pad.dataset.n;
         pad.classList.add('picked'); sfx.tap();
-        say.textContent = 'Watch Pip hop…';
+        say.textContent = 'Watch Nug hop…';
         await wait(250); if (!alive()) return;
         if (!(await hopTo(p.ans))) return;
         const ok = n === p.ans;
@@ -979,8 +1078,8 @@ const GAMES = {
         padFor(p.ans).classList.add('yes');
         floatUp(padFor(p.ans), ok);
         probEl.textContent = `${p.text} = ${p.ans}`;
-        if (ok) { right++; sfx.good(); probEl.classList.add('win'); say.textContent = `Yes! Pip landed on ${p.ans}.`; }
-        else { sfx.bad(); pad.classList.add('no'); probEl.classList.add('reveal'); say.textContent = p.b === 0 ? `Zero hops means Pip stays on ${p.ans}.` : `Pip landed on ${p.ans}. Count the hops with Pip next time!`; }
+        if (ok) { right++; sfx.good(); probEl.classList.add('win'); say.textContent = `Yes! Nug landed on ${p.ans}.`; }
+        else { sfx.bad(); pad.classList.add('no'); probEl.classList.add('reveal'); say.textContent = p.b === 0 ? `Zero hops means Nug stays on ${p.ans}.` : `Nug landed on ${p.ans}. Count the hops with Nug next time!`; }
         later(next, ok ? 1300 : 2200);
       });
       const onResize = () => place(pos, false);
@@ -1149,7 +1248,7 @@ const GAMES = {
         const me = RACERS.find(r => r.id === P.racer);
         stage.innerHTML = `<div class="race-wrap">
           <div class="track">
-            <div class="lane-row"><div class="racer pip-r" id="rPip">${racerArt(me.id)}</div></div>
+            <div class="lane-row"><div class="racer racer-me" id="rMe">${racerArt(me.id)}</div></div>
             <div class="lane-row"><div class="racer" id="rDuck">${duck()}</div></div>
             <div class="finish"></div>
           </div>
@@ -1166,7 +1265,7 @@ const GAMES = {
           </div>
           <div class="countdown" id="cd"></div>
         </div>`;
-        const rPip = $('#rPip'), rDuck = $('#rDuck'), card = $('#rCard'), probEl = $('#rProb'), ansEl = $('#rAns'), mark = $('#rMark'), retry = $('#retry'), keypad = $('#keypad'), cd = $('#cd');
+        const rMe = $('#rMe'), rDuck = $('#rDuck'), card = $('#rCard'), probEl = $('#rProb'), ansEl = $('#rAns'), mark = $('#rMark'), retry = $('#retry'), keypad = $('#keypad'), cd = $('#cd');
         const setPos = (el, f) => { el.style.left = `calc((100% - var(--rw)) * ${clamp(f, 0, 1)})`; };
         const drawHud = () => { hud.innerHTML = `<span class="hud-pill">${me.name} ${steps} / ${GOAL}</span>`; };
 
@@ -1192,7 +1291,7 @@ const GAMES = {
           if (+typed === p.ans) {
             if (!missedThis) record(p, true); sfx.good();
             ansEl.className = 'answer good'; card.classList.add('win'); mark.innerHTML = CHECK_SVG;
-            steps++; setPos(rPip, steps / GOAL); drawHud();
+            steps++; setPos(rMe, steps / GOAL); drawHud();
             if (steps >= GOAL) return win();
             later(nextQ, 550);
           } else {
@@ -1245,7 +1344,7 @@ const GAMES = {
           else if (e.key === 'Escape') press('clear');
         };
         document.addEventListener('keydown', onKey);
-        setPos(rPip, 0); setPos(rDuck, 0); drawHud(); nextQ(); locked = true;
+        setPos(rMe, 0); setPos(rDuck, 0); drawHud(); nextQ(); locked = true;
         ['3', '2', '1', 'Go!'].forEach((t, i) => later(() => {
           cd.innerHTML = `<span>${t}</span>`; t === 'Go!' ? sfx.good() : sfx.tick();
           if (t === 'Go!') { running = true; locked = false; last = performance.now(); requestAnimationFrame(loop); later(() => { cd.innerHTML = ''; }, 500); }
@@ -1353,7 +1452,7 @@ function renderCloset(){
   $('#closetStars').textContent = P.stars;
   $('#hatGrid').innerHTML = HATS.map(h => {
     const open = P.stars >= h.at;
-    return `<button type="button" class="hat-btn ${open ? '' : 'locked'}" data-h="${h.id}" aria-pressed="${P.hat === h.id}" ${open ? '' : 'aria-disabled="true"'}>${pip(h.id)}<b>${h.name}</b><small>${open ? (P.hat === h.id ? 'Wearing' : 'Tap to wear') : `Unlocks at ★ ${h.at}`}</small></button>`;
+    return `<button type="button" class="hat-btn ${open ? '' : 'locked'}" data-h="${h.id}" aria-pressed="${P.hat === h.id}" ${open ? '' : 'aria-disabled="true"'}>${nug(h.id)}<b>${h.name}</b><small>${open ? (P.hat === h.id ? 'Wearing' : 'Tap to wear') : `Unlocks at ★ ${h.at}`}</small></button>`;
   }).join('');
   const have = stickerCount(P.stars);
   $('#stickerCount').textContent = `${have} of ${STICKERS.length} collected`;
@@ -1423,7 +1522,7 @@ function addItem(si, x, y){
   items.push({s: si, x: clamp(x, .03, .97), y: clamp(y, .03, .97), k: 1, r: rnd(-12, 12)});
   selIdx = items.length - 1;
   renderPage(selIdx); persist();
-  tone(500, .08, {slide: 2, vol: .12}); tone(900, .12, {at: .07, type: 'triangle', vol: .1});
+  requestAnimationFrame(() => sayOnPage(selIdx));
 }
 function removeItem(i){
   curPage().items.splice(i, 1); selIdx = -1;
@@ -1443,6 +1542,12 @@ function startPinch(){
   const m = rel((a.x + b.x) / 2, (a.y + b.y) / 2);
   act = {type: 'pinch', i: act.i, k0: it.k, r0: it.r, x0: it.x, y0: it.y, d0: Math.hypot(b.x - a.x, b.y - a.y) || 1, a0: Math.atan2(b.y - a.y, b.x - a.x), mx0: m.x, my0: m.y};
 }
+let tapStart = null; // a press on a sticker that hasn't moved yet counts as a tap
+function sayOnPage(i){
+  const it = curPage().items[i], el = pageEl.querySelector(`[data-i="${i}"] .em`); if (!it || !el) return;
+  const pr = pageEl.getBoundingClientRect(), r = el.getBoundingClientRect();
+  speech(pageEl, stickerSound(it.s), r.left - pr.left + r.width / 2, Math.max(70, r.top - pr.top));
+}
 function startMove(cx, cy){
   const it = curPage().items[act.i], p = rel(cx, cy);
   act = {type: 'move', i: act.i, dx: it.x - p.x, dy: it.y - p.y};
@@ -1450,7 +1555,7 @@ function startMove(cx, cy){
 pageEl.addEventListener('pointerdown', e => {
   pointers.set(e.pointerId, {x: e.clientX, y: e.clientY});
   try { pageEl.setPointerCapture(e.pointerId); } catch (err) {}
-  if (act && pointers.size === 2) { startPinch(); return; }
+  if (act && pointers.size === 2) { tapStart = null; startPinch(); return; }
   const el = e.target.closest('.placed');
   if (!el) { select(-1); act = null; return; }
   e.preventDefault();
@@ -1463,7 +1568,7 @@ pageEl.addEventListener('pointerdown', e => {
     const r = pageEl.querySelector(`[data-i="${i}"] .em`).getBoundingClientRect();
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     act = {type: 'rot', i, cx, cy, k0: it.k, r0: it.r, a0: Math.atan2(e.clientY - cy, e.clientX - cx), d0: Math.hypot(e.clientX - cx, e.clientY - cy) || 1};
-  } else { act = {i}; startMove(e.clientX, e.clientY); }
+  } else { act = {i}; startMove(e.clientX, e.clientY); tapStart = {x: e.clientX, y: e.clientY, i}; }
 });
 pageEl.addEventListener('pointermove', e => {
   if (!pointers.has(e.pointerId)) return;
@@ -1471,6 +1576,7 @@ pageEl.addEventListener('pointermove', e => {
   if (!act || act.type == null) return;
   const it = curPage().items[act.i]; if (!it) return;
   if (act.type === 'move') {
+    if (tapStart && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) > 8) tapStart = null;
     const p = rel(e.clientX, e.clientY);
     it.x = clamp(p.x + act.dx, 0, 1); it.y = clamp(p.y + act.dy, 0, 1);
   } else if (act.type === 'rot') {
@@ -1489,7 +1595,7 @@ const endPointer = e => {
   pointers.delete(e.pointerId);
   if (!act) return;
   if (pointers.size === 1 && act.type === 'pinch') { const [p] = [...pointers.values()]; startMove(p.x, p.y); return; }
-  if (pointers.size === 0) { if (act.type) persist(); act = null; }
+  if (pointers.size === 0) { if (act.type) persist(); if (tapStart) sayOnPage(tapStart.i); tapStart = null; act = null; }
 };
 pageEl.addEventListener('pointerup', endPointer);
 pageEl.addEventListener('pointercancel', endPointer);
@@ -1588,11 +1694,18 @@ function openSticker(i, fromEl){
     vStage.animate([{transform: `translate(${dx}px,${dy}px) scale(${r.width / t.width})`}, {transform: 'none'}], {duration: 480, easing: 'cubic-bezier(.2,1.25,.4,1)'});
     viewer.animate([{backgroundColor: 'rgba(23,54,58,0)'}, {backgroundColor: 'rgba(23,54,58,.62)'}], {duration: 300});
   }
-  tone(320, .4, {type: 'triangle', slide: 3, vol: .08}); sfx.good();
+  vIdx = i;
+  tone(320, .4, {type: 'triangle', slide: 3, vol: .08});
+  setTimeout(() => { if (!viewer.hidden && vIdx === i) hearSticker(); }, 450);
   cancelAnimationFrame(vRaf); vPrev = performance.now(); vRaf = requestAnimationFrame(viewerLoop);
   $('#vClose').focus({preventScroll: true});
 }
-function closeSticker(){ viewer.hidden = true; cancelAnimationFrame(vRaf); dragging = false; }
+let vIdx = -1;
+function hearSticker(){
+  const word = stickerSound(vIdx), r = vStage.getBoundingClientRect();
+  speech(viewer, word, r.left + r.width / 2, r.top + r.height * .12);
+}
+function closeSticker(){ viewer.querySelectorAll('.speech').forEach(x => x.remove()); viewer.hidden = true; cancelAnimationFrame(vRaf); dragging = false; }
 vStage.addEventListener('pointerdown', e => {
   dragging = true; lastX = e.clientX; lastY = e.clientY; lastT = performance.now(); vx = vy = 0;
   try { vStage.setPointerCapture(e.pointerId); } catch (err) {}
@@ -1615,6 +1728,7 @@ vStage.addEventListener('pointerup', endDrag);
 vStage.addEventListener('pointercancel', endDrag);
 $('#vSpin').addEventListener('click', () => { vy += (Math.random() < .5 ? -1 : 1) * 1300; vx += rnd(-200, 200); tone(300, .45, {type: 'triangle', slide: 3.5, vol: .09}); });
 $('#vClose').addEventListener('click', closeSticker);
+$('#vHear').addEventListener('click', hearSticker);
 viewer.addEventListener('click', e => { if (e.target === viewer) closeSticker(); });
 document.addEventListener('keydown', e => {
   if (viewer.hidden) return;

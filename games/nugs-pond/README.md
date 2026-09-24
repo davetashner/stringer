@@ -1,4 +1,4 @@
-# Pip's Pond
+# Nug's Pond
 
 A single-file browser game that helps kids practice addition and subtraction.
 It has no dependencies and no build step. Open `index.html` in any modern browser.
@@ -7,7 +7,7 @@ It has no dependencies and no build step. Open `index.html` in any modern browse
 
 | Game | Skill practiced |
 |------|-----------------|
-| **Lily Hop** | Number-line reasoning. The child predicts which lily pad Pip lands on, then watches Pip count out the hops. The answer then floats up off its pad into the sky, growing as it goes. The game is set in a full pond scene with sun, drifting clouds, hills, cattails, lotus flowers and butterflies. |
+| **Lily Hop** | Number-line reasoning. The child predicts which lily pad Nug lands on, then watches Nug count out the hops. The answer then floats up off its pad into the sky, growing as it goes. The game is set in a full pond scene with sun, drifting clouds, hills, cattails, lotus flowers and butterflies. |
 | **Bubble Pop** | Quick recall. A one-minute round where the child pops the rising bubble that holds the answer. A correct bubble turns green, grows and bursts into stars. Bubbles start slow, taking 12 seconds to cross the tank (14 at the bigger number sizes). Every 5 correct answers is a new speed level, each about 10% faster, and bubbles never take less than 6.5 seconds. |
 | **Pond Race** | Fluency. The child picks a racer from eight characters, then types answers on a big number pad and taps **Enter** to check (a keyboard's Enter key works too). This lets them paddle past Duck. A wrong answer shows a red X and offers **Try again** or **Show me**, and Duck waits meanwhile. Duck's speed adapts after each race so races stay close. |
 | **Fish Friends** | Number bonds. Each round shows a math sentence with empty boxes, like `▢ + ▢ = 10` or `▢ − ▢ = 3`. Tapping a fish drops its number into a box, and a wrong pair shows what it actually makes. |
@@ -17,7 +17,7 @@ It has no dependencies and no build step. Open `index.html` in any modern browse
 - Five number ranges: Tadpole (0–5), Froglet (0–10), Frog (0–20), Bullfrog (0–50) and Pond King (0–100).
 - Every game mixes adding and taking away evenly.
 - Every game awards up to 3 stars, with a best score kept for each game, range and mode.
-- Stars unlock 24 stickers and 7 hats for Pip. Tapping a sticker in the sticker book zooms it up into a thick, two-sided 3D sticker. Kids can drag it to spin it any direction, or tap **Spin it!** for a big twirl.
+- Stars unlock 48 stickers and 7 hats for Nug. Every sticker makes its own sound, like "Ribbit!" or "Moo!", with a speech bubble: when it opens, when you tap 🔊 Hear it, and when you tap it on a sticker page. Tapping a sticker in the sticker book zooms it up into a thick, two-sided 3D sticker. Kids can drag it to spin it any direction, or tap **Spin it!** for a big twirl.
 - **Sticker pages** (Stickers & hats → Decorate sticker pages): a scrapbook where kids place their unlocked stickers on pages. They can tap or drag stickers onto a page, drag to move them, and turn or resize them with the yellow handle or a two-finger pinch. They can remove a sticker with ✕, pick a background (Pond, Sky, Meadow, Night, Sunset or Paper) and add up to 30 pages. Every change saves automatically. Kids also see a daily play streak.
 - Adaptive practice: missed facts come back more often until they're answered correctly. Grown-ups can see them under **Grown-ups → Tricky facts**.
 
