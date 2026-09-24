@@ -257,6 +257,17 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 .fish-eq.bad{background:#FFE1D9;animation:shake .4s}
 .tank{grid-template-rows:repeat(2,1fr)}
 
+/* rush guard */
+.calm{position:absolute;inset:0;z-index:20;display:grid;place-items:center;background:rgba(255,248,230,.75);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);border-radius:28px;animation:fadeIn .25s}
+.calm-card{background:var(--paper);border:4px solid var(--ink);border-radius:28px;box-shadow:0 6px 0 var(--ink);padding:18px 26px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;max-width:min(420px,92%);font-weight:500}
+.calm-turtle{font-size:64px;line-height:1;animation:bob 1.4s ease-in-out infinite alternate}
+.calm-card b{font-family:var(--display);font-weight:900;font-size:clamp(32px,5vw,46px);color:var(--plum)}
+.calm-count{font-family:var(--display);font-weight:900;font-size:36px;width:64px;height:64px;border-radius:50%;border:4px solid var(--ink);display:grid;place-items:center;background:var(--sun)}
+.nudge{position:absolute;left:50%;top:42%;z-index:15;background:#FFF1B8;border:3px solid var(--ink);border-radius:999px;padding:8px 20px;font-family:var(--display);font-weight:800;font-size:clamp(17px,2.6vw,24px);white-space:nowrap;max-width:94%;overflow:hidden;text-overflow:ellipsis;box-shadow:0 4px 0 var(--ink);pointer-events:none;animation:nudge 2.4s ease-out forwards}
+.bubble.hint .skin{border-color:#239342;box-shadow:0 0 0 7px rgba(60,192,92,.75);background:radial-gradient(circle at 32% 28%,#fff 0 9%,#C9F2CF 20%,#8EDC9A 100%)}
+@keyframes nudge{0%{opacity:0;transform:translate(-50%,-50%) scale(.7)}10%{opacity:1;transform:translate(-50%,-50%) scale(1.05)}18%{transform:translate(-50%,-50%) scale(1)}85%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%)}}
+@keyframes fadeIn{from{opacity:0}}
+
 /* results */
 #results{overflow-y:auto;padding-block:20px}
 .results-card{margin:auto;width:min(560px,100%);background:var(--paper);border:3px solid var(--ink);border-radius:32px;box-shadow:0 8px 0 var(--ink);padding:22px 20px 26px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
@@ -521,7 +532,7 @@ button.sticker:active{transform:scale(.92)!important}
     </div>
     <div>
       <h3>How it works</h3>
-      <p class="muted">Pick a number size on the home screen: Tadpole (0–5), Froglet (0–10), Frog (0–20), Bullfrog (0–50) or Pond King (0–100). Every game mixes adding and taking away, and subtraction never goes below zero. Stars from every game unlock stickers and hats for Nug. Pond Race adjusts the duck's speed after each race so it stays a close contest.</p>
+      <p class="muted">Pick a number size on the home screen: Tadpole (0–5), Froglet (0–10), Frog (0–20), Bullfrog (0–50) or Pond King (0–100). Every game mixes adding and taking away, and subtraction never goes below zero. Stars from every game unlock stickers and hats for Nug. Pond Race adjusts the duck's speed after each race so it stays a close contest. Fast wrong guesses are discouraged: the first gets a reminder to slow down, and a second soon after pauses the game for a few seconds while the clock keeps running. Bubble Pop allows one tap per question, Pond Race two tries, and Fish Friends three tries before the answer is shown.</p>
     </div>
     <div>
       <h3>Play full screen on iPad</h3>
@@ -771,6 +782,7 @@ const sfx = {
   pop(){ tone(700, .09, {slide:2.2, vol:.16}); },
   hop(){ tone(380, .13, {type:'triangle', slide:1.7, vol:.12}); },
   tap(){ tone(560, .05, {vol:.07}); },
+  calm(){ tone(660, .3, {type: 'triangle', vol: .14}); tone(520, .3, {at: .25, type: 'triangle', vol: .14}); tone(392, .6, {at: .5, type: 'triangle', vol: .14}); },
   oops(){ tone(330, .28, {type: 'triangle', slide: .85, vol: .2}); tone(260, .5, {at: .3, type: 'triangle', slide: .7, vol: .2}); },
   tick(){ tone(880, .05, {vol:.07, type:'square'}); },
   yay(n = 1){
@@ -928,6 +940,40 @@ $('#gameGrid').addEventListener('click', e => { const b = e.target.closest('[dat
 /* ---------- game runner ---------- */
 let run = 0, current = null, lastGame = 'hop';
 const stage = $('#stage'), hud = $('#hud');
+// Rush guard: a wrong answer given within `fast` ms of the question counts as a rushed guess.
+// The first one gets a gentle nudge; a second within 20 seconds triggers a calm-down pause.
+function makeRushGuard(fast){
+  let rushes = [], calms = 0;
+  return {
+    wrong(ms){
+      if (ms > fast) return 'ok';
+      const now = performance.now();
+      rushes = rushes.filter(t => now - t < 20000); rushes.push(now);
+      if (rushes.length < 2) return 'nudge';
+      rushes = []; calms++; return 'calm';
+    },
+    secs: () => calms > 1 ? 5 : 3,
+  };
+}
+function nudge(text){
+  const n = document.createElement('div');
+  n.className = 'nudge'; n.textContent = text;
+  stage.appendChild(n); setTimeout(() => n.remove(), 2400);
+}
+// a short pause that covers the game so it can't be tapped; clocks and Duck keep going
+function calmDown(secs, done){
+  const el = document.createElement('div');
+  el.className = 'calm'; el.setAttribute('role', 'alert');
+  el.innerHTML = `<div class="calm-card"><div class="calm-turtle">🐢</div><b>Slow down!</b><p>Fast guesses make mistakes. Take a breath and think it through.</p><div class="calm-count">${secs}</div></div>`;
+  stage.appendChild(el); sfx.calm();
+  let left = secs;
+  const step = () => {
+    if (--left <= 0) { el.remove(); done(); return; }
+    el.querySelector('.calm-count').textContent = left; sfx.tick();
+    later(step, 1000);
+  };
+  later(step, 1000);
+}
 function later(fn, ms){ const r = run; setTimeout(() => { if (r === run) fn(); }, ms); }
 function startGame(id){
   stopGame();
@@ -991,7 +1037,8 @@ const GAMES = {
     blurb: 'Guess which lily pad Nug lands on, then count the hops.',
     start({token, alive, finish}){
       const ROUNDS = 8;
-      let round = 0, right = 0, busy = true, p, pos = 0;
+      let round = 0, right = 0, busy = true, p, pos = 0, readyAt = 0;
+      const rush = makeRushGuard(1800);
       const results = [];
       stage.innerHTML = `<div class="hop-wrap">
         <div class="prob-card" id="hopProb"></div>
@@ -1060,7 +1107,7 @@ const GAMES = {
         say.textContent = p.op === 'add' ? `Nug starts on ${p.a} and hops forward ${p.b}. Where does Nug land?` : `Nug starts on ${p.a} and hops back ${p.b}. Where does Nug land?`;
         count.textContent = '';
         pos = p.a;
-        requestAnimationFrame(() => { place(pos, false); busy = false; });
+        requestAnimationFrame(() => { place(pos, false); busy = false; readyAt = performance.now(); });
       }
       async function hopTo(target){
         const dir = target > pos ? 1 : -1;
@@ -1080,7 +1127,7 @@ const GAMES = {
         const pad = e.target.closest('.pad');
         if (!pad || busy) return;
         busy = true;
-        const n = +pad.dataset.n;
+        const n = +pad.dataset.n, reaction = performance.now() - readyAt;
         pad.classList.add('picked'); sfx.tap();
         say.textContent = 'Watch Nug hop…';
         await wait(250); if (!alive()) return;
@@ -1105,7 +1152,12 @@ const GAMES = {
           const svg = rider.querySelector('svg');
           if (!reduced && svg.animate) svg.animate([{transform: 'rotate(0)'}, {transform: 'rotate(-12deg)'}, {transform: 'rotate(10deg)'}, {transform: 'rotate(-6deg)'}, {transform: 'rotate(0)'}], {duration: 700});
         }
-        later(next, ok ? 1300 : 3000);
+        if (ok) later(next, 1300);
+        else {
+          const r = rush.wrong(reaction);
+          if (r === 'calm') later(() => calmDown(rush.secs(), next), 2600);
+          else { if (r === 'nudge') later(() => nudge('Take your time! Count the hops in your head first.'), 1900); later(next, 3000); }
+        }
       });
       const onResize = () => place(pos, false);
       addEventListener('resize', onResize);
@@ -1117,9 +1169,11 @@ const GAMES = {
   /* Bubble Pop: tap the rising bubble with the answer; every 5 pops the bubbles speed up */
   pop: {
     name: 'Bubble Pop', color: '#8FD9F2',
-    blurb: 'Pop the bubble with the answer. Every 5 pops, the bubbles get faster!',
+    blurb: 'Pop the bubble with the answer. One tap per question, and every 5 pops the bubbles get faster!',
     start({alive, finish}){
       const DUR = 60, PER_SPEED = 5;
+      const rush = makeRushGuard(1500);
+      let waveAt = 0;
       const PRAISE = ['Yes!', 'Great!', 'Awesome!', 'Super!', 'Wow!', 'Nailed it!', 'Splash!'];
       let left = DUR, score = 0, combo = 0, best = 0, speed = 1, p = null, bubbles = [], waveOn = false, missedThis = false, last = performance.now(), shownSec = -1;
       stage.innerHTML = `<div class="pop-wrap"><div class="prob-card small" id="popProb">Get ready…</div><div class="pop-field" id="field"><div class="combo" id="combo"></div><div class="lvl-banner" id="banner"></div></div></div>`;
@@ -1129,7 +1183,7 @@ const GAMES = {
 
       function clearBubbles(){ bubbles.forEach(b => { b.dead = true; b.el.classList.add('fade'); setTimeout(() => b.el.remove(), 320); }); bubbles = []; }
       function wave(){
-        p = makeProblem(); missedThis = false; waveOn = true;
+        p = makeProblem(); missedThis = false; waveOn = true; waveAt = performance.now();
         probEl.className = 'prob-card small';
         probEl.textContent = `${p.text} = ?`;
         const vals = options(p, 4);
@@ -1195,9 +1249,19 @@ const GAMES = {
           if (leveled) later(speedUp, 600);
           later(wave, leveled ? 2100 : 900);
         } else {
-          b.el.classList.add('nope'); sfx.bad();
+          // one tap per question: a wrong tap ends the round, so tapping every bubble can't win it
+          waveOn = false; b.el.classList.add('nope'); sfx.bad();
           combo = 0; comboEl.classList.remove('show');
-          if (!missedThis) { record(p, false); missedThis = true; }
+          record(p, false);
+          bubbles.forEach(x => { if (x.v === p.ans) x.el.classList.add('hint'); });
+          probEl.className = 'prob-card small reveal';
+          probEl.textContent = `${p.text} = ${p.ans}`;
+          const r = rush.wrong(performance.now() - waveAt);
+          later(() => {
+            clearBubbles();
+            if (r === 'calm') calmDown(rush.secs(), wave);
+            else { if (r === 'nudge') nudge('Take your time! You get one tap per question.'); later(wave, 600); }
+          }, 1100);
         }
       }
       function escaped(){
@@ -1250,7 +1314,8 @@ const GAMES = {
       const GOAL = 10;
       const adj = P.raceAdj[P.level] || 1;
       const duckTime = GOAL * RACE_BASE[P.level] * adj;
-      let steps = 0, duckPos = 0, typed = '', p, mistakes = 0, missedThis = false, running = false, paused = false, locked = true, last = 0;
+      let steps = 0, duckPos = 0, typed = '', p, mistakes = 0, missedThis = false, running = false, paused = false, locked = true, last = 0, readyAt = 0, tries = 0;
+      const rush = makeRushGuard(1500);
       let onKey = null;
       if (!RACERS.some(r => r.id === P.racer)) P.racer = 'pip';
 
@@ -1281,7 +1346,7 @@ const GAMES = {
             <div class="race-q">
               <div class="prob-card" id="rCard"><span id="rProb"></span> = <span class="answer" id="rAns">?</span><span id="rMark"></span></div>
               <div class="retry" id="retry" hidden>
-                <p>Not quite. Want another try?</p>
+                <p>Not quite. You get one more try!</p>
                 <button type="button" class="btn" id="tryAgain">Try again</button>
                 <button type="button" class="btn ghost" id="showMe">Show me</button>
               </div>
@@ -1295,7 +1360,7 @@ const GAMES = {
         const drawHud = () => { hud.innerHTML = `<span class="hud-pill">${me.name} ${steps} / ${GOAL}</span>`; };
 
         function nextQ(){
-          p = makeProblem(); missedThis = false; typed = '';
+          p = makeProblem(); missedThis = false; typed = ''; tries = 0; readyAt = performance.now();
           probEl.textContent = p.text; ansEl.textContent = '?'; ansEl.className = 'answer'; $('#enterKey').disabled = true;
           card.classList.remove('win', 'reveal'); mark.innerHTML = '';
           retry.hidden = true; keypad.classList.remove('off');
@@ -1321,10 +1386,23 @@ const GAMES = {
             later(nextQ, 550);
           } else {
             if (!missedThis) { record(p, false); missedThis = true; mistakes++; }
-            sfx.bad(); paused = true;
+            tries++; sfx.bad();
             ansEl.className = 'answer bad'; card.classList.add('reveal'); mark.innerHTML = X_SVG;
-            retry.hidden = false; keypad.classList.add('off');
-            $('#tryAgain').focus({preventScroll: true});
+            keypad.classList.add('off');
+            const r = rush.wrong(performance.now() - readyAt);
+            if (tries >= 2) {
+              // no endless guessing: after two misses, show the answer and move on while Duck keeps paddling
+              retry.hidden = true; paused = false;
+              later(() => { ansEl.textContent = p.ans; ansEl.className = 'answer good'; card.classList.remove('reveal'); mark.innerHTML = ''; }, 700);
+              later(r === 'calm' ? () => calmDown(rush.secs(), nextQ) : nextQ, 2200);
+            } else if (r === 'calm') {
+              retry.hidden = true; paused = false; // Duck keeps paddling during the calm-down
+              later(() => calmDown(rush.secs(), () => { retry.hidden = false; tryAgain(); }), 700);
+            } else {
+              paused = true; retry.hidden = false;
+              if (r === 'nudge') nudge('Take your time! Think, then type.');
+              $('#tryAgain').focus({preventScroll: true});
+            }
           }
         }
         function tryAgain(){
@@ -1332,7 +1410,7 @@ const GAMES = {
           typed = ''; ansEl.textContent = '?'; ansEl.className = 'answer'; $('#enterKey').disabled = true;
           card.classList.remove('reveal'); mark.innerHTML = '';
           retry.hidden = true; keypad.classList.remove('off');
-          paused = false; locked = false; sfx.tap();
+          paused = false; locked = false; readyAt = performance.now(); sfx.tap();
         }
         function showMe(){
           if (retry.hidden) return;
@@ -1372,7 +1450,7 @@ const GAMES = {
         setPos(rMe, 0); setPos(rDuck, 0); drawHud(); nextQ(); locked = true;
         ['3', '2', '1', 'Go!'].forEach((t, i) => later(() => {
           cd.innerHTML = `<span>${t}</span>`; t === 'Go!' ? sfx.good() : sfx.tick();
-          if (t === 'Go!') { running = true; locked = false; last = performance.now(); requestAnimationFrame(loop); later(() => { cd.innerHTML = ''; }, 500); }
+          if (t === 'Go!') { running = true; locked = false; last = readyAt = performance.now(); requestAnimationFrame(loop); later(() => { cd.innerHTML = ''; }, 500); }
         }, 300 + i * 750));
       }
 
@@ -1387,7 +1465,8 @@ const GAMES = {
     blurb: 'Tap two fish to fill in the boxes and finish the math sentence.',
     start({alive, finish}){
       const ROUNDS = 8, max = level().max, lo = max >= 10 ? 1 : 0;
-      let round = 0, mistakes = 0, missedThis = false, op, target, vals = [], colors = [], picks = [], busy = true;
+      let round = 0, mistakes = 0, missedThis = false, op, target, vals = [], colors = [], picks = [], busy = true, readyAt = 0, wrongs = 0;
+      const rush = makeRushGuard(2000);
       const results = [];
       stage.innerHTML = `<div class="fish-wrap">
         <div class="fish-eq" id="fishEq" aria-live="polite"></div>
@@ -1412,6 +1491,7 @@ const GAMES = {
         const v = picks.map(i => vals[i]);
         return op === 'sub' && v.length === 2 && v[0] < v[1] ? [v[1], v[0]] : v;
       }
+      function findPair(){ for (let i = 0; i < vals.length; i++) for (let j = i + 1; j < vals.length; j++) if (isPair(vals[i], vals[j])) return [i, j]; return []; }
       function drawEq(state = ''){
         const [x, y] = ordered();
         eq.className = 'fish-eq ' + state;
@@ -1438,9 +1518,9 @@ const GAMES = {
         while (vals.length < 6) vals.push(filler());
         shuffle(vals);
         colors = vals.map(() => pick(FISH_COLORS));
-        drawEq(); drawTank('in');
+        drawEq(); drawTank('in'); wrongs = 0;
         say.textContent = op === 'add' ? `Tap two fish that add up to ${target}.` : `Tap two fish that are ${target} apart. The bigger one goes first.`;
-        busy = false;
+        busy = false; readyAt = performance.now();
       }
       tank.addEventListener('click', e => {
         const f = e.target.closest('.fish'); if (!f || busy) return;
@@ -1461,9 +1541,23 @@ const GAMES = {
           sfx.bad(); drawEq('bad');
           say.textContent = `${x} ${sym()} ${y} = ${got}, not ${target}. Try two different fish!`;
           picks.forEach(k => { const el = tank.querySelector(`[data-i="${k}"]`); el.classList.remove('sel'); el.classList.add('shake'); });
+          wrongs++;
+          const r = rush.wrong(performance.now() - readyAt);
           later(() => {
             tank.querySelectorAll('.shake').forEach(el => el.classList.remove('shake'));
-            picks = []; drawEq(); busy = false;
+            if (wrongs >= 3) {
+              // after three wrong pairs, show a right pair and move on instead of letting guessing continue
+              picks = findPair(); picks.forEach(k => tank.querySelector(`[data-i="${k}"]`).classList.add('sel'));
+              const [hx, hy] = ordered(); drawEq();
+              say.textContent = `These two are friends: ${hx} ${sym()} ${hy} = ${target}.`;
+              results[round - 1] = false; drawHud();
+              later(r === 'calm' ? () => calmDown(rush.secs(), next) : next, 2600);
+              return;
+            }
+            picks = []; drawEq();
+            const go = () => { busy = false; readyAt = performance.now(); };
+            if (r === 'calm') calmDown(rush.secs(), go);
+            else { if (r === 'nudge') nudge('Take your time! Work it out in your head first.'); go(); }
           }, 1100);
         }
       });

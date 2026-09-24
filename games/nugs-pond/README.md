@@ -21,6 +21,17 @@ It has no dependencies and no build step. Open `index.html` in any modern browse
 - **Sticker pages** (Stickers & hats → Decorate sticker pages): a scrapbook where kids place their unlocked stickers on pages. They can tap or drag stickers onto a page, drag to move them, and turn or resize them with the yellow handle or a two-finger pinch. They can remove a sticker with ✕, pick a background (Pond, Sky, Meadow, Night, Sunset or Paper) and add up to 30 pages. Every change saves automatically. Kids also see a daily play streak.
 - Adaptive practice: missed facts come back more often until they're answered correctly. Grown-ups can see them under **Grown-ups → Tricky facts**.
 
+## Discouraging panic guessing
+
+A wrong answer given very quickly after a question appears counts as a rushed guess. The limits are 1.8s in Lily Hop, 1.5s in Bubble Pop and Pond Race, and 2s in Fish Friends.
+
+- The first rushed guess shows a gentle "Take your time!" reminder.
+- A second rushed guess within 20 seconds covers the game with a **"Slow down!"** pause: 3 seconds the first time, 5 seconds after that. The game can't be tapped during the pause, but the Bubble Pop timer and Duck keep going, so rushing costs something.
+- Guessing again and again doesn't work:
+  - **Bubble Pop:** one tap per question. A wrong tap ends that question and highlights the right bubble.
+  - **Pond Race:** two tries per problem. After that, the answer is shown and the race moves on.
+  - **Fish Friends:** three tries per round. After that, the game shows a correct pair and moves on.
+
 ## iPad and touch support
 
 - Large tap targets, with no hover-only interactions and no on-screen keyboard needed. Pond Race has its own number pad.
