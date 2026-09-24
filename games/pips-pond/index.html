@@ -279,6 +279,25 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 .sticker{aspect-ratio:1;max-width:100%;background:var(--paper);border:3px solid var(--ink);border-radius:18px;display:grid;place-items:center;font-size:40px;line-height:1;box-shadow:0 3px 0 var(--ink)}
 .sticker.locked{background:rgba(255,248,230,.5);border-style:dashed;box-shadow:none;font-family:var(--display);font-weight:800;font-size:14px;color:var(--ink-soft);text-align:center}
 .sticker.locked b{display:block;font-size:26px}
+button.sticker{padding:0;cursor:pointer;transition:transform .12s}
+button.sticker:active{transform:scale(.92)!important}
+
+/* 3D sticker viewer */
+.viewer{position:fixed;inset:0;z-index:25;background:rgba(23,54,58,.62);-webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:max(16px,env(safe-area-inset-top,0px)) 16px max(16px,env(safe-area-inset-bottom,0px))}
+.viewer-stage{--sz:min(64vw,46vh,340px);width:calc(var(--sz) * 1.25);height:calc(var(--sz) * 1.25);max-width:100%;display:grid;place-items:center;perspective:1100px;touch-action:none;cursor:grab}
+.viewer-stage:active{cursor:grabbing}
+.sticker3d{position:relative;width:var(--sz);height:var(--sz);transform-style:preserve-3d;will-change:transform}
+.sticker3d .face,.sticker3d .edge{position:absolute;inset:0;border-radius:22%}
+.sticker3d .edge{background:var(--ink)}
+.sticker3d .face{border:6px solid var(--ink);-webkit-backface-visibility:hidden;backface-visibility:hidden;display:grid;place-items:center;overflow:hidden}
+.sticker3d .front{transform:translateZ(9px);background:radial-gradient(circle at 30% 25%,#fff 0 20%,var(--paper) 55%,var(--paper-2));font-size:calc(var(--sz) * .58);line-height:1}
+.sticker3d .front::after{content:"";position:absolute;inset:-40%;background:linear-gradient(105deg,transparent 40%,rgba(255,255,255,.75) 50%,transparent 60%);transform:translateX(var(--shine,0%));pointer-events:none}
+.sticker3d .back{transform:rotateY(180deg) translateZ(9px);background:repeating-linear-gradient(45deg,var(--lily) 0 18px,#9BDA78 18px 36px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-family:var(--display);font-weight:900;color:#fff;-webkit-text-stroke:3px var(--ink);paint-order:stroke fill;text-align:center}
+.sticker3d .back span{font-size:calc(var(--sz) * .16)}
+.sticker3d .back b{font-size:calc(var(--sz) * .09);-webkit-text-stroke:2px var(--ink)}
+.viewer-name{font-family:var(--display);font-weight:900;font-size:clamp(30px,5vw,44px);color:#fff;-webkit-text-stroke:4px var(--ink);paint-order:stroke fill}
+.viewer-hint{color:#fff;font-weight:500;font-size:16px}
+.viewer-actions{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
 
 /* grown-ups sheet */
 .overlay{position:fixed;inset:0;z-index:20;background:rgba(23,54,58,.45);display:grid;place-items:center;padding:max(16px,env(safe-area-inset-top,0px)) 16px max(16px,env(safe-area-inset-bottom,0px))}
@@ -439,6 +458,17 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
     <div><button class="btn small danger" id="resetBtn" type="button">Reset all progress</button></div>
   </div>
 </div>
+<div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-labelledby="vName">
+  <div class="viewer-stage" id="vStage">
+    <div class="sticker3d" id="s3d">
+      <div class="face front"><span id="vEmoji"></span></div>
+      <div class="face back"><span>Pip's Pond</span><b id="vNum"></b></div>
+    </div>
+  </div>
+  <p class="viewer-name" id="vName"></p>
+  <p class="viewer-hint">Drag the sticker to spin it around</p>
+  <div class="viewer-actions"><button class="btn" id="vSpin" type="button">Spin it!</button><button class="btn ghost" id="vClose" type="button">Done</button></div>
+</div>
 <canvas id="confetti" aria-hidden="true"></canvas>
 
 <script>
@@ -455,6 +485,7 @@ const LEVELS = [
   {name:'Pond King', range:'0–100', max:100},
 ];
 const STICKERS = ['🐸','🦆','🐢','🐟','🐞','🦋','🐌','🐝','🦀','🐠','🦦','🐙','🦔','🦉','🐳','🍄','🌻','🌈','🦩','🐉','🦄','🚀','🌟','🏆'];
+const STICKER_NAMES = ['Frog','Duck','Turtle','Fish','Ladybug','Butterfly','Snail','Bee','Crab','Tropical Fish','Otter','Octopus','Hedgehog','Owl','Whale','Mushroom','Sunflower','Rainbow','Flamingo','Dragon','Unicorn','Rocket','Shooting Star','Trophy'];
 const STICKER_STEP = 4;
 const HATS = [
   {id:'none',   name:'No hat',      at:0},
@@ -1268,11 +1299,87 @@ function renderCloset(){
   const have = stickerCount(P.stars);
   $('#stickerCount').textContent = `${have} of ${STICKERS.length} collected`;
   $('#stickerGrid').innerHTML = STICKERS.map((s, i) => i < have
-    ? `<div class="sticker" style="transform:rotate(${((i * 37) % 9) - 4}deg)">${s}</div>`
+    ? `<button type="button" class="sticker" data-s="${i}" aria-label="${STICKER_NAMES[i]} sticker. Tap to look closer." style="transform:rotate(${((i * 37) % 9) - 4}deg)">${s}</button>`
     : `<div class="sticker locked"><span><b>?</b>★ ${(i + 1) * STICKER_STEP}</span></div>`).join('');
 }
 $('#openCloset').addEventListener('click', () => { renderCloset(); show('closet'); });
 $('#closetBack').addEventListener('click', () => { renderHome(); show('home'); });
+/* ---------- 3D sticker viewer ---------- */
+const viewer = $('#viewer'), vStage = $('#vStage'), s3d = $('#s3d');
+// thickness: a stack of dark layers between the front and back faces
+for (let z = -7.5; z <= 7.5; z += 1.5) { const e = document.createElement('div'); e.className = 'edge'; e.style.transform = `translateZ(${z}px)`; s3d.prepend(e); }
+let rx = 0, ry = 0, vx = 0, vy = 0, dragging = false, lastX = 0, lastY = 0, lastT = 0, vRaf = 0, vPrev = 0;
+const IDLE_SPIN = reduced ? 0 : 22; // degrees per second when nobody is touching it
+function drawSticker(){
+  s3d.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`;
+  s3d.style.setProperty('--shine', (Math.sin(ry * Math.PI / 180) * 60).toFixed(1) + '%');
+}
+function viewerLoop(now){
+  const dt = Math.min(.05, (now - vPrev) / 1000); vPrev = now;
+  if (!dragging) {
+    const k = 1 - Math.pow(.2, dt);        // ease spin back toward a gentle idle turn
+    vy += (IDLE_SPIN - vy) * k;
+    vx += (0 - vx) * k;
+    ry += vy * dt; rx += vx * dt;
+    if (Math.abs(vx) < 20) rx += (-10 - rx) * (1 - Math.pow(.3, dt)); // settle back upright
+  }
+  drawSticker();
+  vRaf = requestAnimationFrame(viewerLoop);
+}
+function openSticker(i, fromEl){
+  $('#vEmoji').textContent = STICKERS[i];
+  $('#vName').textContent = STICKER_NAMES[i];
+  $('#vNum').textContent = `Sticker ${i + 1} of ${STICKERS.length}`;
+  viewer.hidden = false;
+  rx = -10; ry = reduced ? 0 : -360; vx = 0; vy = reduced ? 0 : 520; // arrive with a twirl
+  drawSticker();
+  // zoom up from where the sticker sits in the book
+  const r = fromEl.getBoundingClientRect(), t = s3d.getBoundingClientRect();
+  if (!reduced && vStage.animate && t.width) {
+    const dx = (r.left + r.width / 2) - (t.left + t.width / 2), dy = (r.top + r.height / 2) - (t.top + t.height / 2);
+    vStage.animate([{transform: `translate(${dx}px,${dy}px) scale(${r.width / t.width})`}, {transform: 'none'}], {duration: 480, easing: 'cubic-bezier(.2,1.25,.4,1)'});
+    viewer.animate([{backgroundColor: 'rgba(23,54,58,0)'}, {backgroundColor: 'rgba(23,54,58,.62)'}], {duration: 300});
+  }
+  tone(320, .4, {type: 'triangle', slide: 3, vol: .08}); sfx.good();
+  cancelAnimationFrame(vRaf); vPrev = performance.now(); vRaf = requestAnimationFrame(viewerLoop);
+  $('#vClose').focus({preventScroll: true});
+}
+function closeSticker(){ viewer.hidden = true; cancelAnimationFrame(vRaf); dragging = false; }
+vStage.addEventListener('pointerdown', e => {
+  dragging = true; lastX = e.clientX; lastY = e.clientY; lastT = performance.now(); vx = vy = 0;
+  try { vStage.setPointerCapture(e.pointerId); } catch (err) {}
+});
+vStage.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const now = performance.now(), dt = Math.max(.008, (now - lastT) / 1000);
+  const dy = (e.clientX - lastX) * .6, dx = -(e.clientY - lastY) * .6;
+  ry += dy; rx += dx;
+  vy = vy * .6 + (dy / dt) * .4; vx = vx * .6 + (dx / dt) * .4;   // smoothed fling speed
+  lastX = e.clientX; lastY = e.clientY; lastT = now;
+});
+const endDrag = () => {
+  if (!dragging) return;
+  dragging = false;
+  if (performance.now() - lastT > 90) { vx = 0; vy = 0; } // held still before letting go
+  vx = clamp(vx, -1400, 1400); vy = clamp(vy, -1800, 1800);
+};
+vStage.addEventListener('pointerup', endDrag);
+vStage.addEventListener('pointercancel', endDrag);
+$('#vSpin').addEventListener('click', () => { vy += (Math.random() < .5 ? -1 : 1) * 1300; vx += rnd(-200, 200); tone(300, .45, {type: 'triangle', slide: 3.5, vol: .09}); });
+$('#vClose').addEventListener('click', closeSticker);
+viewer.addEventListener('click', e => { if (e.target === viewer) closeSticker(); });
+document.addEventListener('keydown', e => {
+  if (viewer.hidden) return;
+  if (e.key === 'Escape') closeSticker();
+  else if (e.key === 'ArrowLeft') vy -= 250;
+  else if (e.key === 'ArrowRight') vy += 250;
+  else if (e.key === 'ArrowUp') vx += 200;
+  else if (e.key === 'ArrowDown') vx -= 200;
+});
+$('#stickerGrid').addEventListener('click', e => {
+  const b = e.target.closest('[data-s]'); if (b) openSticker(+b.dataset.s, b);
+});
+
 $('#hatGrid').addEventListener('click', e => {
   const b = e.target.closest('[data-h]'); if (!b) return;
   const h = HATS.find(x => x.id === b.dataset.h);
