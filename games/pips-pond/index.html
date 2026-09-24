@@ -1,0 +1,1034 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Pip's Pond">
+<meta name="theme-color" content="#D2EFE1">
+<title>Pip's Pond</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Grandstander:wght@600;800;900&family=Lexend:wght@400;500;700&display=swap">
+<style>
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+:root{
+  color-scheme:light;
+  --ink:#17363A; --ink-soft:#4C6E6C; --paper:#FFF8E6; --paper-2:#FDEFC8;
+  --sky:#DDF3E6; --water:#8CCFC4; --water-deep:#4FA9A4;
+  --lily:#7CCB55; --lily-dark:#3F8F2A; --sun:#FFC93C; --coral:#FF7A61;
+  --bubble:#6CCBEF; --plum:#8E6BD8; --good:#2FA84F; --bad:#E5484D;
+  --display:'Grandstander','Chalkboard SE','Comic Sans MS',ui-rounded,system-ui,sans-serif;
+  --body:'Lexend',ui-rounded,system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+html{height:100%;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);background:var(--sky);touch-action:manipulation}
+body{height:100%;margin:0;overflow:hidden;background:var(--sky);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.4;-webkit-text-size-adjust:100%;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+h1,h2,h3{font-family:var(--display);font-weight:900;margin:0;line-height:1.05;text-wrap:balance}
+p{margin:0}
+button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+:focus-visible{outline:4px solid var(--plum);outline-offset:3px}
+
+/* pond backdrop */
+.scenery{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 34% 7% at 12% 88%, var(--lily) 0 70%, transparent 71%),
+    radial-gradient(ellipse 22% 5% at 84% 95%, var(--lily) 0 70%, transparent 71%),
+    radial-gradient(ellipse 30% 3% at 60% 74%, rgba(255,255,255,.35) 0 60%, transparent 62%),
+    radial-gradient(ellipse 20% 2% at 28% 68%, rgba(255,255,255,.35) 0 60%, transparent 62%),
+    linear-gradient(180deg,#E6F7EC 0%,#D2EFE1 58%,var(--water) 58%,var(--water-deep) 100%)}
+
+#app{position:relative;z-index:1;height:100%;display:flex;flex-direction:column;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  max-width:1180px;margin:0 auto}
+.screen{flex:1;min-height:0;display:flex;flex-direction:column}
+
+/* buttons & chips */
+.btn{--b:var(--sun);display:inline-flex;align-items:center;justify-content:center;gap:8px;border:3px solid var(--ink);background:var(--b);color:var(--ink);font-family:var(--display);font-weight:800;font-size:20px;line-height:1;padding:12px 26px;min-height:52px;border-radius:999px;box-shadow:0 5px 0 var(--ink);transition:transform .08s,box-shadow .08s}
+.btn:active{transform:translateY(4px);box-shadow:0 1px 0 var(--ink)}
+.btn.small{font-size:16px;padding:8px 16px;min-height:44px;box-shadow:0 4px 0 var(--ink)}
+.btn.small:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+.btn.ghost{--b:var(--paper)}
+.btn.big{font-size:26px;padding:16px 38px;min-height:64px}
+.btn.danger{--b:#FFD9D2}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--paper);border:3px solid var(--ink);border-radius:999px;padding:5px 14px;font-family:var(--display);font-weight:800;font-size:18px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.star{color:var(--sun);-webkit-text-stroke:1.5px var(--ink);paint-order:stroke fill}
+
+/* home */
+#home{overflow-y:auto;-webkit-overflow-scrolling:touch;padding-block:14px 28px;gap:18px}
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 16px}
+.brand{display:flex;align-items:center;gap:12px}
+.brand-pip{width:clamp(72px,11vw,104px);flex:none;animation:bob 2.8s ease-in-out infinite alternate}
+.brand h1{font-size:clamp(34px,6vw,56px);letter-spacing:-.01em}
+.brand .tag{color:var(--ink-soft);font-size:15px;max-width:30ch}
+.top-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.pickers{display:flex;flex-wrap:wrap;gap:12px 16px}
+.picker{flex:1 1 300px;display:flex;flex-direction:column;gap:6px}
+.label{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft)}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:4px;background:var(--paper);border:3px solid var(--ink);border-radius:20px;padding:4px}
+.seg-btn{border:0;background:transparent;border-radius:14px;padding:7px 2px;display:flex;flex-direction:column;align-items:center;gap:1px;min-height:52px;justify-content:center}
+.seg-btn b{font-family:var(--display);font-weight:800;font-size:clamp(14px,2.3vw,19px);line-height:1.1}
+.seg-btn small{font-size:12px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.seg-btn[aria-pressed="true"]{background:var(--lily);box-shadow:inset 0 0 0 3px var(--ink)}
+#opSeg .seg-btn[aria-pressed="true"]{background:var(--sun)}
+#opSeg .seg-btn b{font-size:clamp(20px,3vw,26px)}
+.games{display:grid;grid-template-columns:1fr;gap:16px}
+@media (min-width:600px){.games{grid-template-columns:1fr 1fr}}
+.game-card{display:grid;grid-template-columns:clamp(96px,14vw,128px) 1fr;align-items:center;gap:14px;text-align:left;background:var(--c);border:3px solid var(--ink);border-radius:26px;padding:12px 18px 12px 12px;box-shadow:0 6px 0 var(--ink);transition:transform .08s,box-shadow .08s}
+.game-card:active{transform:translateY(5px);box-shadow:0 1px 0 var(--ink)}
+.card-art{aspect-ratio:1;max-width:100%;background:rgba(255,255,255,.4);border-radius:20px;display:grid;place-items:center;overflow:hidden}
+.card-art svg{width:100%;height:100%}
+.card-text{display:flex;flex-direction:column;gap:4px}
+.card-text h3{font-size:clamp(24px,3.4vw,30px)}
+.card-text p{font-size:15px;line-height:1.35}
+.best{font-size:22px;letter-spacing:2px;line-height:1}
+.best span{color:rgba(23,54,58,.22)}
+.best span.on{color:var(--sun);-webkit-text-stroke:1.5px var(--ink);paint-order:stroke fill}
+.next{display:flex;align-items:center;gap:14px;background:var(--paper);border:3px solid var(--ink);border-radius:22px;padding:12px 16px}
+.next .mystery{flex:none;width:56px;height:56px;border-radius:16px;border:3px dashed var(--ink);display:grid;place-items:center;font-family:var(--display);font-weight:900;font-size:28px;color:var(--ink-soft);background:var(--paper-2)}
+.next .mystery.done{border-style:solid;font-size:32px}
+.next-text{flex:1;display:flex;flex-direction:column;gap:6px;font-weight:500}
+.bar{height:14px;border-radius:999px;background:#E4DCC3;border:2px solid var(--ink);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--sun);border-right:2px solid var(--ink)}
+
+/* play */
+.playbar{display:flex;align-items:center;gap:12px;padding-block:12px}
+.playbar h2{flex:1;font-size:clamp(22px,4vw,34px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hud{display:flex;gap:8px;align-items:center}
+.hud-pill{display:inline-flex;align-items:center;gap:6px;background:var(--paper);border:3px solid var(--ink);border-radius:999px;padding:4px 12px;font-family:var(--display);font-weight:800;font-size:18px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.hud-pill.hot{background:var(--coral)}
+.dots{display:flex;gap:5px}
+.dots i{width:14px;height:14px;border-radius:50%;border:2.5px solid var(--ink);background:var(--paper)}
+.dots i.ok{background:var(--good)}
+.dots i.miss{background:var(--coral)}
+.dots i.now{background:var(--sun)}
+.stage{flex:1;min-height:0;position:relative;padding-bottom:16px;display:flex;flex-direction:column}
+.prob-card{align-self:center;background:var(--paper);border:3px solid var(--ink);border-radius:28px;box-shadow:0 6px 0 var(--ink);padding:6px 32px;font-family:var(--display);font-weight:900;font-size:clamp(44px,9vmin,92px);line-height:1.15;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:center}
+.prob-card.small{font-size:clamp(34px,7vmin,68px)}
+.prob-card.reveal{background:#FFE1D9}
+.prob-card.win{background:#DDF5D2}
+.say{text-align:center;font-size:clamp(17px,2.4vw,22px);font-weight:500;min-height:1.5em}
+
+/* Lily Hop */
+.hop-wrap{flex:1;display:flex;flex-direction:column;gap:14px;min-height:0}
+.lane{position:relative;margin-top:auto;padding-top:clamp(110px,22vh,190px)}
+.pads{display:flex;justify-content:center;gap:clamp(3px,1vw,12px)}
+.pad{flex:1 1 0;max-width:96px;aspect-ratio:1;border-radius:50%;border:3px solid var(--ink);background:radial-gradient(circle at 50% 50%,#9BDA78 0 38%,var(--lily) 39%);font-family:var(--display);font-weight:900;font-size:clamp(14px,3.3vw,32px);display:grid;place-items:center;padding:0;font-variant-numeric:tabular-nums;box-shadow:0 4px 0 var(--lily-dark);transition:transform .1s}
+.pad:active{transform:scale(.94)}
+.pad.picked{box-shadow:0 0 0 5px var(--paper),0 4px 0 var(--lily-dark)}
+.pad.yes{background:var(--sun);animation:glow .9s ease-in-out 2}
+.pad.no{background:#FFB3A7;animation:shake .4s}
+.pad:disabled{cursor:default}
+.rider{position:absolute;left:0;z-index:2;transition:left .3s ease-in-out;pointer-events:none}
+.rider svg{width:100%;display:block}
+.hopcount{position:absolute;left:50%;bottom:100%;transform:translateX(-50%);background:var(--paper);border:3px solid var(--ink);border-radius:999px;padding:2px 12px;font-family:var(--display);font-weight:900;font-size:22px;white-space:nowrap}
+.hopcount:empty{display:none}
+
+/* Bubble Pop */
+.pop-wrap{flex:1;display:flex;flex-direction:column;gap:12px;min-height:0}
+.pop-field{flex:1;min-height:0;position:relative;overflow:hidden;border:3px solid var(--ink);border-radius:28px;background:linear-gradient(180deg,#CBEFF5 0%,#7ACAD8 100%)}
+.bubble{position:absolute;left:0;top:0;border:0;background:none;padding:0;will-change:transform;touch-action:none}
+.bubble .skin{width:100%;height:100%;border-radius:50%;display:grid;place-items:center;font-family:var(--display);font-weight:900;font-variant-numeric:tabular-nums;border:3px solid rgba(23,54,58,.8);background:radial-gradient(circle at 32% 28%,#fff 0 9%,rgba(255,255,255,.6) 10% 18%,rgba(255,255,255,.22) 42%,rgba(108,203,239,.45) 100%)}
+.bubble.nope .skin{opacity:.35;animation:shake .4s}
+.bubble.popped .skin{animation:pop .28s ease-out forwards}
+.bubble.fade .skin{transition:opacity .3s;opacity:0}
+.combo{position:absolute;top:10px;right:14px;font-family:var(--display);font-weight:900;font-size:26px;color:var(--ink);pointer-events:none;opacity:0;transition:opacity .2s}
+.combo.show{opacity:1;animation:boing .35s}
+
+/* Pond Race */
+.race-wrap{flex:1;display:flex;flex-direction:column;gap:14px;min-height:0;position:relative}
+.track{--rw:clamp(62px,11vh,104px);position:relative;border:3px solid var(--ink);border-radius:28px;background:linear-gradient(180deg,#A6DDD4,#6FBDB6);padding:8px 70px 8px 10px;display:flex;flex-direction:column;gap:6px}
+.lane-row{position:relative;height:var(--rw);border-bottom:3px dashed rgba(255,255,255,.7)}
+.lane-row:last-child{border-bottom:0}
+.racer{position:absolute;bottom:0;left:0;width:var(--rw)}
+.racer svg{width:100%;display:block}
+.racer.pip-r{transition:left .35s ease-out}
+.finish{position:absolute;right:12px;top:8px;bottom:8px;width:42px;border:3px solid var(--ink);border-radius:10px;background:repeating-conic-gradient(var(--ink) 0 25%,#fff 0 50%) 0 0/20px 20px}
+.race-play{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;gap:16px 32px;flex-wrap:wrap}
+@media (orientation:portrait){.race-play{flex-direction:column;flex-wrap:nowrap;gap:12px}}
+.answer{display:inline-block;min-width:1.4em;border-bottom:6px solid var(--ink);color:var(--plum);text-align:center}
+.answer.bad{color:var(--bad)}
+.keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:min(100%,360px)}
+.key{height:clamp(50px,9vmin,80px);background:var(--paper);border:3px solid var(--ink);border-radius:20px;box-shadow:0 4px 0 var(--ink);font-family:var(--display);font-weight:900;font-size:clamp(26px,4.5vmin,40px);padding:0;transition:transform .06s,box-shadow .06s}
+.key:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+.key.alt{background:#E3F2EA;font-size:18px}
+.countdown{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;font-family:var(--display);font-weight:900;font-size:clamp(100px,26vmin,200px);color:var(--sun);-webkit-text-stroke:5px var(--ink);paint-order:stroke fill;z-index:5}
+.countdown:empty{display:none}
+.countdown span{animation:boing .5s}
+
+/* Fish Friends */
+.fish-wrap{flex:1;display:flex;flex-direction:column;gap:12px;min-height:0}
+.target{align-self:center;display:flex;align-items:center;gap:14px;background:var(--paper);border:3px solid var(--ink);border-radius:26px;box-shadow:0 6px 0 var(--ink);padding:8px 22px;font-weight:500;font-size:clamp(16px,2.4vw,22px);max-width:100%}
+.target b{font-family:var(--display);font-weight:900;font-size:clamp(44px,8vmin,76px);line-height:1;color:var(--plum)}
+.tank{flex:1;min-height:0;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:8px;border:3px solid var(--ink);border-radius:28px;padding:10px;background:linear-gradient(180deg,#B5E4EC,#5FB3C4)}
+.fish{border:0;background:transparent;padding:0;display:grid;place-items:center;min-height:0;min-width:0;--fs:#17363A}
+.fish svg{width:min(100%,190px);max-height:100%;overflow:visible;animation:bob 2.4s ease-in-out infinite alternate;transition:transform .15s}
+.fish.sel{--fs:#FFB000}
+.fish.sel svg{transform:scale(1.12)}
+.fish.shake svg{animation:shake .4s}
+.fish.away svg{animation:swimAway .6s ease-in forwards}
+.fish.in svg{animation:swimIn .5s ease-out}
+
+/* results */
+#results{overflow-y:auto;padding-block:20px}
+.results-card{margin:auto;width:min(560px,100%);background:var(--paper);border:3px solid var(--ink);border-radius:32px;box-shadow:0 8px 0 var(--ink);padding:22px 20px 26px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+.res-pip{width:140px;animation:bounce .8s ease-in-out infinite alternate}
+.results-card h2{font-size:clamp(30px,5vw,44px)}
+.res-detail{color:var(--ink-soft);font-size:18px}
+.res-stars{font-size:clamp(56px,11vw,76px);line-height:1;letter-spacing:6px}
+.res-stars span{display:inline-block;color:rgba(23,54,58,.18)}
+.res-stars span.on{color:var(--sun);-webkit-text-stroke:3px var(--ink);paint-order:stroke fill;animation:starIn .5s cubic-bezier(.3,1.6,.5,1) both}
+.res-earn{font-family:var(--display);font-weight:800;font-size:22px}
+.unlocks{display:flex;flex-direction:column;gap:8px;width:100%}
+.unlock{display:flex;align-items:center;gap:12px;text-align:left;background:#FFF1B8;border:3px dashed var(--ink);border-radius:20px;padding:10px 14px}
+.unlock .u-art{flex:none;width:60px;font-size:46px;line-height:1;text-align:center}
+.unlock .u-art svg{width:60px}
+.res-actions{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:6px}
+
+/* collection */
+.closet-body{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:28px;display:flex;flex-direction:column;gap:14px}
+.closet-body h3{font-size:26px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.closet-body h3 small{font-family:var(--body);font-weight:500;font-size:14px;color:var(--ink-soft)}
+.hat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:12px}
+.hat-btn{background:var(--paper);border:3px solid var(--ink);border-radius:22px;padding:8px 6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;box-shadow:0 4px 0 var(--ink)}
+.hat-btn svg{width:84px}
+.hat-btn b{font-family:var(--display);font-weight:800;font-size:16px}
+.hat-btn small{font-size:13px;color:var(--ink-soft)}
+.hat-btn[aria-pressed="true"]{background:var(--lily)}
+.hat-btn.locked{background:rgba(255,248,230,.55);box-shadow:none;border-style:dashed}
+.hat-btn.locked svg{filter:brightness(0) opacity(.18)}
+.sticker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:10px}
+.sticker{aspect-ratio:1;max-width:100%;background:var(--paper);border:3px solid var(--ink);border-radius:18px;display:grid;place-items:center;font-size:40px;line-height:1;box-shadow:0 3px 0 var(--ink)}
+.sticker.locked{background:rgba(255,248,230,.5);border-style:dashed;box-shadow:none;font-family:var(--display);font-weight:800;font-size:14px;color:var(--ink-soft);text-align:center}
+.sticker.locked b{display:block;font-size:26px}
+
+/* grown-ups sheet */
+.overlay{position:fixed;inset:0;z-index:20;background:rgba(23,54,58,.45);display:grid;place-items:center;padding:max(16px,env(safe-area-inset-top,0px)) 16px max(16px,env(safe-area-inset-bottom,0px))}
+.sheet{width:min(540px,100%);max-height:100%;overflow-y:auto;background:var(--paper);border:3px solid var(--ink);border-radius:28px;padding:20px;display:flex;flex-direction:column;gap:16px;user-select:text;-webkit-user-select:text}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.sheet-head h2{font-size:30px}
+.sheet h3{font-size:20px;margin-bottom:4px}
+.muted{color:var(--ink-soft);font-size:15px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;font-weight:700}
+.switch{appearance:none;-webkit-appearance:none;width:58px;height:34px;border-radius:999px;background:#CFD8D6;border:3px solid var(--ink);position:relative;margin:0;cursor:pointer;transition:background .15s}
+.switch::before{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;border:2px solid var(--ink);transition:transform .15s}
+.switch:checked{background:var(--lily)}
+.switch:checked::before{transform:translateX(24px)}
+.tricky{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.fact{background:#FFE1D9;border:2px solid var(--ink);border-radius:12px;padding:4px 10px;font-family:var(--display);font-weight:800;font-size:18px;font-variant-numeric:tabular-nums}
+
+#confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:30}
+
+@keyframes bob{from{transform:translateY(0)}to{transform:translateY(-6px)}}
+@keyframes bounce{from{transform:translateY(0) rotate(-3deg)}to{transform:translateY(-12px) rotate(3deg)}}
+@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-5px)}80%{transform:translateX(5px)}}
+@keyframes pop{to{transform:scale(1.45);opacity:0}}
+@keyframes glow{50%{transform:scale(1.12)}}
+@keyframes boing{0%{transform:scale(.4)}60%{transform:scale(1.15)}100%{transform:scale(1)}}
+@keyframes starIn{from{transform:scale(0) rotate(-90deg)}to{transform:scale(1) rotate(0)}}
+@keyframes swimAway{to{transform:translateX(-140%) scale(.8);opacity:0}}
+@keyframes swimIn{from{transform:translateX(140%);opacity:0}to{transform:translateX(0);opacity:1}}
+@media (prefers-reduced-motion:reduce){
+  .brand-pip,.fish svg,.res-pip{animation:none}
+  .rider,.racer.pip-r{transition-duration:.01s}
+}
+</style>
+</head>
+<body>
+<div class="scenery" aria-hidden="true"></div>
+<main id="app">
+
+  <section id="home" class="screen" aria-label="Pick a game">
+    <header class="top">
+      <div class="brand">
+        <div class="brand-pip" id="homePip"></div>
+        <div>
+          <h1>Pip's Pond</h1>
+          <p class="tag">Hop, pop, race and match your way through adding and taking away.</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span class="chip" aria-label="Stars collected"><span class="star">★</span><b id="starCount">0</b></span>
+        <span class="chip" id="streakChip" hidden></span>
+        <button class="btn small ghost" id="openCloset" type="button">Stickers &amp; hats</button>
+        <button class="btn small ghost" id="openGrown" type="button">Grown-ups</button>
+      </div>
+    </header>
+    <div class="pickers">
+      <div class="picker"><span class="label" id="levelLabel">How big are the numbers?</span><div class="seg" id="levelSeg" role="group" aria-labelledby="levelLabel"></div></div>
+      <div class="picker"><span class="label" id="opLabel">Adding or taking away?</span><div class="seg" id="opSeg" role="group" aria-labelledby="opLabel"></div></div>
+    </div>
+    <div class="games" id="gameGrid"></div>
+    <div class="next" id="nextSticker"></div>
+  </section>
+
+  <section id="play" class="screen" hidden>
+    <header class="playbar">
+      <button class="btn small ghost" id="quit" type="button">✕ Home</button>
+      <h2 id="gameTitle"></h2>
+      <div class="hud" id="hud"></div>
+    </header>
+    <div id="stage" class="stage"></div>
+  </section>
+
+  <section id="results" class="screen" hidden>
+    <div class="results-card">
+      <div class="res-pip" id="resPip"></div>
+      <h2 id="resHead"></h2>
+      <p class="res-detail" id="resDetail"></p>
+      <div class="res-stars" id="resStars"></div>
+      <p class="res-earn" id="resEarn"></p>
+      <div class="unlocks" id="resUnlock"></div>
+      <div class="res-actions">
+        <button class="btn big" id="again" type="button">Play again</button>
+        <button class="btn ghost" id="toHome" type="button">Pick a game</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="closet" class="screen" hidden>
+    <header class="playbar">
+      <button class="btn small ghost" id="closetBack" type="button">← Back</button>
+      <h2>Pip's collection</h2>
+      <div class="hud"><span class="hud-pill"><span class="star">★</span><b id="closetStars">0</b></span></div>
+    </header>
+    <div class="closet-body">
+      <h3>Hats <small>Tap a hat to put it on Pip</small></h3>
+      <div class="hat-grid" id="hatGrid"></div>
+      <h3>Sticker book <small id="stickerCount"></small></h3>
+      <div class="sticker-grid" id="stickerGrid"></div>
+    </div>
+  </section>
+</main>
+
+<div class="overlay" id="grown" hidden role="dialog" aria-modal="true" aria-labelledby="grownTitle">
+  <div class="sheet">
+    <div class="sheet-head"><h2 id="grownTitle">For grown-ups</h2><button class="btn small" id="grownClose" type="button">Done</button></div>
+    <label class="row" for="soundToggle"><span>Sounds</span><input type="checkbox" class="switch" id="soundToggle"></label>
+    <div>
+      <h3>Tricky facts</h3>
+      <p class="muted">Facts missed recently. Every game brings these back more often until they're answered right.</p>
+      <div class="tricky" id="tricky"></div>
+    </div>
+    <div>
+      <h3>Progress</h3>
+      <p class="muted" id="statsLine"></p>
+    </div>
+    <div>
+      <h3>How it works</h3>
+      <p class="muted">Pick a number size on the home screen: Tadpole (0–5), Froglet (0–10), Frog (0–20), Bullfrog (0–50) or Pond King (0–100). Subtraction never goes below zero. Stars from every game unlock stickers and hats for Pip. Pond Race adjusts the duck's speed after each race so it stays a close contest.</p>
+    </div>
+    <div>
+      <h3>Play full screen on iPad</h3>
+      <p class="muted">In Safari, tap Share, then Add to Home Screen. Progress is saved on this device only.</p>
+    </div>
+    <div><button class="btn small danger" id="resetBtn" type="button">Reset all progress</button></div>
+  </div>
+</div>
+<canvas id="confetti" aria-hidden="true"></canvas>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------- data ---------- */
+const KEY = 'pips-pond-v1';
+const LEVELS = [
+  {name:'Tadpole',   range:'0–5',   max:5},
+  {name:'Froglet',   range:'0–10',  max:10},
+  {name:'Frog',      range:'0–20',  max:20},
+  {name:'Bullfrog',  range:'0–50',  max:50},
+  {name:'Pond King', range:'0–100', max:100},
+];
+const OPS = [
+  {id:'add', label:'+',   name:'Adding'},
+  {id:'sub', label:'−',   name:'Taking away'},
+  {id:'mix', label:'+ −', name:'Both'},
+];
+const STICKERS = ['🐸','🦆','🐢','🐟','🐞','🦋','🐌','🐝','🦀','🐠','🦦','🐙','🦔','🦉','🐳','🍄','🌻','🌈','🦩','🐉','🦄','🚀','🌟','🏆'];
+const STICKER_STEP = 4;
+const HATS = [
+  {id:'none',   name:'No hat',      at:0},
+  {id:'bow',    name:'Bow',         at:3},
+  {id:'cap',    name:'Ball cap',    at:8},
+  {id:'party',  name:'Party hat',   at:15},
+  {id:'flower', name:'Daisy crown', at:24},
+  {id:'top',    name:'Top hat',     at:35},
+  {id:'wizard', name:'Wizard hat',  at:50},
+  {id:'crown',  name:'Crown',       at:70},
+];
+const RACE_BASE = [7, 6, 7, 9, 11]; // seconds per question the duck allows, by level
+
+const fresh = () => ({stars:0, level:1, op:'add', hat:'none', sound:true, best:{}, plays:0, missed:{}, streak:0, lastDay:'', raceAdj:{}});
+let P = load();
+function load(){
+  try { const raw = localStorage.getItem(KEY); if (raw) return Object.assign(fresh(), JSON.parse(raw)); } catch (e) {}
+  return fresh();
+}
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(P)); } catch (e) {} }
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+const shuffle = arr => { for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; } return arr; };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const level = () => LEVELS[P.level];
+
+/* ---------- problems ---------- */
+function chooseOp(){ return P.op === 'mix' ? (Math.random() < .5 ? 'add' : 'sub') : P.op; }
+function mk(a, b, op){
+  const sym = op === 'add' ? '+' : '−';
+  return {a, b, op, ans: op === 'add' ? a + b : a - b, key: a + (op === 'add' ? '+' : '-') + b, text: `${a} ${sym} ${b}`};
+}
+let lastKey = '';
+function makeProblem(opts = {}){
+  const max = level().max, capB = opts.capB ?? max;
+  const opOk = o => opts.op ? o === opts.op : (P.op === 'mix' || P.op === o);
+  // bring back missed facts about a third of the time
+  const keys = Object.keys(P.missed);
+  if (keys.length && Math.random() < .33) {
+    const k = pick(keys), m = k.match(/^(\d+)([+-])(\d+)$/);
+    if (m) {
+      const p = mk(+m[1], +m[3], m[2] === '+' ? 'add' : 'sub');
+      if (k !== lastKey && opOk(p.op) && p.a <= max && p.b <= capB && p.ans <= max && p.ans >= 0) { lastKey = k; return p; }
+    }
+  }
+  const op = opts.op || chooseOp();
+  const lo = max >= 10 ? 1 : 0;
+  const floor = max >= 20 ? Math.max(2, Math.floor(max * .25)) : (max >= 10 ? 2 : 1);
+  let p;
+  for (let t = 0; t < 40; t++) {
+    if (op === 'add') {
+      const sum = rnd(floor, max);
+      const b = rnd(lo, Math.min(sum - lo, capB));
+      p = mk(sum - b, b, 'add');
+    } else {
+      const a = rnd(floor, max);
+      const b = rnd(lo, Math.min(a, capB));
+      p = mk(a, b, 'sub');
+    }
+    if (p.key !== lastKey) break;
+  }
+  lastKey = p.key;
+  return p;
+}
+function record(p, ok){
+  if (!ok) {
+    P.missed[p.key] = Math.min(4, (P.missed[p.key] || 0) + 2);
+    const keys = Object.keys(P.missed);
+    if (keys.length > 40) delete P.missed[keys[0]];
+  } else if (P.missed[p.key]) {
+    if (--P.missed[p.key] <= 0) delete P.missed[p.key];
+  }
+}
+function options(p, n){
+  const top = Math.max(level().max, p.ans) + 10;
+  const set = new Set([p.ans]);
+  const near = shuffle([p.ans + 1, p.ans - 1, p.ans + 2, p.ans - 2, p.op === 'add' ? Math.abs(p.a - p.b) : p.a + p.b]);
+  const far = shuffle([p.ans + 10, p.ans - 10, p.ans + 3, p.ans - 3]);
+  for (const c of near.concat(far)) { if (set.size >= n) break; if (c >= 0 && c <= top) set.add(c); }
+  while (set.size < n) set.add(rnd(0, top));
+  return shuffle([...set]);
+}
+
+/* ---------- sound ---------- */
+let ac = null;
+function audio(){
+  if (!P.sound) return null;
+  try {
+    if (!ac) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; ac = new C(); }
+    if (ac.state === 'suspended') ac.resume();
+  } catch (e) { return null; }
+  return ac;
+}
+function tone(f, d, {type = 'sine', vol = .18, at = 0, slide = 0} = {}){
+  const a = audio(); if (!a) return;
+  const t = a.currentTime + at, o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t);
+  if (slide) o.frequency.exponentialRampToValueAtTime(f * slide, t + d);
+  g.gain.setValueAtTime(.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + .015);
+  g.gain.exponentialRampToValueAtTime(.0001, t + d);
+  o.connect(g).connect(a.destination); o.start(t); o.stop(t + d + .05);
+}
+const sfx = {
+  good(){ tone(660, .14, {type:'triangle'}); tone(990, .24, {at:.1, type:'triangle'}); },
+  bad(){ tone(240, .3, {type:'triangle', vol:.2, slide:.6}); },
+  pop(){ tone(700, .09, {slide:2.2, vol:.16}); },
+  hop(){ tone(380, .13, {type:'triangle', slide:1.7, vol:.12}); },
+  tap(){ tone(560, .05, {vol:.07}); },
+  tick(){ tone(880, .05, {vol:.07, type:'square'}); },
+  win(){ [523, 659, 784, 1047].forEach((f, i) => tone(f, .24, {at:i * .11, type:'triangle', vol:.16})); },
+};
+['pointerdown', 'touchend', 'keydown'].forEach(ev => document.addEventListener(ev, () => audio(), {passive:true}));
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('contextmenu', e => { if (!e.target.closest('.sheet')) e.preventDefault(); });
+
+/* ---------- art ---------- */
+const HAT_SVG = {
+  none:'',
+  bow:'<g transform="translate(60 34)"><path d="M0 0 L-20 -11 L-20 11 Z" fill="#FF6F9C" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><path d="M0 0 L20 -11 L20 11 Z" fill="#FF6F9C" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><circle r="6" fill="#E0457B" stroke="#17363A" stroke-width="3"/></g>',
+  cap:'<path d="M34 26 A26 24 0 0 1 86 26 Z" fill="#3A7BD5" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><path d="M80 23 h24 a4 4 0 0 1 0 7 h-24 z" fill="#2C5FA8" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><circle cx="60" cy="3" r="4" fill="#2C5FA8" stroke="#17363A" stroke-width="2"/>',
+  party:'<path d="M42 26 L60 -30 L78 26 Z" fill="#FF7A61" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><path d="M48 8 L72 8 M53 -9 L67 -9" stroke="#FFC93C" stroke-width="6"/><circle cx="60" cy="-31" r="7" fill="#FFC93C" stroke="#17363A" stroke-width="3"/>',
+  flower:[[34,22],[47,14],[60,11],[73,14],[86,22]].map(([x,y]) => `<g transform="translate(${x} ${y})">${[0,72,144,216,288].map(r => `<circle cx="${(Math.cos(r*Math.PI/180)*6).toFixed(1)}" cy="${(Math.sin(r*Math.PI/180)*6).toFixed(1)}" r="4.6" fill="#fff" stroke="#17363A" stroke-width="1.5"/>`).join('')}<circle r="4" fill="#FFC93C" stroke="#17363A" stroke-width="1.5"/></g>`).join(''),
+  top:'<rect x="42" y="-18" width="36" height="40" rx="4" fill="#2B2B3A" stroke="#17363A" stroke-width="3"/><rect x="42" y="8" width="36" height="7" fill="#FF7A61"/><rect x="30" y="20" width="60" height="8" rx="4" fill="#2B2B3A" stroke="#17363A" stroke-width="3"/>',
+  wizard:'<path d="M36 26 L64 -36 L84 26 Z" fill="#6B4BC8" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><ellipse cx="60" cy="26" rx="32" ry="6" fill="#553AA8" stroke="#17363A" stroke-width="3"/><path d="M62 -8 l3.5 7 7.5 1 -5.5 5.3 1.3 7.5 -6.8 -3.6 -6.8 3.6 1.3 -7.5 -5.5 -5.3 7.5 -1z" fill="#FFC93C"/>',
+  crown:'<path d="M36 26 L36 0 L48 12 L60 -8 L72 12 L84 0 L84 26 Z" fill="#FFC93C" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><circle cx="60" cy="16" r="4.5" fill="#FF7A61" stroke="#17363A" stroke-width="2"/><circle cx="46" cy="19" r="3.5" fill="#6CCBEF" stroke="#17363A" stroke-width="2"/><circle cx="74" cy="19" r="3.5" fill="#6CCBEF" stroke="#17363A" stroke-width="2"/>',
+};
+function pip(hat = P.hat, attrs = ''){
+  return `<svg viewBox="0 -44 120 154" ${attrs} aria-hidden="true">
+    <ellipse cx="60" cy="104" rx="42" ry="6" fill="rgba(23,54,58,.16)"/>
+    <ellipse cx="28" cy="98" rx="16" ry="7" fill="#3E9A2E" stroke="#17363A" stroke-width="3"/>
+    <ellipse cx="92" cy="98" rx="16" ry="7" fill="#3E9A2E" stroke="#17363A" stroke-width="3"/>
+    <circle cx="36" cy="36" r="17" fill="#4FAF3A" stroke="#17363A" stroke-width="3"/>
+    <circle cx="84" cy="36" r="17" fill="#4FAF3A" stroke="#17363A" stroke-width="3"/>
+    <ellipse cx="60" cy="70" rx="48" ry="32" fill="#4FAF3A" stroke="#17363A" stroke-width="3"/>
+    <ellipse cx="60" cy="80" rx="30" ry="18" fill="#BFE58A"/>
+    <circle cx="36" cy="35" r="11.5" fill="#fff" stroke="#17363A" stroke-width="2.5"/>
+    <circle cx="84" cy="35" r="11.5" fill="#fff" stroke="#17363A" stroke-width="2.5"/>
+    <circle cx="38" cy="37" r="6" fill="#17363A"/><circle cx="82" cy="37" r="6" fill="#17363A"/>
+    <circle cx="40" cy="34.5" r="2" fill="#fff"/><circle cx="84" cy="34.5" r="2" fill="#fff"/>
+    <circle cx="28" cy="66" r="6" fill="#FF9A8A" opacity=".75"/><circle cx="92" cy="66" r="6" fill="#FF9A8A" opacity=".75"/>
+    <path d="M44 64 Q60 78 76 64" stroke="#17363A" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <g transform="translate(0 -8)">${HAT_SVG[hat] || ''}</g>
+  </svg>`;
+}
+function duck(attrs = ''){
+  return `<svg viewBox="0 0 124 100" ${attrs} aria-hidden="true">
+    <ellipse cx="60" cy="95" rx="44" ry="5" fill="rgba(23,54,58,.16)"/>
+    <path d="M18 60 L4 44 L26 52 Z" fill="#FFD54A" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/>
+    <ellipse cx="56" cy="68" rx="42" ry="24" fill="#FFD54A" stroke="#17363A" stroke-width="3"/>
+    <path d="M36 64 q18 -14 36 0 q-18 14 -36 0z" fill="#F2B705" stroke="#17363A" stroke-width="2.5"/>
+    <circle cx="90" cy="36" r="20" fill="#FFD54A" stroke="#17363A" stroke-width="3"/>
+    <path d="M106 36 l16 4 -16 7 z" fill="#FF8A3D" stroke="#17363A" stroke-width="2.5" stroke-linejoin="round"/>
+    <circle cx="95" cy="31" r="4" fill="#17363A"/><circle cx="96.5" cy="29.5" r="1.3" fill="#fff"/>
+  </svg>`;
+}
+const FISH_COLORS = [['#FF9E6B','#E86F3A'],['#FFD54A','#E0A800'],['#8FD3F4','#4AA3D0'],['#C6A4F5','#8E6BD8'],['#FF8FB1','#E0457B'],['#9BE08A','#4FAF3A']];
+function fish(n, [c, d]){
+  return `<svg viewBox="0 0 110 70" aria-hidden="true">
+    <path d="M78 35 L106 12 L100 35 L106 58 Z" fill="${d}" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M40 10 q12 -10 22 2" fill="${d}" stroke="#17363A" stroke-width="3"/>
+    <ellipse cx="46" cy="36" rx="42" ry="28" fill="${c}" style="stroke:var(--fs);stroke-width:4"/>
+    <circle cx="20" cy="30" r="6" fill="#fff" stroke="#17363A" stroke-width="2"/><circle cx="19" cy="30" r="3" fill="#17363A"/>
+    <text x="52" y="38" text-anchor="middle" dominant-baseline="central" font-family="Grandstander, Chalkboard SE, Comic Sans MS, sans-serif" font-weight="900" font-size="${String(n).length > 2 ? 24 : 30}" fill="#17363A">${n}</text>
+  </svg>`;
+}
+const ART = {
+  hop: () => `<svg viewBox="0 0 120 120"><ellipse cx="60" cy="98" rx="52" ry="16" fill="#3F8F2A"/><ellipse cx="60" cy="94" rx="50" ry="14" fill="#7CCB55" stroke="#17363A" stroke-width="3"/>${pip(P.hat, 'x="22" y="4" width="76" height="92"')}</svg>`,
+  pop: () => `<svg viewBox="0 0 120 120">${[[40,76,26,'7'],[84,48,22,'4'],[48,30,15,'9']].map(([x,y,r,t]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="rgba(255,255,255,.55)" stroke="#17363A" stroke-width="3"/><circle cx="${x - r*.35}" cy="${y - r*.4}" r="${r*.18}" fill="#fff"/><text x="${x}" y="${y + 1}" text-anchor="middle" dominant-baseline="central" font-family="Grandstander, sans-serif" font-weight="900" font-size="${r}" fill="#17363A">${t}</text>`).join('')}</svg>`,
+  race: () => `<svg viewBox="0 0 120 120"><rect x="88" y="18" width="5" height="80" fill="#17363A"/><path d="M93 20 h22 v16 h-22z" fill="#fff" stroke="#17363A" stroke-width="3"/><path d="M93 20 h7.3 v8 h-7.3z M107.6 20 h7.3 v8 h-7.3z M100.3 28 h7.3 v8 h-7.3z" fill="#17363A"/>${duck('x="4" y="46" width="84" height="68"')}</svg>`,
+  fish: () => `<svg viewBox="0 0 120 120"><g transform="translate(6 12) scale(.8)">${fish(3, FISH_COLORS[0]).replace(/<\/?svg[^>]*>/g, '')}</g><g transform="translate(26 62) scale(.8)">${fish(7, FISH_COLORS[2]).replace(/<\/?svg[^>]*>/g, '')}</g></svg>`,
+};
+
+/* ---------- screens ---------- */
+const screens = ['home', 'play', 'results', 'closet'];
+function show(id){ screens.forEach(s => { $('#' + s).hidden = s !== id; }); }
+
+function starsHTML(n, total = 3){ let s = ''; for (let i = 0; i < total; i++) s += `<span class="${i < n ? 'on' : ''}">★</span>`; return s; }
+const bestKey = id => `${id}:${P.level}:${P.op}`;
+const stickerCount = stars => Math.min(STICKERS.length, Math.floor(stars / STICKER_STEP));
+
+function renderHome(){
+  $('#homePip').innerHTML = pip();
+  $('#starCount').textContent = P.stars;
+  const chip = $('#streakChip');
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  const active = P.streak > 1 && (P.lastDay === dayStr(new Date()) || P.lastDay === dayStr(y));
+  chip.hidden = !active;
+  chip.textContent = `${P.streak}-day streak`;
+  $('#levelSeg').innerHTML = LEVELS.map((l, i) => `<button type="button" class="seg-btn" data-l="${i}" aria-pressed="${i === P.level}"><b>${l.name}</b><small>${l.range}</small></button>`).join('');
+  $('#opSeg').innerHTML = OPS.map(o => `<button type="button" class="seg-btn" data-o="${o.id}" aria-pressed="${o.id === P.op}"><b>${o.label}</b><small>${o.name}</small></button>`).join('');
+  $('#gameGrid').innerHTML = Object.entries(GAMES).map(([id, g]) => {
+    const b = P.best[bestKey(id)] || 0;
+    return `<button type="button" class="game-card" data-g="${id}" style="--c:${g.color}">
+      <div class="card-art">${ART[id]()}</div>
+      <div class="card-text"><h3>${g.name}</h3><p>${g.blurb}</p><div class="best" aria-label="Best ${b} of 3 stars at this level">${starsHTML(b)}</div></div>
+    </button>`;
+  }).join('');
+  const have = stickerCount(P.stars);
+  const next = $('#nextSticker');
+  if (have >= STICKERS.length) {
+    next.innerHTML = `<div class="mystery done">🏆</div><div class="next-text"><b>Every sticker collected!</b><span>Keep playing to beat your best stars.</span></div>`;
+  } else {
+    const goal = (have + 1) * STICKER_STEP, need = goal - P.stars;
+    const pct = Math.round(((P.stars - have * STICKER_STEP) / STICKER_STEP) * 100);
+    next.innerHTML = `<div class="mystery">?</div><div class="next-text"><span><b>${need} more ${need === 1 ? 'star' : 'stars'}</b> until the next sticker</span><div class="bar"><i style="width:${pct}%"></i></div></div>`;
+  }
+}
+$('#levelSeg').addEventListener('click', e => { const b = e.target.closest('[data-l]'); if (!b) return; sfx.tap(); P.level = +b.dataset.l; save(); renderHome(); });
+$('#opSeg').addEventListener('click', e => { const b = e.target.closest('[data-o]'); if (!b) return; sfx.tap(); P.op = b.dataset.o; save(); renderHome(); });
+$('#gameGrid').addEventListener('click', e => { const b = e.target.closest('[data-g]'); if (b) startGame(b.dataset.g); });
+
+/* ---------- game runner ---------- */
+let run = 0, current = null, lastGame = 'hop';
+const stage = $('#stage'), hud = $('#hud');
+function later(fn, ms){ const r = run; setTimeout(() => { if (r === run) fn(); }, ms); }
+function startGame(id){
+  stopGame();
+  lastGame = id;
+  const g = GAMES[id], token = ++run;
+  show('play');
+  $('#gameTitle').textContent = g.name;
+  stage.innerHTML = ''; hud.innerHTML = '';
+  current = {id, cleanup: null};
+  current.cleanup = g.start({token, alive: () => token === run, finish: r => finish(id, r)}) || null;
+}
+function stopGame(){
+  run++;
+  if (current && current.cleanup) current.cleanup();
+  current = null;
+}
+$('#quit').addEventListener('click', () => { stopGame(); renderHome(); show('home'); });
+
+function dayStr(d){ return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; }
+function bumpStreak(){
+  const now = new Date(), today = dayStr(now);
+  if (P.lastDay === today) return;
+  const y = new Date(now); y.setDate(now.getDate() - 1);
+  P.streak = P.lastDay === dayStr(y) ? P.streak + 1 : 1;
+  P.lastDay = today;
+}
+
+function finish(id, {stars, headline, detail}){
+  stopGame();
+  const before = P.stars;
+  P.best[bestKey(id)] = Math.max(P.best[bestKey(id)] || 0, stars);
+  P.stars += stars; P.plays++;
+  bumpStreak(); save();
+
+  $('#resPip').innerHTML = pip();
+  $('#resHead').textContent = headline;
+  $('#resDetail').textContent = detail;
+  $('#resStars').innerHTML = starsHTML(stars);
+  [...$('#resStars').children].forEach((s, i) => { s.style.animationDelay = (.25 + i * .25) + 's'; });
+  $('#resEarn').innerHTML = `+${stars} <span class="star">★</span> &nbsp;·&nbsp; ${P.stars} total`;
+  const unlocks = [];
+  for (let i = stickerCount(before); i < stickerCount(P.stars); i++) {
+    unlocks.push(`<div class="unlock"><div class="u-art">${STICKERS[i]}</div><div><b>New sticker!</b><br>It's waiting in Pip's sticker book.</div></div>`);
+  }
+  HATS.filter(h => h.at > before && h.at <= P.stars).forEach(h => {
+    unlocks.push(`<div class="unlock"><div class="u-art">${pip(h.id)}</div><div><b>New hat: ${h.name}!</b><br>Tap Stickers &amp; hats to put it on Pip.</div></div>`);
+  });
+  $('#resUnlock').innerHTML = unlocks.join('');
+  show('results');
+  if (stars >= 2) { sfx.win(); confetti(); } else sfx.good();
+}
+$('#again').addEventListener('click', () => startGame(lastGame));
+$('#toHome').addEventListener('click', () => { renderHome(); show('home'); });
+
+/* ---------- games ---------- */
+const GAMES = {
+
+  /* Lily Hop: predict the landing pad on a number line */
+  hop: {
+    name: 'Lily Hop', color: '#9BDA78',
+    blurb: 'Guess which lily pad Pip lands on, then count the hops.',
+    start({token, alive, finish}){
+      const ROUNDS = 8;
+      let round = 0, right = 0, busy = true, p, pos = 0;
+      const results = [];
+      stage.innerHTML = `<div class="hop-wrap">
+        <div class="prob-card" id="hopProb"></div>
+        <p class="say" id="hopSay">Tap the lily pad where Pip will land.</p>
+        <div class="lane" id="lane">
+          <div class="rider" id="rider"><div class="hopcount" id="hopCount"></div>${pip()}</div>
+          <div class="pads" id="pads"></div>
+        </div>
+      </div>`;
+      const probEl = $('#hopProb'), say = $('#hopSay'), pads = $('#pads'), rider = $('#rider'), count = $('#hopCount');
+
+      function padFor(n){ return pads.querySelector(`[data-n="${n}"]`); }
+      function place(n, animate){
+        const pad = padFor(n); if (!pad) return;
+        const w = clamp(pad.offsetWidth * 1.5, 44, 120);
+        rider.style.width = w + 'px';
+        rider.style.bottom = (pad.offsetHeight * .42) + 'px';
+        if (!animate) rider.style.transition = 'none';
+        rider.style.left = (pad.offsetLeft + pad.offsetWidth / 2 - w / 2) + 'px';
+        if (!animate) { void rider.offsetWidth; rider.style.transition = ''; }
+      }
+      function drawHud(){
+        hud.innerHTML = `<div class="dots" aria-label="Round ${round} of ${ROUNDS}">${Array.from({length: ROUNDS}, (_, i) => `<i class="${results[i] === true ? 'ok' : results[i] === false ? 'miss' : i === round - 1 ? 'now' : ''}"></i>`).join('')}</div>`;
+      }
+      function next(){
+        if (round >= ROUNDS) {
+          const stars = right >= ROUNDS - 1 ? 3 : right >= ROUNDS * .6 ? 2 : 1;
+          finish({stars, headline: right === ROUNDS ? 'Perfect landings!' : 'Great hopping!', detail: `You guessed ${right} of ${ROUNDS} landings.`});
+          return;
+        }
+        round++; drawHud();
+        p = makeProblem({capB: 10});
+        const max = level().max;
+        let lo, size;
+        if (max <= 10) { lo = 0; size = max + 1; }
+        else {
+          size = 11;
+          const low = Math.min(p.a, p.ans), high = Math.max(p.a, p.ans);
+          lo = rnd(Math.max(0, high - 10), Math.min(low, max - 10));
+        }
+        pads.innerHTML = Array.from({length: size}, (_, i) => `<button type="button" class="pad" data-n="${lo + i}">${lo + i}</button>`).join('');
+        probEl.className = 'prob-card';
+        probEl.textContent = `${p.text} = ?`;
+        say.textContent = p.op === 'add' ? `Pip starts on ${p.a} and hops forward ${p.b}. Where does Pip land?` : `Pip starts on ${p.a} and hops back ${p.b}. Where does Pip land?`;
+        count.textContent = '';
+        pos = p.a;
+        requestAnimationFrame(() => { place(pos, false); busy = false; });
+      }
+      async function hopTo(target){
+        const dir = target > pos ? 1 : -1;
+        let k = 0;
+        const svg = rider.querySelector('svg');
+        while (pos !== target) {
+          pos += dir; k++;
+          count.textContent = (dir > 0 ? '+' : '−') + k;
+          place(pos, true); sfx.hop();
+          if (!reduced && svg.animate) svg.animate([{transform:'translateY(0)'},{transform:'translateY(-38%)'},{transform:'translateY(0)'}], {duration: 300, easing: 'ease-out'});
+          await wait(340);
+          if (!alive()) return false;
+        }
+        return true;
+      }
+      pads.addEventListener('click', async e => {
+        const pad = e.target.closest('.pad');
+        if (!pad || busy) return;
+        busy = true;
+        const n = +pad.dataset.n;
+        pad.classList.add('picked'); sfx.tap();
+        say.textContent = 'Watch Pip hop…';
+        await wait(250); if (!alive()) return;
+        if (!(await hopTo(p.ans))) return;
+        const ok = n === p.ans;
+        record(p, ok); results[round - 1] = ok; drawHud();
+        padFor(p.ans).classList.add('yes');
+        probEl.textContent = `${p.text} = ${p.ans}`;
+        if (ok) { right++; sfx.good(); probEl.classList.add('win'); say.textContent = `Yes! Pip landed on ${p.ans}.`; }
+        else { sfx.bad(); pad.classList.add('no'); probEl.classList.add('reveal'); say.textContent = p.b === 0 ? `Zero hops means Pip stays on ${p.ans}.` : `Pip landed on ${p.ans}. Count the hops with Pip next time!`; }
+        later(next, ok ? 1300 : 2200);
+      });
+      const onResize = () => place(pos, false);
+      addEventListener('resize', onResize);
+      later(next, 50);
+      return () => removeEventListener('resize', onResize);
+    }
+  },
+
+  /* Bubble Pop: tap the rising bubble with the answer */
+  pop: {
+    name: 'Bubble Pop', color: '#8FD9F2',
+    blurb: 'Pop the bubble with the answer before it floats away. One minute!',
+    start({token, alive, finish}){
+      const DUR = 60;
+      let left = DUR, score = 0, combo = 0, best = 0, p = null, bubbles = [], waveOn = false, missedThis = false, last = performance.now(), shownSec = -1;
+      stage.innerHTML = `<div class="pop-wrap"><div class="prob-card small" id="popProb">Get ready…</div><div class="pop-field" id="field"><div class="combo" id="combo"></div></div></div>`;
+      const probEl = $('#popProb'), field = $('#field'), comboEl = $('#combo');
+
+      function clearBubbles(){ bubbles.forEach(b => { b.dead = true; b.el.classList.add('fade'); setTimeout(() => b.el.remove(), 320); }); bubbles = []; }
+      function wave(){
+        p = makeProblem(); missedThis = false; waveOn = true;
+        probEl.className = 'prob-card small';
+        probEl.textContent = `${p.text} = ?`;
+        const vals = options(p, 4);
+        const W = field.clientWidth, H = field.clientHeight;
+        const size = clamp(Math.min(W / 4.4, H / 3.2), 64, 132);
+        const rise = Math.max(4.2, 7.5 + (P.level >= 3 ? 1.5 : 0) - combo * .25);
+        const laneW = W / vals.length;
+        vals.forEach((v, i) => {
+          const el = document.createElement('button');
+          el.type = 'button'; el.className = 'bubble';
+          el.style.width = el.style.height = size + 'px';
+          el.setAttribute('aria-label', String(v));
+          el.innerHTML = `<div class="skin" style="font-size:${Math.round(size * (String(v).length > 2 ? .3 : .38))}px">${v}</div>`;
+          const b = {el, v, size, dead: false, x: clamp(laneW * i + (laneW - size) / 2 + rnd(-10, 10), 0, W - size), y: H - size * .35 + rnd(0, Math.round(H * .18)), speed: (H + size) / rise * (.88 + Math.random() * .24), wob: Math.random() * 6.28};
+          el.addEventListener('pointerdown', ev => { ev.preventDefault(); hit(b); });
+          field.appendChild(el); bubbles.push(b);
+        });
+      }
+      function hit(b){
+        if (!waveOn || b.dead || b.el.classList.contains('nope')) return;
+        if (b.v === p.ans) {
+          waveOn = false; b.dead = true; b.el.classList.add('popped'); setTimeout(() => b.el.remove(), 300);
+          sfx.pop(); setTimeout(sfx.good, 60);
+          score++; combo++; best = Math.max(best, combo);
+          if (!missedThis) record(p, true);
+          probEl.className = 'prob-card small win';
+          probEl.textContent = `${p.text} = ${p.ans}`;
+          if (combo >= 3) { comboEl.textContent = `${combo} in a row!`; comboEl.classList.remove('show'); void comboEl.offsetWidth; comboEl.classList.add('show'); }
+          bubbles = bubbles.filter(x => x !== b); clearBubbles();
+          drawHud(true);
+          later(wave, 450);
+        } else {
+          b.el.classList.add('nope'); sfx.bad();
+          combo = 0; comboEl.classList.remove('show');
+          if (!missedThis) { record(p, false); missedThis = true; }
+        }
+      }
+      function escaped(){
+        waveOn = false; combo = 0; comboEl.classList.remove('show');
+        if (!missedThis) record(p, false);
+        probEl.className = 'prob-card small reveal';
+        probEl.textContent = `${p.text} = ${p.ans}`;
+        sfx.bad(); clearBubbles();
+        later(wave, 1300);
+      }
+      function drawHud(force){
+        const s = Math.ceil(left);
+        if (!force && s === shownSec) return;
+        if (s !== shownSec && s <= 10 && s > 0 && shownSec !== -1) sfx.tick();
+        shownSec = s;
+        hud.innerHTML = `<span class="hud-pill ${s <= 10 ? 'hot' : ''}">${s}s</span><span class="hud-pill">${score} popped</span>`;
+      }
+      function loop(now){
+        if (!alive()) return;
+        const dt = Math.min(.05, (now - last) / 1000); last = now;
+        left -= dt;
+        for (const b of bubbles) {
+          if (b.dead) continue;
+          b.y -= b.speed * dt; b.wob += dt * 2.2;
+          b.el.style.transform = `translate(${b.x + Math.sin(b.wob) * 8}px,${b.y}px)`;
+          if (b.y < -b.size) {
+            b.dead = true; b.el.remove();
+            if (waveOn && b.v === p.ans) escaped();
+          }
+        }
+        bubbles = bubbles.filter(b => !b.dead);
+        drawHud();
+        if (left <= 0) {
+          const stars = score >= 14 ? 3 : score >= 8 ? 2 : 1;
+          finish({stars, headline: `${score} bubbles popped!`, detail: best >= 2 ? `Your longest run was ${best} in a row.` : 'Pop bubbles in a row to speed them up.'});
+          return;
+        }
+        requestAnimationFrame(loop);
+      }
+      drawHud(true);
+      later(() => { wave(); last = performance.now(); requestAnimationFrame(loop); }, 700);
+    }
+  },
+
+  /* Pond Race: answer on a number pad to paddle past the duck */
+  race: {
+    name: 'Pond Race', color: '#FFD865',
+    blurb: 'Answer fast to paddle Pip past Duck to the finish flag.',
+    start({token, alive, finish}){
+      const GOAL = 10;
+      const adj = P.raceAdj[P.level] || 1;
+      const duckTime = GOAL * RACE_BASE[P.level] * adj;
+      let steps = 0, duckPos = 0, typed = '', p, mistakes = 0, running = false, locked = true, last = 0;
+      stage.innerHTML = `<div class="race-wrap">
+        <div class="track">
+          <div class="lane-row"><div class="racer pip-r" id="rPip">${pip()}</div></div>
+          <div class="lane-row"><div class="racer" id="rDuck">${duck()}</div></div>
+          <div class="finish"></div>
+        </div>
+        <div class="race-play">
+          <div class="prob-card"><span id="rProb"></span> = <span class="answer" id="rAns">?</span></div>
+          <div class="keypad" id="keypad">${[1,2,3,4,5,6,7,8,9].map(n => `<button type="button" class="key" data-k="${n}">${n}</button>`).join('')}<button type="button" class="key alt" data-k="clear">Clear</button><button type="button" class="key" data-k="0">0</button><button type="button" class="key alt" data-k="back" aria-label="Delete">⌫</button></div>
+        </div>
+        <div class="countdown" id="cd"></div>
+      </div>`;
+      const rPip = $('#rPip'), rDuck = $('#rDuck'), probEl = $('#rProb'), ansEl = $('#rAns'), cd = $('#cd');
+      const setPos = (el, f) => { el.style.left = `calc((100% - var(--rw)) * ${clamp(f, 0, 1)})`; };
+      const drawHud = () => { hud.innerHTML = `<span class="hud-pill">${steps} / ${GOAL}</span>`; };
+
+      function nextQ(){ p = makeProblem(); typed = ''; probEl.textContent = p.text; ansEl.textContent = '?'; ansEl.classList.remove('bad'); locked = false; }
+      function press(k){
+        if (locked || !running) return;
+        sfx.tap();
+        if (k === 'clear') typed = '';
+        else if (k === 'back') typed = typed.slice(0, -1);
+        else if (typed.length < 3) typed += k;
+        ansEl.textContent = typed || '?';
+        if (typed.length >= String(p.ans).length) check();
+      }
+      function check(){
+        locked = true;
+        if (+typed === p.ans) {
+          record(p, true); sfx.good();
+          steps++; setPos(rPip, steps / GOAL); drawHud();
+          if (steps >= GOAL) return win();
+          later(nextQ, 250);
+        } else {
+          record(p, false); sfx.bad(); mistakes++;
+          ansEl.textContent = p.ans; ansEl.classList.add('bad');
+          later(nextQ, 1300);
+        }
+      }
+      function win(){
+        running = false;
+        P.raceAdj[P.level] = clamp(adj * .92, .45, 2.2); save();
+        later(() => finish({stars: mistakes <= 1 ? 3 : 2, headline: 'Pip won the race!', detail: mistakes === 0 ? 'No slips at all. Duck will paddle faster next time.' : `${mistakes} ${mistakes === 1 ? 'slip' : 'slips'} along the way. Duck will paddle faster next time.`}), 700);
+      }
+      function lose(){
+        running = false; locked = true;
+        P.raceAdj[P.level] = clamp(adj * 1.12, .45, 2.2); save();
+        later(() => finish({stars: 1, headline: 'Duck won this time', detail: `Pip got ${steps} of ${GOAL} answers. Duck will paddle a little slower next race.`}), 700);
+      }
+      function loop(now){
+        if (!alive() || !running) return;
+        const dt = Math.min(.05, (now - last) / 1000); last = now;
+        duckPos += dt / duckTime; setPos(rDuck, duckPos);
+        if (duckPos >= 1) return lose();
+        requestAnimationFrame(loop);
+      }
+      $('#keypad').addEventListener('click', e => { const k = e.target.closest('[data-k]'); if (k) press(k.dataset.k); });
+      const onKey = e => {
+        if (/^[0-9]$/.test(e.key)) press(e.key);
+        else if (e.key === 'Backspace') { e.preventDefault(); press('back'); }
+        else if (e.key === 'Escape') press('clear');
+      };
+      document.addEventListener('keydown', onKey);
+      setPos(rPip, 0); setPos(rDuck, 0); drawHud(); nextQ(); locked = true;
+      probEl.textContent = p.text;
+      ['3', '2', '1', 'Go!'].forEach((t, i) => later(() => {
+        cd.innerHTML = `<span>${t}</span>`; t === 'Go!' ? sfx.good() : sfx.tick();
+        if (t === 'Go!') { running = true; locked = false; last = performance.now(); requestAnimationFrame(loop); later(() => { cd.innerHTML = ''; }, 500); }
+      }, 300 + i * 750));
+      return () => document.removeEventListener('keydown', onKey);
+    }
+  },
+
+  /* Fish Friends: find pairs that make a target */
+  fish: {
+    name: 'Fish Friends', color: '#FFA994',
+    blurb: 'Find two fish that make the magic number. Catch 8 pairs.',
+    start({token, alive, finish}){
+      const GOAL = 8, op = chooseOp(), max = level().max;
+      let target;
+      if (op === 'add') target = max <= 5 ? 5 : max <= 10 ? 10 : max <= 20 ? rnd(11, 20) : max <= 50 ? pick([20, 25, 30, 40, 50]) : pick([50, 60, 80, 100, 100]);
+      else target = rnd(1, max <= 5 ? 2 : max <= 10 ? 5 : max <= 20 ? 9 : max <= 50 ? 20 : 40);
+      const small = target >= 10;
+      const pairFor = () => {
+        if (op === 'add') { const x = small ? rnd(1, target - 1) : rnd(0, target); return [x, target - x]; }
+        const x = rnd(0, max - target); return [x, x + target];
+      };
+      const filler = () => op === 'add' ? (small ? rnd(1, target - 1) : rnd(0, target)) : rnd(0, max);
+      const isPair = (u, v) => op === 'add' ? u + v === target : Math.abs(u - v) === target;
+      const hasPair = vals => vals.some((u, i) => vals.some((v, j) => j > i && isPair(u, v)));
+      let vals = shuffle([...pairFor(), ...pairFor(), ...pairFor(), filler(), filler(), filler()]);
+      let colors = vals.map(() => pick(FISH_COLORS));
+      let sel = null, found = 0, mistakes = 0, busy = false;
+
+      stage.innerHTML = `<div class="fish-wrap">
+        <div class="target">${op === 'add' ? '<span>Pick two fish that add up to</span>' : '<span>Pick two fish where bigger − smaller is</span>'}<b>${target}</b></div>
+        <div class="tank" id="tank"></div>
+        <p class="say" id="fishSay">${op === 'add' ? 'Tap one fish, then its friend.' : 'Tap two fish that are ' + target + ' apart.'}</p>
+      </div>`;
+      const tank = $('#tank'), say = $('#fishSay');
+      const drawHud = () => { hud.innerHTML = `<span class="hud-pill">${found} / ${GOAL} pairs</span>`; };
+      const cell = (i, cls = '') => `<button type="button" class="fish ${cls}" data-i="${i}" aria-label="${vals[i]}">${fish(vals[i], colors[i])}</button>`;
+      function drawAll(){ tank.innerHTML = vals.map((_, i) => cell(i)).join(''); tank.querySelectorAll('.fish svg').forEach(s => { s.style.animationDelay = (-Math.random() * 2.4).toFixed(2) + 's'; }); }
+      function el(i){ return tank.querySelector(`[data-i="${i}"]`); }
+      tank.addEventListener('click', e => {
+        const f = e.target.closest('.fish'); if (!f || busy) return;
+        const i = +f.dataset.i;
+        if (sel === i) { f.classList.remove('sel'); sel = null; return; }
+        if (sel === null) { sel = i; f.classList.add('sel'); sfx.tap(); return; }
+        const a = vals[sel], b = vals[i], j = sel;
+        f.classList.add('sel'); sel = null; busy = true;
+        const big = Math.max(a, b), lit = Math.min(a, b);
+        if (isPair(a, b)) {
+          found++; sfx.good(); drawHud();
+          say.textContent = op === 'add' ? `${a} + ${b} = ${target}. Friends!` : `${big} − ${lit} = ${target}. Friends!`;
+          el(i).classList.add('away'); el(j).classList.add('away');
+          if (found >= GOAL) {
+            later(() => finish({stars: mistakes <= 1 ? 3 : mistakes <= 4 ? 2 : 1, headline: 'All the fish found friends!', detail: mistakes === 0 ? `Eight pairs that make ${target}, with no wrong guesses.` : `Eight pairs that make ${target}, with ${mistakes} wrong ${mistakes === 1 ? 'guess' : 'guesses'}.`}), 900);
+            return;
+          }
+          later(() => {
+            if (Math.random() < .5) { [vals[i], vals[j]] = pairFor(); } else { vals[i] = filler(); vals[j] = filler(); }
+            if (!hasPair(vals)) [vals[i], vals[j]] = pairFor();
+            colors[i] = pick(FISH_COLORS); colors[j] = pick(FISH_COLORS);
+            [i, j].forEach(k => { el(k).outerHTML = cell(k, 'in'); });
+            busy = false;
+          }, 620);
+        } else {
+          mistakes++; sfx.bad();
+          say.textContent = op === 'add' ? `${a} + ${b} = ${a + b}. We need ${target}.` : `${big} − ${lit} = ${big - lit}. We need ${target}.`;
+          [el(i), el(j)].forEach(x => { x.classList.remove('sel'); x.classList.add('shake'); });
+          later(() => { [el(i), el(j)].forEach(x => x && x.classList.remove('shake')); busy = false; }, 450);
+        }
+      });
+      drawAll(); drawHud();
+    }
+  },
+};
+
+/* ---------- collection ---------- */
+function renderCloset(){
+  $('#closetStars').textContent = P.stars;
+  $('#hatGrid').innerHTML = HATS.map(h => {
+    const open = P.stars >= h.at;
+    return `<button type="button" class="hat-btn ${open ? '' : 'locked'}" data-h="${h.id}" aria-pressed="${P.hat === h.id}" ${open ? '' : 'aria-disabled="true"'}>${pip(h.id)}<b>${h.name}</b><small>${open ? (P.hat === h.id ? 'Wearing' : 'Tap to wear') : `Unlocks at ★ ${h.at}`}</small></button>`;
+  }).join('');
+  const have = stickerCount(P.stars);
+  $('#stickerCount').textContent = `${have} of ${STICKERS.length} collected`;
+  $('#stickerGrid').innerHTML = STICKERS.map((s, i) => i < have
+    ? `<div class="sticker" style="transform:rotate(${((i * 37) % 9) - 4}deg)">${s}</div>`
+    : `<div class="sticker locked"><span><b>?</b>★ ${(i + 1) * STICKER_STEP}</span></div>`).join('');
+}
+$('#openCloset').addEventListener('click', () => { renderCloset(); show('closet'); });
+$('#closetBack').addEventListener('click', () => { renderHome(); show('home'); });
+$('#hatGrid').addEventListener('click', e => {
+  const b = e.target.closest('[data-h]'); if (!b) return;
+  const h = HATS.find(x => x.id === b.dataset.h);
+  if (P.stars < h.at) { sfx.bad(); return; }
+  P.hat = h.id; save(); sfx.good(); renderCloset();
+});
+
+/* ---------- grown-ups ---------- */
+let resetArmed = 0;
+function renderGrown(){
+  $('#soundToggle').checked = P.sound;
+  const facts = Object.entries(P.missed).sort((a, b) => b[1] - a[1]).slice(0, 12);
+  $('#tricky').innerHTML = facts.length
+    ? facts.map(([k]) => `<span class="fact">${k.replace('+', ' + ').replace('-', ' − ')}</span>`).join('')
+    : '<span class="muted">Nothing tricky yet.</span>';
+  $('#statsLine').textContent = `${P.plays} ${P.plays === 1 ? 'game' : 'games'} played · ${P.stars} stars · ${stickerCount(P.stars)} of ${STICKERS.length} stickers · longest current streak ${P.streak || 0} ${P.streak === 1 ? 'day' : 'days'}.`;
+  $('#resetBtn').textContent = 'Reset all progress';
+  resetArmed = 0;
+}
+$('#openGrown').addEventListener('click', () => { renderGrown(); $('#grown').hidden = false; $('#grownClose').focus(); });
+$('#grownClose').addEventListener('click', () => { $('#grown').hidden = true; renderHome(); });
+$('#grown').addEventListener('click', e => { if (e.target.id === 'grown') { $('#grown').hidden = true; renderHome(); } });
+$('#soundToggle').addEventListener('change', e => { P.sound = e.target.checked; save(); if (P.sound) sfx.good(); });
+$('#resetBtn').addEventListener('click', e => {
+  if (Date.now() - resetArmed < 5000) {
+    P = fresh(); save(); renderGrown(); renderHome();
+    e.target.textContent = 'Progress erased';
+    return;
+  }
+  resetArmed = Date.now();
+  e.target.textContent = 'Tap again to erase stars, stickers and hats';
+});
+
+/* ---------- confetti ---------- */
+function confetti(){
+  if (reduced) return;
+  const c = $('#confetti'), dpr = window.devicePixelRatio || 1, W = innerWidth, H = innerHeight;
+  c.width = W * dpr; c.height = H * dpr;
+  const ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const cols = ['#FFC93C', '#FF7A61', '#7CCB55', '#6CCBEF', '#8E6BD8'];
+  const ps = Array.from({length: 150}, () => ({x: W / 2 + rnd(-80, 80), y: H * .3, vx: (Math.random() - .5) * 16, vy: -Math.random() * 15 - 4, r: Math.random() * 6.28, vr: (Math.random() - .5) * .4, w: rnd(6, 12), h: rnd(8, 16), c: pick(cols)}));
+  const t0 = performance.now();
+  (function frame(now){
+    ctx.clearRect(0, 0, W, H);
+    for (const p of ps) {
+      p.vy += .35; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); ctx.restore();
+    }
+    if (now - t0 < 3000) requestAnimationFrame(frame); else ctx.clearRect(0, 0, W, H);
+  })(t0);
+}
+
+/* ---------- boot ---------- */
+function start(){ renderHome(); show('home'); }
+const hot = window.claude && window.claude.hot;
+hot && hot.ready ? hot.ready(start) : start();
+})();
+</script>
+</body>
+</html>
