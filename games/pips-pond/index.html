@@ -71,8 +71,6 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 .seg-btn b{font-family:var(--display);font-weight:800;font-size:clamp(14px,2.3vw,19px);line-height:1.1}
 .seg-btn small{font-size:12px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
 .seg-btn[aria-pressed="true"]{background:var(--lily);box-shadow:inset 0 0 0 3px var(--ink)}
-#opSeg .seg-btn[aria-pressed="true"]{background:var(--sun)}
-#opSeg .seg-btn b{font-size:clamp(20px,3vw,26px)}
 .games{display:grid;grid-template-columns:1fr;gap:16px}
 @media (min-width:600px){.games{grid-template-columns:1fr 1fr}}
 .game-card{display:grid;grid-template-columns:clamp(96px,14vw,128px) 1fr;align-items:center;gap:14px;text-align:left;background:var(--c);border:3px solid var(--ink);border-radius:26px;padding:12px 18px 12px 12px;box-shadow:0 6px 0 var(--ink);transition:transform .08s,box-shadow .08s}
@@ -202,6 +200,50 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 .fish.away svg{animation:swimAway .6s ease-in forwards}
 .fish.in svg{animation:swimIn .5s ease-out}
 
+/* Lily Hop scene */
+.hop-scene{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;background:linear-gradient(180deg,#7FD0F5 0%,#BDEBFA 40%,#FFF1C2 60%)}
+.hop-scene .sun{position:absolute;top:9%;right:9%;width:clamp(70px,12vmin,120px);aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,#FFF3A8 0 35%,#FFD23F 70%);box-shadow:0 0 0 16px rgba(255,236,140,.35),0 0 0 36px rgba(255,236,140,.18);animation:pulse 4s ease-in-out infinite alternate}
+.cloud{position:absolute;left:0;width:150px;height:44px;border-radius:44px;background:#fff;opacity:.95;animation:drift linear infinite}
+.cloud::before,.cloud::after{content:"";position:absolute;background:#fff;border-radius:50%}
+.cloud::before{width:62px;height:62px;left:22px;top:-30px}
+.cloud::after{width:80px;height:80px;left:62px;top:-44px}
+.cloud.c1{top:12%;animation-duration:75s;animation-delay:-20s}
+.cloud.c2{top:26%;animation-duration:95s;animation-delay:-60s;transform:scale(.7)}
+.cloud.c3{top:6%;animation-duration:120s;animation-delay:-95s;transform:scale(.55)}
+.hills{position:absolute;left:0;width:100%;bottom:40%;height:20vh;margin-bottom:-2px}
+.water{position:absolute;left:0;right:0;top:60%;bottom:0;background:linear-gradient(180deg,#6FD0D0 0%,#3FA9B0 55%,#2A8795 100%);overflow:hidden}
+.rip{position:absolute;height:6px;border-radius:50%;background:rgba(255,255,255,.55);animation:shimmer 3.5s ease-in-out infinite alternate}
+.rip.r1{top:12%;left:14%;width:18%}.rip.r2{top:24%;left:58%;width:24%;animation-delay:-1.2s}
+.rip.r3{top:40%;left:30%;width:14%;animation-delay:-2s}.rip.r4{top:8%;left:74%;width:10%;animation-delay:-.6s}
+.lotus{position:absolute;animation:bob 3s ease-in-out infinite alternate}
+.lotus.l1{top:63%;left:8%;width:clamp(60px,10vw,110px)}
+.lotus.l2{top:66%;right:22%;width:clamp(44px,7vw,80px);animation-delay:-1s}
+.lotus.l3{top:71%;left:40%;width:clamp(50px,8vw,90px);animation-delay:-2s}
+.reeds{position:absolute;bottom:0;height:46vh;max-width:40vw}
+.reeds.left{left:0}.reeds.right{right:0}
+.bfly{position:absolute;width:42px;animation:flit 22s ease-in-out infinite}
+.bfly svg{width:100%;animation:flap .22s ease-in-out infinite alternate}
+.bfly.b1{top:30%;left:10%}
+.bfly.b2{top:18%;left:60%;width:34px;animation-duration:28s;animation-delay:-9s}
+@keyframes drift{from{left:-220px}to{left:110%}}
+@keyframes pulse{to{transform:scale(1.06)}}
+@keyframes shimmer{from{opacity:.25;transform:scaleX(.8)}to{opacity:.8;transform:scaleX(1.1)}}
+@keyframes flap{from{transform:scaleX(1)}to{transform:scaleX(.35)}}
+@keyframes flit{0%{transform:translate(0,0)}20%{transform:translate(22vw,-6vh)}40%{transform:translate(40vw,4vh)}60%{transform:translate(18vw,10vh)}80%{transform:translate(-4vw,-4vh)}100%{transform:translate(0,0)}}
+.float-num{position:absolute;z-index:6;pointer-events:none;font-family:var(--display);font-weight:900;line-height:1;color:var(--sun);-webkit-text-stroke:4px var(--ink);paint-order:stroke fill;animation:floatUp 2s cubic-bezier(.35,.1,.3,1) forwards}
+.float-num.plain{color:#fff}
+@keyframes floatUp{0%{transform:translate(-50%,-50%) scale(1);opacity:1}15%{transform:translate(-50%,-70%) scale(1.5)}75%{opacity:1}100%{transform:translate(-50%,calc(-50% - 58vh)) scale(4.5) rotate(-8deg);opacity:0}}
+.hop-wrap .spark{position:absolute}
+/* Fish Friends sentence */
+.fish-eq{align-self:center;display:flex;align-items:center;gap:clamp(8px,1.6vw,16px);background:var(--paper);border:3px solid var(--ink);border-radius:26px;box-shadow:0 6px 0 var(--ink);padding:8px 22px;font-family:var(--display);font-weight:900;font-size:clamp(40px,8vmin,76px);line-height:1.1;font-variant-numeric:tabular-nums;transition:background .15s}
+.fish-eq b{color:var(--plum)}
+.fish-eq .slot{min-width:1.6em;height:1.25em;border:4px dashed var(--ink-soft);border-radius:18px;display:grid;place-items:center;padding:0 .12em}
+.fish-eq .slot.full{border-style:solid;border-color:var(--ink);background:#FFF1B8;animation:boing .3s}
+.fish-eq.good{background:#DDF5D2}
+.fish-eq.good .slot.full{background:#A4EEAE}
+.fish-eq.bad{background:#FFE1D9;animation:shake .4s}
+.tank{grid-template-rows:repeat(2,1fr)}
+
 /* results */
 #results{overflow-y:auto;padding-block:20px}
 .results-card{margin:auto;width:min(560px,100%);background:var(--paper);border:3px solid var(--ink);border-radius:32px;box-shadow:0 8px 0 var(--ink);padding:22px 20px 26px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
@@ -262,6 +304,7 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 @keyframes swimAway{to{transform:translateX(-140%) scale(.8);opacity:0}}
 @keyframes swimIn{from{transform:translateX(140%);opacity:0}to{transform:translateX(0);opacity:1}}
 @media (prefers-reduced-motion:reduce){
+  .cloud,.bfly,.bfly svg,.rip,.lotus,.hop-scene .sun{animation:none}
   .brand-pip,.fish svg,.res-pip{animation:none}
   .rider,.racer.pip-r{transition-duration:.01s}
 }
@@ -269,6 +312,42 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 </head>
 <body>
 <div class="scenery" aria-hidden="true"></div>
+<div class="hop-scene" id="hopScene" hidden aria-hidden="true">
+  <div class="sun"></div>
+  <div class="cloud c1"></div><div class="cloud c2"></div><div class="cloud c3"></div>
+  <svg class="hills" viewBox="0 0 1200 200" preserveAspectRatio="none">
+    <path d="M0 200 L0 96 Q140 20 300 78 T620 58 T940 48 T1200 84 L1200 200Z" fill="#B3E39A"/>
+    <path d="M0 200 L0 140 Q200 80 420 132 T820 112 T1200 124 L1200 200Z" fill="#78C95F"/>
+    <path d="M0 200 L0 182 Q300 158 600 176 T1200 170 L1200 200Z" fill="#4FAF3A"/>
+  </svg>
+  <div class="water"><i class="rip r1"></i><i class="rip r2"></i><i class="rip r3"></i><i class="rip r4"></i></div>
+  <svg class="lotus l1" viewBox="0 0 90 44"><ellipse cx="45" cy="30" rx="42" ry="12" fill="#5DB352" stroke="#17363A" stroke-width="2.5"/><path d="M45 28 q-16 -6 -20 -20 q14 0 20 12 q6 -12 20 -12 q-4 14 -20 20z" fill="#FF9FC0" stroke="#17363A" stroke-width="2.5" stroke-linejoin="round"/><path d="M45 28 q-6 -12 0 -24 q6 12 0 24z" fill="#FFC6DA" stroke="#17363A" stroke-width="2.5"/></svg>
+  <svg class="lotus l2" viewBox="0 0 90 44"><ellipse cx="45" cy="30" rx="42" ry="12" fill="#6CC04A" stroke="#17363A" stroke-width="2.5"/><circle cx="45" cy="22" r="7" fill="#FFF2A8" stroke="#17363A" stroke-width="2.5"/></svg>
+  <svg class="lotus l3" viewBox="0 0 90 44"><ellipse cx="45" cy="30" rx="42" ry="12" fill="#5DB352" stroke="#17363A" stroke-width="2.5"/><path d="M45 28 q-16 -6 -20 -20 q14 0 20 12 q6 -12 20 -12 q-4 14 -20 20z" fill="#FFFFFF" stroke="#17363A" stroke-width="2.5" stroke-linejoin="round"/></svg>
+  <svg class="reeds left" viewBox="0 0 220 320" preserveAspectRatio="xMinYMax meet">
+    <g stroke="#17363A" stroke-width="3" stroke-linejoin="round">
+      <path d="M20 320 Q30 200 10 110 Q46 200 44 320Z" fill="#4FAF3A"/>
+      <path d="M60 320 Q90 180 130 120 Q104 210 86 320Z" fill="#78C95F"/>
+      <path d="M150 320 Q150 250 190 200 Q176 262 172 320Z" fill="#4FAF3A"/>
+      <path d="M40 320 L46 70" fill="none" stroke-width="6"/><path d="M40 320 L46 70" fill="none" stroke="#3F8F2A" stroke-width="3"/>
+      <rect x="37" y="34" width="18" height="52" rx="9" fill="#8A5A36"/>
+      <path d="M100 320 L108 120" fill="none" stroke-width="6"/><path d="M100 320 L108 120" fill="none" stroke="#3F8F2A" stroke-width="3"/>
+      <rect x="99" y="86" width="18" height="48" rx="9" fill="#8A5A36"/>
+      <circle cx="176" cy="276" r="12" fill="#FFD84D"/><circle cx="196" cy="290" r="9" fill="#FF9FC0"/><circle cx="160" cy="296" r="8" fill="#fff"/>
+    </g>
+  </svg>
+  <svg class="reeds right" viewBox="0 0 220 320" preserveAspectRatio="xMaxYMax meet">
+    <g stroke="#17363A" stroke-width="3" stroke-linejoin="round">
+      <path d="M200 320 Q190 190 214 100 Q170 190 176 320Z" fill="#4FAF3A"/>
+      <path d="M160 320 Q128 190 90 140 Q116 220 134 320Z" fill="#78C95F"/>
+      <path d="M180 320 L172 60" fill="none" stroke-width="6"/><path d="M180 320 L172 60" fill="none" stroke="#3F8F2A" stroke-width="3"/>
+      <rect x="163" y="26" width="18" height="52" rx="9" fill="#8A5A36"/>
+      <circle cx="40" cy="290" r="11" fill="#FF7A61"/><circle cx="62" cy="298" r="9" fill="#FFD84D"/>
+    </g>
+  </svg>
+  <div class="bfly b1"><svg viewBox="0 0 40 30"><ellipse cx="11" cy="11" rx="10" ry="9" fill="#FF9FC0" stroke="#17363A" stroke-width="2"/><ellipse cx="29" cy="11" rx="10" ry="9" fill="#FF9FC0" stroke="#17363A" stroke-width="2"/><ellipse cx="13" cy="23" rx="7" ry="6" fill="#FFC93C" stroke="#17363A" stroke-width="2"/><ellipse cx="27" cy="23" rx="7" ry="6" fill="#FFC93C" stroke="#17363A" stroke-width="2"/><rect x="18.5" y="6" width="3" height="22" rx="1.5" fill="#17363A"/></svg></div>
+  <div class="bfly b2"><svg viewBox="0 0 40 30"><ellipse cx="11" cy="11" rx="10" ry="9" fill="#8FD3F4" stroke="#17363A" stroke-width="2"/><ellipse cx="29" cy="11" rx="10" ry="9" fill="#8FD3F4" stroke="#17363A" stroke-width="2"/><ellipse cx="13" cy="23" rx="7" ry="6" fill="#C6A4F5" stroke="#17363A" stroke-width="2"/><ellipse cx="27" cy="23" rx="7" ry="6" fill="#C6A4F5" stroke="#17363A" stroke-width="2"/><rect x="18.5" y="6" width="3" height="22" rx="1.5" fill="#17363A"/></svg></div>
+</div>
 <main id="app">
 
   <section id="home" class="screen" aria-label="Pick a game">
@@ -289,7 +368,6 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
     </header>
     <div class="pickers">
       <div class="picker"><span class="label" id="levelLabel">How big are the numbers?</span><div class="seg" id="levelSeg" role="group" aria-labelledby="levelLabel"></div></div>
-      <div class="picker"><span class="label" id="opLabel">Adding or taking away?</span><div class="seg" id="opSeg" role="group" aria-labelledby="opLabel"></div></div>
     </div>
     <div class="games" id="gameGrid"></div>
     <div class="next" id="nextSticker"></div>
@@ -349,7 +427,7 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
     </div>
     <div>
       <h3>How it works</h3>
-      <p class="muted">Pick a number size on the home screen: Tadpole (0–5), Froglet (0–10), Frog (0–20), Bullfrog (0–50) or Pond King (0–100). Subtraction never goes below zero. Stars from every game unlock stickers and hats for Pip. Pond Race adjusts the duck's speed after each race so it stays a close contest.</p>
+      <p class="muted">Pick a number size on the home screen: Tadpole (0–5), Froglet (0–10), Frog (0–20), Bullfrog (0–50) or Pond King (0–100). Every game mixes adding and taking away, and subtraction never goes below zero. Stars from every game unlock stickers and hats for Pip. Pond Race adjusts the duck's speed after each race so it stays a close contest.</p>
     </div>
     <div>
       <h3>Play full screen on iPad</h3>
@@ -373,11 +451,6 @@ const LEVELS = [
   {name:'Bullfrog',  range:'0–50',  max:50},
   {name:'Pond King', range:'0–100', max:100},
 ];
-const OPS = [
-  {id:'add', label:'+',   name:'Adding'},
-  {id:'sub', label:'−',   name:'Taking away'},
-  {id:'mix', label:'+ −', name:'Both'},
-];
 const STICKERS = ['🐸','🦆','🐢','🐟','🐞','🦋','🐌','🐝','🦀','🐠','🦦','🐙','🦔','🦉','🐳','🍄','🌻','🌈','🦩','🐉','🦄','🚀','🌟','🏆'];
 const STICKER_STEP = 4;
 const HATS = [
@@ -394,6 +467,7 @@ const RACE_BASE = [7, 6, 7, 9, 11]; // seconds per question the duck allows, by 
 
 const fresh = () => ({stars:0, level:1, op:'add', hat:'none', sound:true, best:{}, plays:0, missed:{}, streak:0, lastDay:'', raceAdj:{}, racer:'pip'});
 let P = load();
+P.op = 'mix'; // every game mixes adding and taking away
 function load(){
   try { const raw = localStorage.getItem(KEY); if (raw) return Object.assign(fresh(), JSON.parse(raw)); } catch (e) {}
   return fresh();
@@ -411,7 +485,9 @@ const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const level = () => LEVELS[P.level];
 
 /* ---------- problems ---------- */
-function chooseOp(){ return P.op === 'mix' ? (Math.random() < .5 ? 'add' : 'sub') : P.op; }
+// a shuffled bag keeps adding and taking away evenly mixed within each game
+let opBag = [];
+function chooseOp(){ if (!opBag.length) opBag = shuffle(['add', 'sub', 'add', 'sub']); return opBag.pop(); }
 function mk(a, b, op){
   const sym = op === 'add' ? '+' : '−';
   return {a, b, op, ans: op === 'add' ? a + b : a - b, key: a + (op === 'add' ? '+' : '-') + b, text: `${a} ${sym} ${b}`};
@@ -419,7 +495,7 @@ function mk(a, b, op){
 let lastKey = '';
 function makeProblem(opts = {}){
   const max = level().max, capB = opts.capB ?? max;
-  const opOk = o => opts.op ? o === opts.op : (P.op === 'mix' || P.op === o);
+  const opOk = o => !opts.op || o === opts.op;
   // bring back missed facts about a third of the time
   const keys = Object.keys(P.missed);
   if (keys.length && Math.random() < .33) {
@@ -626,7 +702,6 @@ function renderHome(){
   chip.hidden = !active;
   chip.textContent = `${P.streak}-day streak`;
   $('#levelSeg').innerHTML = LEVELS.map((l, i) => `<button type="button" class="seg-btn" data-l="${i}" aria-pressed="${i === P.level}"><b>${l.name}</b><small>${l.range}</small></button>`).join('');
-  $('#opSeg').innerHTML = OPS.map(o => `<button type="button" class="seg-btn" data-o="${o.id}" aria-pressed="${o.id === P.op}"><b>${o.label}</b><small>${o.name}</small></button>`).join('');
   $('#gameGrid').innerHTML = Object.entries(GAMES).map(([id, g]) => {
     const b = P.best[bestKey(id)] || 0;
     return `<button type="button" class="game-card" data-g="${id}" style="--c:${g.color}">
@@ -645,7 +720,6 @@ function renderHome(){
   }
 }
 $('#levelSeg').addEventListener('click', e => { const b = e.target.closest('[data-l]'); if (!b) return; sfx.tap(); P.level = +b.dataset.l; save(); renderHome(); });
-$('#opSeg').addEventListener('click', e => { const b = e.target.closest('[data-o]'); if (!b) return; sfx.tap(); P.op = b.dataset.o; save(); renderHome(); });
 $('#gameGrid').addEventListener('click', e => { const b = e.target.closest('[data-g]'); if (b) startGame(b.dataset.g); });
 
 /* ---------- game runner ---------- */
@@ -654,7 +728,7 @@ const stage = $('#stage'), hud = $('#hud');
 function later(fn, ms){ const r = run; setTimeout(() => { if (r === run) fn(); }, ms); }
 function startGame(id){
   stopGame();
-  lastGame = id;
+  lastGame = id; opBag = [];
   const g = GAMES[id], token = ++run;
   show('play');
   $('#gameTitle').textContent = g.name;
@@ -725,6 +799,27 @@ const GAMES = {
         </div>
       </div>`;
       const probEl = $('#hopProb'), say = $('#hopSay'), pads = $('#pads'), rider = $('#rider'), count = $('#hopCount');
+      const scene = $('#hopScene'); scene.hidden = false;
+
+      // the answer lifts off its lily pad and floats up into the sky, growing as it goes
+      function floatUp(pad, ok){
+        const sr = stage.getBoundingClientRect(), r = pad.getBoundingClientRect();
+        const cx = r.left - sr.left + r.width / 2, cy = r.top - sr.top + r.height / 2;
+        const el = document.createElement('div');
+        el.className = 'float-num' + (ok ? '' : ' plain'); el.textContent = p.ans;
+        el.style.left = cx + 'px'; el.style.top = cy + 'px';
+        el.style.fontSize = Math.max(28, r.width * .6) + 'px';
+        stage.appendChild(el); setTimeout(() => el.remove(), 2100);
+        if (!ok) return;
+        for (let i = 0; i < 10; i++) {
+          const s = document.createElement('span'), a = i / 10 * Math.PI * 2, d = r.width * (1.1 + Math.random() * .6);
+          s.className = 'spark'; s.textContent = i % 2 ? '★' : '✦';
+          s.style.left = cx + 'px'; s.style.top = cy + 'px';
+          s.style.setProperty('--dx', Math.cos(a) * d + 'px'); s.style.setProperty('--dy', Math.sin(a) * d + 'px');
+          s.style.color = pick(['#FFC93C', '#FF9FC0', '#fff']);
+          stage.appendChild(s); setTimeout(() => s.remove(), 850);
+        }
+      }
 
       function padFor(n){ return pads.querySelector(`[data-n="${n}"]`); }
       function place(n, animate){
@@ -789,6 +884,7 @@ const GAMES = {
         const ok = n === p.ans;
         record(p, ok); results[round - 1] = ok; drawHud();
         padFor(p.ans).classList.add('yes');
+        floatUp(padFor(p.ans), ok);
         probEl.textContent = `${p.text} = ${p.ans}`;
         if (ok) { right++; sfx.good(); probEl.classList.add('win'); say.textContent = `Yes! Pip landed on ${p.ans}.`; }
         else { sfx.bad(); pad.classList.add('no'); probEl.classList.add('reveal'); say.textContent = p.b === 0 ? `Zero hops means Pip stays on ${p.ans}.` : `Pip landed on ${p.ans}. Count the hops with Pip next time!`; }
@@ -797,7 +893,7 @@ const GAMES = {
       const onResize = () => place(pos, false);
       addEventListener('resize', onResize);
       later(next, 50);
-      return () => removeEventListener('resize', onResize);
+      return () => { removeEventListener('resize', onResize); scene.hidden = true; };
     }
   },
 
@@ -1065,68 +1161,93 @@ const GAMES = {
     }
   },
 
-  /* Fish Friends: find pairs that make a target */
+  /* Fish Friends: fill in a math sentence by tapping two fish */
   fish: {
     name: 'Fish Friends', color: '#FFA994',
-    blurb: 'Find two fish that make the magic number. Catch 8 pairs.',
-    start({token, alive, finish}){
-      const GOAL = 8, op = chooseOp(), max = level().max;
-      let target;
-      if (op === 'add') target = max <= 5 ? 5 : max <= 10 ? 10 : max <= 20 ? rnd(11, 20) : max <= 50 ? pick([20, 25, 30, 40, 50]) : pick([50, 60, 80, 100, 100]);
-      else target = rnd(1, max <= 5 ? 2 : max <= 10 ? 5 : max <= 20 ? 9 : max <= 50 ? 20 : 40);
-      const small = target >= 10;
-      const pairFor = () => {
-        if (op === 'add') { const x = small ? rnd(1, target - 1) : rnd(0, target); return [x, target - x]; }
-        const x = rnd(0, max - target); return [x, x + target];
-      };
-      const filler = () => op === 'add' ? (small ? rnd(1, target - 1) : rnd(0, target)) : rnd(0, max);
-      const isPair = (u, v) => op === 'add' ? u + v === target : Math.abs(u - v) === target;
-      const hasPair = vals => vals.some((u, i) => vals.some((v, j) => j > i && isPair(u, v)));
-      let vals = shuffle([...pairFor(), ...pairFor(), ...pairFor(), filler(), filler(), filler()]);
-      let colors = vals.map(() => pick(FISH_COLORS));
-      let sel = null, found = 0, mistakes = 0, busy = false;
-
+    blurb: 'Tap two fish to fill in the boxes and finish the math sentence.',
+    start({alive, finish}){
+      const ROUNDS = 8, max = level().max, lo = max >= 10 ? 1 : 0;
+      let round = 0, mistakes = 0, missedThis = false, op, target, vals = [], colors = [], picks = [], busy = true;
+      const results = [];
       stage.innerHTML = `<div class="fish-wrap">
-        <div class="target">${op === 'add' ? '<span>Pick two fish that add up to</span>' : '<span>Pick two fish where bigger − smaller is</span>'}<b>${target}</b></div>
+        <div class="fish-eq" id="fishEq" aria-live="polite"></div>
+        <p class="say" id="fishSay"></p>
         <div class="tank" id="tank"></div>
-        <p class="say" id="fishSay">${op === 'add' ? 'Tap one fish, then its friend.' : 'Tap two fish that are ' + target + ' apart.'}</p>
       </div>`;
-      const tank = $('#tank'), say = $('#fishSay');
-      const drawHud = () => { hud.innerHTML = `<span class="hud-pill">${found} / ${GOAL} pairs</span>`; };
-      const cell = (i, cls = '') => `<button type="button" class="fish ${cls}" data-i="${i}" aria-label="${vals[i]}">${fish(vals[i], colors[i])}</button>`;
-      function drawAll(){ tank.innerHTML = vals.map((_, i) => cell(i)).join(''); tank.querySelectorAll('.fish svg').forEach(s => { s.style.animationDelay = (-Math.random() * 2.4).toFixed(2) + 's'; }); }
-      function el(i){ return tank.querySelector(`[data-i="${i}"]`); }
+      const eq = $('#fishEq'), say = $('#fishSay'), tank = $('#tank');
+      const sym = () => op === 'add' ? '+' : '−';
+
+      function targetFor(){
+        if (op === 'add') return [rnd(3, 5), rnd(5, 10), rnd(8, 20), rnd(4, 10) * 5, rnd(4, 10) * 10][P.level];
+        return [rnd(1, 3), rnd(1, 6), rnd(2, 10), rnd(3, 20), rnd(5, 40)][P.level];
+      }
+      function pairFor(){
+        if (op === 'add') { const x = rnd(lo, target - lo); return [x, target - x]; }
+        const x = rnd(0, max - target); return [x + target, x];
+      }
+      const filler = () => op === 'add' ? rnd(lo, target) : rnd(0, max);
+      const isPair = (u, v) => op === 'add' ? u + v === target : Math.abs(u - v) === target;
+      // the two picked numbers in sentence order (bigger first when taking away)
+      function ordered(){
+        const v = picks.map(i => vals[i]);
+        return op === 'sub' && v.length === 2 && v[0] < v[1] ? [v[1], v[0]] : v;
+      }
+      function drawEq(state = ''){
+        const [x, y] = ordered();
+        eq.className = 'fish-eq ' + state;
+        eq.innerHTML = `<span class="slot ${x != null ? 'full' : ''}">${x ?? ''}</span><span>${sym()}</span><span class="slot ${y != null ? 'full' : ''}">${y ?? ''}</span><span>=</span><b>${target}</b>`;
+      }
+      function drawHud(){
+        hud.innerHTML = `<div class="dots" aria-label="Round ${round} of ${ROUNDS}">${Array.from({length: ROUNDS}, (_, i) => `<i class="${results[i] === true ? 'ok' : results[i] === false ? 'miss' : i === round - 1 ? 'now' : ''}"></i>`).join('')}</div>`;
+      }
+      function drawTank(cls){
+        tank.innerHTML = vals.map((v, i) => `<button type="button" class="fish ${cls}" data-i="${i}" aria-label="${v}">${fish(v, colors[i])}</button>`).join('');
+        tank.querySelectorAll('.fish svg').forEach(s => { s.style.animationDelay = (-Math.random() * 2.4).toFixed(2) + 's'; });
+      }
+      function next(){
+        if (round >= ROUNDS) {
+          const stars = mistakes <= 1 ? 3 : mistakes <= 4 ? 2 : 1;
+          finish({stars, headline: 'All the fish found friends!', detail: mistakes === 0 ? `${ROUNDS} math sentences with no wrong guesses.` : `${ROUNDS} math sentences, with ${mistakes} wrong ${mistakes === 1 ? 'guess' : 'guesses'}.`});
+          return;
+        }
+        round++; drawHud();
+        op = chooseOp(); target = targetFor(); missedThis = false; picks = [];
+        vals = pairFor();
+        let tries = 0;
+        while (vals.length < 6 && tries++ < 60) { const f = filler(); if (!vals.includes(f)) vals.push(f); }
+        while (vals.length < 6) vals.push(filler());
+        shuffle(vals);
+        colors = vals.map(() => pick(FISH_COLORS));
+        drawEq(); drawTank('in');
+        say.textContent = op === 'add' ? `Tap two fish that add up to ${target}.` : `Tap two fish that are ${target} apart. The bigger one goes first.`;
+        busy = false;
+      }
       tank.addEventListener('click', e => {
         const f = e.target.closest('.fish'); if (!f || busy) return;
         const i = +f.dataset.i;
-        if (sel === i) { f.classList.remove('sel'); sel = null; return; }
-        if (sel === null) { sel = i; f.classList.add('sel'); sfx.tap(); return; }
-        const a = vals[sel], b = vals[i], j = sel;
-        f.classList.add('sel'); sel = null; busy = true;
-        const big = Math.max(a, b), lit = Math.min(a, b);
-        if (isPair(a, b)) {
-          found++; sfx.good(); drawHud();
-          say.textContent = op === 'add' ? `${a} + ${b} = ${target}. Friends!` : `${big} − ${lit} = ${target}. Friends!`;
-          el(i).classList.add('away'); el(j).classList.add('away');
-          if (found >= GOAL) {
-            later(() => finish({stars: mistakes <= 1 ? 3 : mistakes <= 4 ? 2 : 1, headline: 'All the fish found friends!', detail: mistakes === 0 ? `Eight pairs that make ${target}, with no wrong guesses.` : `Eight pairs that make ${target}, with ${mistakes} wrong ${mistakes === 1 ? 'guess' : 'guesses'}.`}), 900);
-            return;
-          }
-          later(() => {
-            if (Math.random() < .5) { [vals[i], vals[j]] = pairFor(); } else { vals[i] = filler(); vals[j] = filler(); }
-            if (!hasPair(vals)) [vals[i], vals[j]] = pairFor();
-            colors[i] = pick(FISH_COLORS); colors[j] = pick(FISH_COLORS);
-            [i, j].forEach(k => { el(k).outerHTML = cell(k, 'in'); });
-            busy = false;
-          }, 620);
+        if (picks.includes(i)) { picks = picks.filter(x => x !== i); f.classList.remove('sel'); drawEq(); sfx.tap(); return; }
+        picks.push(i); f.classList.add('sel'); drawEq(); sfx.tap();
+        if (picks.length < 2) return;
+        busy = true;
+        const [x, y] = ordered(), got = op === 'add' ? x + y : x - y;
+        if (isPair(x, y)) {
+          results[round - 1] = !missedThis; drawHud();
+          sfx.good(); drawEq('good');
+          say.textContent = `${x} ${sym()} ${y} = ${target}. Fish friends!`;
+          tank.querySelectorAll('.fish').forEach(el => el.classList.add('away'));
+          later(next, 1100);
         } else {
-          mistakes++; sfx.bad();
-          say.textContent = op === 'add' ? `${a} + ${b} = ${a + b}. We need ${target}.` : `${big} − ${lit} = ${big - lit}. We need ${target}.`;
-          [el(i), el(j)].forEach(x => { x.classList.remove('sel'); x.classList.add('shake'); });
-          later(() => { [el(i), el(j)].forEach(x => x && x.classList.remove('shake')); busy = false; }, 450);
+          if (!missedThis) { mistakes++; missedThis = true; }
+          sfx.bad(); drawEq('bad');
+          say.textContent = `${x} ${sym()} ${y} = ${got}, not ${target}. Try two different fish!`;
+          picks.forEach(k => { const el = tank.querySelector(`[data-i="${k}"]`); el.classList.remove('sel'); el.classList.add('shake'); });
+          later(() => {
+            tank.querySelectorAll('.shake').forEach(el => el.classList.remove('shake'));
+            picks = []; drawEq(); busy = false;
+          }, 1100);
         }
       });
-      drawAll(); drawHud();
+      later(next, 50);
     }
   },
 };
