@@ -8,8 +8,8 @@ It has no dependencies and no build step. Open `index.html` in any modern browse
 | Game | Skill practiced |
 |------|-----------------|
 | **Lily Hop** | Number-line reasoning. The child predicts which lily pad Pip lands on, then watches Pip count out the hops. |
-| **Bubble Pop** | Quick recall. A one-minute round where the child pops the rising bubble that holds the answer. Streaks of correct answers speed the bubbles up. |
-| **Pond Race** | Fluency. The child types answers on a big number pad to paddle past Duck. Duck's speed adapts after each race so races stay close. |
+| **Bubble Pop** | Quick recall. A one-minute round where the child pops the rising bubble that holds the answer. A correct bubble turns green, grows and bursts into stars. Every 5 correct answers is a new speed level, and the bubbles rise faster. |
+| **Pond Race** | Fluency. The child picks a racer from eight characters, then types answers on a big number pad to paddle past Duck. A wrong answer shows a red X and offers **Try again** or **Show me**, and Duck waits meanwhile. Duck's speed adapts after each race so races stay close. |
 | **Fish Friends** | Number bonds. The child finds pairs that add up to a target (make 10, make 100) or that differ by a target. |
 
 ## Replayability
