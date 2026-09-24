@@ -180,9 +180,12 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 .answer{display:inline-block;min-width:1.4em;border-bottom:6px solid var(--ink);color:var(--plum);text-align:center}
 .answer.bad{color:var(--bad)}
 .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:min(100%,360px)}
-.key{height:clamp(50px,9vmin,80px);background:var(--paper);border:3px solid var(--ink);border-radius:20px;box-shadow:0 4px 0 var(--ink);font-family:var(--display);font-weight:900;font-size:clamp(26px,4.5vmin,40px);padding:0;transition:transform .06s,box-shadow .06s}
+.key{height:clamp(46px,8vmin,74px);background:var(--paper);border:3px solid var(--ink);border-radius:20px;box-shadow:0 4px 0 var(--ink);font-family:var(--display);font-weight:900;font-size:clamp(26px,4.5vmin,40px);padding:0;transition:transform .06s,box-shadow .06s}
 .key:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
 .key.alt{background:#E3F2EA;font-size:18px}
+.key.enter{grid-column:1 / -1;background:var(--good);color:#fff;-webkit-text-stroke:2px var(--ink);paint-order:stroke fill;font-size:clamp(24px,4vmin,34px)}
+.key.enter:disabled{background:#CFE3D6;color:var(--ink-soft);-webkit-text-stroke:0;box-shadow:0 4px 0 rgba(23,54,58,.35);border-color:rgba(23,54,58,.45);cursor:default}
+.key.enter:disabled:active{transform:none}
 .countdown{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;font-family:var(--display);font-weight:900;font-size:clamp(100px,26vmin,200px);color:var(--sun);-webkit-text-stroke:5px var(--ink);paint-order:stroke fill;z-index:5}
 .countdown:empty{display:none}
 .countdown span{animation:boing .5s}
@@ -1068,7 +1071,7 @@ const GAMES = {
                 <button type="button" class="btn ghost" id="showMe">Show me</button>
               </div>
             </div>
-            <div class="keypad" id="keypad">${[1,2,3,4,5,6,7,8,9].map(n => `<button type="button" class="key" data-k="${n}">${n}</button>`).join('')}<button type="button" class="key alt" data-k="clear">Clear</button><button type="button" class="key" data-k="0">0</button><button type="button" class="key alt" data-k="back" aria-label="Delete">⌫</button></div>
+            <div class="keypad" id="keypad">${[1,2,3,4,5,6,7,8,9].map(n => `<button type="button" class="key" data-k="${n}">${n}</button>`).join('')}<button type="button" class="key alt" data-k="clear">Clear</button><button type="button" class="key" data-k="0">0</button><button type="button" class="key alt" data-k="back" aria-label="Delete">⌫</button><button type="button" class="key enter" data-k="enter" id="enterKey" disabled>Enter ⏎</button></div>
           </div>
           <div class="countdown" id="cd"></div>
         </div>`;
@@ -1078,19 +1081,20 @@ const GAMES = {
 
         function nextQ(){
           p = makeProblem(); missedThis = false; typed = '';
-          probEl.textContent = p.text; ansEl.textContent = '?'; ansEl.className = 'answer';
+          probEl.textContent = p.text; ansEl.textContent = '?'; ansEl.className = 'answer'; $('#enterKey').disabled = true;
           card.classList.remove('win', 'reveal'); mark.innerHTML = '';
           retry.hidden = true; keypad.classList.remove('off');
           paused = false; locked = false;
         }
         function press(k){
           if (locked || !running) return;
+          if (k === 'enter') { if (typed) check(); return; }
           sfx.tap();
           if (k === 'clear') typed = '';
           else if (k === 'back') typed = typed.slice(0, -1);
           else if (typed.length < 3) typed += k;
           ansEl.textContent = typed || '?';
-          if (typed.length >= String(p.ans).length) check();
+          $('#enterKey').disabled = !typed;
         }
         function check(){
           locked = true;
@@ -1110,7 +1114,7 @@ const GAMES = {
         }
         function tryAgain(){
           if (retry.hidden) return;
-          typed = ''; ansEl.textContent = '?'; ansEl.className = 'answer';
+          typed = ''; ansEl.textContent = '?'; ansEl.className = 'answer'; $('#enterKey').disabled = true;
           card.classList.remove('reveal'); mark.innerHTML = '';
           retry.hidden = true; keypad.classList.remove('off');
           paused = false; locked = false; sfx.tap();
@@ -1146,6 +1150,7 @@ const GAMES = {
           if (!retry.hidden) { if (e.key === 'Enter') { e.preventDefault(); tryAgain(); } return; }
           if (/^[0-9]$/.test(e.key)) press(e.key);
           else if (e.key === 'Backspace') { e.preventDefault(); press('back'); }
+          else if (e.key === 'Enter') { e.preventDefault(); press('enter'); }
           else if (e.key === 'Escape') press('clear');
         };
         document.addEventListener('keydown', onKey);
