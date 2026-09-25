@@ -163,12 +163,14 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 /* Pond Race */
 .pick-wrap{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding-block:8px}
 .pick-wrap h3{font-size:clamp(26px,4vw,40px);text-align:center}
-.racer-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;width:min(100%,640px)}
-.racer-opt{background:var(--paper);border:3px solid var(--ink);border-radius:22px;box-shadow:0 4px 0 var(--ink);padding:8px 4px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;transition:transform .12s,box-shadow .12s,background .12s}
-.racer-opt svg{width:min(100%,92px)}
-.racer-opt b{font-family:var(--display);font-weight:800;font-size:clamp(14px,2.2vw,18px)}
-.racer-opt[aria-pressed="true"]{background:var(--sun);transform:translateY(-4px);box-shadow:0 8px 0 var(--ink)}
-.racer-opt[aria-pressed="true"] svg{animation:boing .4s}
+.racer-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:1fr;gap:12px;width:min(100%,640px)}
+.racer-opt{height:100%;min-width:0;background:var(--paper);border:3px solid var(--ink);border-radius:22px;box-shadow:0 4px 0 var(--ink);padding:8px 6px 10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;transition:box-shadow .12s,background .12s}
+/* every character sits in the same square box, whatever the shape of its drawing */
+.racer-art{display:grid;place-items:center;width:100%;max-width:92px;aspect-ratio:1}
+.racer-art svg{width:100%;height:100%;display:block}
+.racer-opt b{display:block;width:100%;text-align:center;font-family:var(--display);font-weight:800;font-size:clamp(14px,2.2vw,18px);line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.racer-opt[aria-pressed="true"]{background:var(--sun);box-shadow:0 0 0 4px var(--paper),0 0 0 7px var(--ink)}
+.racer-opt[aria-pressed="true"] .racer-art{animation:boing .4s}
 .race-q{display:flex;flex-direction:column;align-items:center;gap:12px}
 #rCard{position:relative}
 #rCard .mark{position:absolute;top:-24px;right:-24px;width:clamp(48px,8vmin,66px);animation:boing .35s}
@@ -286,6 +288,7 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 .unlock .u-go{margin-left:auto;font-size:22px}
 .unlock .u-art{flex:none;width:60px;font-size:46px;line-height:1;text-align:center}
 .unlock .u-art svg{width:60px}
+.unlock .u-swatch{display:block;width:52px;height:52px;margin:0 auto;border-radius:14px}
 .res-actions{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-top:6px}
 
 /* collection */
@@ -298,6 +301,8 @@ button{font:inherit;color:inherit;cursor:pointer;touch-action:manipulation;-webk
 .hat-btn b{font-family:var(--display);font-weight:800;font-size:16px}
 .hat-btn small{font-size:13px;color:var(--ink-soft)}
 .hat-btn[aria-pressed="true"]{background:var(--lily)}
+.spot{animation:spot .9s ease-in-out 3}
+@keyframes spot{50%{box-shadow:0 0 0 6px var(--sun),0 0 0 9px var(--ink);transform:scale(1.05)}}
 .hat-btn.locked{background:rgba(255,248,230,.55);box-shadow:none;border-style:dashed}
 .hat-btn.locked svg{filter:brightness(0) opacity(.18)}
 .sticker-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:10px}
@@ -314,7 +319,8 @@ button.sticker:active{transform:scale(.92)!important}
 .pg-nav{display:flex;align-items:center;gap:8px}
 .pg-label{font-family:var(--display);font-weight:800;font-size:18px;min-width:6.5em;text-align:center;font-variant-numeric:tabular-nums}
 .btn:disabled{opacity:.4;pointer-events:none}
-.bg-picks{display:flex;gap:8px}
+.bg-picks{display:flex;flex-wrap:wrap;gap:8px}
+.swatch.locked{filter:grayscale(.85) brightness(.9);opacity:.7;font-size:16px;line-height:1;display:grid;place-items:center}
 .swatch{width:40px;height:40px;border-radius:50%;border:3px solid var(--ink);padding:0}
 .swatch[aria-pressed="true"]{box-shadow:0 0 0 3px var(--paper),0 0 0 6px var(--ink)}
 .page-area{flex:1;min-height:0;display:grid;place-items:center}
@@ -340,6 +346,12 @@ button.sticker:active{transform:scale(.92)!important}
 .bg-meadow{background:radial-gradient(circle at 15% 80%,#FF9FC0 0 1.6%,transparent 1.9%),radial-gradient(circle at 38% 70%,#FFD84D 0 1.6%,transparent 1.9%),radial-gradient(circle at 62% 86%,#fff 0 1.6%,transparent 1.9%),radial-gradient(circle at 85% 74%,#FF9FC0 0 1.6%,transparent 1.9%),radial-gradient(ellipse 60% 30% at 30% 55%,#9BDA78 0 70%,transparent 71%),linear-gradient(#D8F3FF 0 50%,#7CCB55 50%)}
 .bg-night{background:radial-gradient(circle at 80% 22%,#FFF3A8 0 7%,transparent 7.4%),radial-gradient(circle at 12% 18%,#fff 0 .5%,transparent .8%),radial-gradient(circle at 30% 40%,#fff 0 .4%,transparent .7%),radial-gradient(circle at 52% 14%,#fff 0 .5%,transparent .8%),radial-gradient(circle at 66% 52%,#fff 0 .4%,transparent .7%),radial-gradient(circle at 20% 70%,#fff 0 .4%,transparent .7%),radial-gradient(circle at 88% 78%,#fff 0 .5%,transparent .8%),linear-gradient(#1D2B55,#434A8C)}
 .bg-sunset{background:radial-gradient(circle at 50% 78%,#FFE27A 0 12%,transparent 12.5%),linear-gradient(#FFB36B,#FF7A9C 62%,#8E6BD8)}
+.bg-beach{background:radial-gradient(circle at 80% 18%,#FFE27A 0 8%,transparent 8.5%),radial-gradient(ellipse 34% 2.5% at 30% 62%,#fff 0 60%,transparent 62%),radial-gradient(ellipse 30% 2.5% at 78% 61%,#fff 0 60%,transparent 62%),linear-gradient(#8fd8ff 0 45%,#3fb6d9 45% 62%,#f4d58d 62%)}
+.bg-snow{background:radial-gradient(circle at 30% 30%,#fff 0 2px,transparent 2.6px) 0 0/40px 40px,radial-gradient(ellipse 60% 26% at 20% 100%,#fff 0 70%,transparent 71%),radial-gradient(ellipse 60% 30% at 85% 100%,#f4fbff 0 70%,transparent 71%),linear-gradient(#bfe4ff,#e8f6ff)}
+.bg-space{background:radial-gradient(circle at 75% 25%,#ffb36b 0 7%,transparent 7.5%),radial-gradient(circle at 20% 72%,#8fd3f4 0 5%,transparent 5.5%),radial-gradient(circle,#fff 0 1.2px,transparent 1.8px) 0 0/53px 47px,radial-gradient(circle,rgba(255,255,255,.65) 0 1px,transparent 1.5px) 19px 29px/37px 61px,radial-gradient(circle,rgba(255,255,255,.5) 0 .8px,transparent 1.3px) 31px 7px/71px 43px,linear-gradient(#150a33,#3b1f73)}
+.bg-candy{background:radial-gradient(circle,rgba(255,255,255,.55) 0 6px,transparent 7px) 0 0/34px 34px,repeating-linear-gradient(45deg,#ffc2dd 0 18px,#ffe0ee 18px 36px)}
+.bg-ocean{background:radial-gradient(circle at 20% 70%,rgba(255,255,255,.6) 0 1.4%,transparent 1.7%),radial-gradient(circle at 26% 60%,rgba(255,255,255,.5) 0 1%,transparent 1.3%),radial-gradient(circle at 78% 40%,rgba(255,255,255,.5) 0 1.2%,transparent 1.5%),radial-gradient(ellipse 50% 12% at 50% 100%,#e8d49a 0 70%,transparent 71%),linear-gradient(#5fc6e8,#1b6fa8)}
+.bg-rainbow{background:radial-gradient(circle at 50% 100%,transparent 0 30%,#ff5d5d 30% 34%,#ffa84a 34% 38%,#ffe15a 38% 42%,#6fd46a 42% 46%,#5cb8ff 46% 50%,#a98bff 50% 54%,transparent 54%),linear-gradient(#bfe9ff,#fdf2ff)}
 .bg-paper{background:radial-gradient(circle,rgba(23,54,58,.16) 1.2px,transparent 1.6px) 0 0/22px 22px,#FFF8E6}
 
 /* 3D sticker viewer */
@@ -448,7 +460,7 @@ button.sticker:active{transform:scale(.92)!important}
       <div class="top-actions">
         <span class="chip" aria-label="Stars collected"><span class="star">★</span><b id="starCount">0</b></span>
         <span class="chip" id="streakChip" hidden></span>
-        <button class="btn small ghost" id="openCloset" type="button">Stickers &amp; hats</button>
+        <button class="btn small ghost" id="openCloset" type="button">Stickers, hats &amp; outfits</button>
         <button class="btn small ghost" id="openGrown" type="button">Grown-ups</button>
       </div>
     </header>
@@ -513,8 +525,10 @@ button.sticker:active{transform:scale(.92)!important}
       <div class="hud"><span class="hud-pill"><span class="star">★</span><b id="closetStars">0</b></span></div>
     </header>
     <div class="closet-body">
-      <h3>Hats <small>Tap a hat to put it on Nug</small></h3>
+      <h3 id="hatsHead">Hats <small>Tap a hat to put it on Nug</small></h3>
       <div class="hat-grid" id="hatGrid"></div>
+      <h3 id="outfitsHead">Outfits <small id="outfitNote"></small></h3>
+      <div class="hat-grid" id="outfitGrid"></div>
       <div class="book-head"><h3>Sticker book <small id="stickerCount"></small></h3><button class="btn small" id="openBook" type="button">Decorate sticker pages</button></div>
       <div class="sticker-grid" id="stickerGrid"></div>
     </div>
@@ -536,7 +550,7 @@ button.sticker:active{transform:scale(.92)!important}
     </div>
     <div>
       <h3>How it works</h3>
-      <p class="muted">Pick a number size on the home screen: Tadpole (0–5), Froglet (0–10), Frog (0–20), Bullfrog (0–50) or Pond King (0–100). Every game mixes adding and subtracting, and subtraction never goes below zero. Stars from every game unlock stickers and hats for Nug. Pond Race adjusts the duck's speed after each race so it stays a close contest. Fast wrong guesses are discouraged: the first gets a reminder to slow down, and a second soon after pauses the game for a few seconds while the clock keeps running. Bubble Pop allows one tap per question, Pond Race two tries, and Fish Friends three tries before the answer is shown.</p>
+      <p class="muted">Pick a number size on the home screen: Tadpole (0–5), Froglet (0–10), Frog (0–20), Bullfrog (0–50) or Pond King (0–100). Every game mixes adding and subtracting, and subtraction never goes below zero. Stars from every game unlock stickers, hats for Nug and new sticker-page backgrounds; at 100 stars Nug can start wearing outfits too. Pond Race adjusts the duck's speed after each race so it stays a close contest. Fast wrong guesses are discouraged: the first gets a reminder to slow down, and a second soon after pauses the game for a few seconds while the clock keeps running. Bubble Pop allows one tap per question, Pond Race two tries, and Fish Friends three tries before the answer is shown.</p>
     </div>
     <div>
       <h3>Play full screen on iPad</h3>
@@ -586,10 +600,40 @@ const HATS = [
   {id:'top',    name:'Top hat',     at:35},
   {id:'wizard', name:'Wizard hat',  at:50},
   {id:'crown',  name:'Crown',       at:70},
+  {id:'cowboy', name:'Cowboy hat',  at:85},
+  {id:'chef',   name:'Chef hat',    at:95},
+  {id:'pirate', name:'Pirate hat',  at:110},
+  {id:'beanie', name:'Beanie',      at:125},
+  {id:'viking', name:'Viking helmet', at:145},
+  {id:'santa',  name:'Santa hat',   at:165},
+  {id:'propeller', name:'Propeller cap', at:190},
+];
+// After 100 stars Nug can dress up too.
+const OUTFITS_FROM = 100;
+const OUTFITS = [
+  {id:'none',     name:'Just Nug',        at:0},
+  {id:'sundress', name:'Sundress',        at:100},
+  {id:'swimsuit', name:'Striped swimsuit', at:110},
+  {id:'ski',      name:'Ski suit',        at:120},
+  {id:'floatie',  name:'Swim floatie',    at:130},
+  {id:'tutu',     name:'Party dress',     at:140},
+  {id:'raincoat', name:'Raincoat',        at:155},
+  {id:'pajamas',  name:'Pajamas',         at:170},
+  {id:'cape',     name:'Superhero cape',  at:185},
+  {id:'tux',      name:'Tuxedo',          at:200},
+  {id:'sweater',  name:'Cozy sweater',    at:220},
+  {id:'hula',     name:'Grass skirt',     at:240},
+];
+// Sticker-page backgrounds: three to start, the rest unlock with stars.
+const BGS = [
+  {id:'pond', name:'Pond', at:0}, {id:'sky', name:'Sky', at:0}, {id:'paper', name:'Paper', at:0},
+  {id:'meadow', name:'Meadow', at:10}, {id:'night', name:'Night', at:20}, {id:'sunset', name:'Sunset', at:30},
+  {id:'beach', name:'Beach', at:45}, {id:'snow', name:'Snow', at:60}, {id:'space', name:'Space', at:80},
+  {id:'candy', name:'Candy', at:100}, {id:'ocean', name:'Under the sea', at:120}, {id:'rainbow', name:'Rainbow', at:140},
 ];
 const RACE_BASE = [7, 6, 7, 9, 11]; // seconds per question the duck allows, by level
 
-const fresh = () => ({stars:0, level:1, op:'add', hat:'none', sound:true, best:{}, plays:0, missed:{}, streak:0, lastDay:'', raceAdj:{}, racer:'pip', pages:[]});
+const fresh = () => ({stars:0, level:1, op:'add', hat:'none', outfit:'none', sound:true, best:{}, plays:0, missed:{}, streak:0, lastDay:'', raceAdj:{}, racer:'pip', pages:[]});
 let P = load();
 if (!Array.isArray(P.pages)) P.pages = [];
 P.op = 'mix'; // every game mixes adding and subtracting
@@ -814,17 +858,45 @@ const HAT_SVG = {
   flower:[[34,22],[47,14],[60,11],[73,14],[86,22]].map(([x,y]) => `<g transform="translate(${x} ${y})">${[0,72,144,216,288].map(r => `<circle cx="${(Math.cos(r*Math.PI/180)*6).toFixed(1)}" cy="${(Math.sin(r*Math.PI/180)*6).toFixed(1)}" r="4.6" fill="#fff" stroke="#17363A" stroke-width="1.5"/>`).join('')}<circle r="4" fill="#FFC93C" stroke="#17363A" stroke-width="1.5"/></g>`).join(''),
   top:'<rect x="42" y="-18" width="36" height="40" rx="4" fill="#2B2B3A" stroke="#17363A" stroke-width="3"/><rect x="42" y="8" width="36" height="7" fill="#FF7A61"/><rect x="30" y="20" width="60" height="8" rx="4" fill="#2B2B3A" stroke="#17363A" stroke-width="3"/>',
   wizard:'<path d="M36 26 L64 -36 L84 26 Z" fill="#6B4BC8" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><ellipse cx="60" cy="26" rx="32" ry="6" fill="#553AA8" stroke="#17363A" stroke-width="3"/><path d="M62 -8 l3.5 7 7.5 1 -5.5 5.3 1.3 7.5 -6.8 -3.6 -6.8 3.6 1.3 -7.5 -5.5 -5.3 7.5 -1z" fill="#FFC93C"/>',
+  cowboy:'<ellipse cx="60" cy="24" rx="42" ry="8" fill="#A0652D" stroke="#17363A" stroke-width="3"/><path d="M42 24 Q40 -4 52 -2 Q60 4 68 -2 Q80 -4 78 24 Z" fill="#B87333" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><rect x="43" y="15" width="34" height="5" fill="#6B3E1A"/>',
+  chef:'<circle cx="47" cy="2" r="11" fill="#fff" stroke="#17363A" stroke-width="3"/><circle cx="73" cy="2" r="11" fill="#fff" stroke="#17363A" stroke-width="3"/><circle cx="60" cy="-6" r="13" fill="#fff" stroke="#17363A" stroke-width="3"/><rect x="44" y="6" width="32" height="20" rx="3" fill="#fff" stroke="#17363A" stroke-width="3"/><path d="M50 12 V22 M60 12 V22 M70 12 V22" stroke="#DDE3E6" stroke-width="2"/>',
+  pirate:'<path d="M26 24 Q60 -18 94 24 Q60 12 26 24 Z" fill="#2B2B3A" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><path d="M31 21 Q60 9 89 21" stroke="#FFC93C" stroke-width="2.5" fill="none"/><circle cx="60" cy="6" r="5" fill="#fff"/><path d="M53 13 L67 17 M67 13 L53 17" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>',
+  beanie:'<path d="M36 26 A24 24 0 0 1 84 26 Z" fill="#8E6BD8" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><path d="M48 6 V20 M60 3 V20 M72 6 V20" stroke="#6B4BC8" stroke-width="2.5"/><rect x="34" y="19" width="52" height="10" rx="4" fill="#B69CF0" stroke="#17363A" stroke-width="3"/><circle cx="60" cy="-2" r="7" fill="#FF7A61" stroke="#17363A" stroke-width="2.5"/>',
+  viking:'<path d="M40 18 Q22 12 26 -8 Q33 8 45 9 Z" fill="#FFF3D6" stroke="#17363A" stroke-width="2.5" stroke-linejoin="round"/><path d="M80 18 Q98 12 94 -8 Q87 8 75 9 Z" fill="#FFF3D6" stroke="#17363A" stroke-width="2.5" stroke-linejoin="round"/><path d="M38 26 A22 22 0 0 1 82 26 Z" fill="#9AA5B1" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><rect x="36" y="19" width="48" height="8" rx="3" fill="#FFC93C" stroke="#17363A" stroke-width="2.5"/><circle cx="46" cy="23" r="1.6" fill="#17363A"/><circle cx="60" cy="23" r="1.6" fill="#17363A"/><circle cx="74" cy="23" r="1.6" fill="#17363A"/>',
+  santa:'<path d="M38 24 L60 -16 Q80 -16 92 6 L85 10 Q78 -2 67 -4 L82 24 Z" fill="#E5484D" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><rect x="34" y="19" width="52" height="10" rx="5" fill="#fff" stroke="#17363A" stroke-width="2.5"/><circle cx="89" cy="10" r="6" fill="#fff" stroke="#17363A" stroke-width="2.5"/>',
+  propeller:'<path d="M36 26 A24 22 0 0 1 84 26 Z" fill="#FFC93C"/><path d="M60 4 L42 26 L52 26 Z" fill="#E5484D"/><path d="M60 4 L68 26 L78 26 Z" fill="#3A7BD5"/><path d="M36 26 A24 22 0 0 1 84 26 Z" fill="none" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><rect x="58" y="-8" width="4" height="12" fill="#17363A"/><ellipse cx="47" cy="-9" rx="12" ry="3.5" fill="#FF7A61" stroke="#17363A" stroke-width="2"/><ellipse cx="73" cy="-9" rx="12" ry="3.5" fill="#6CCBEF" stroke="#17363A" stroke-width="2"/>',
   crown:'<path d="M36 26 L36 0 L48 12 L60 -8 L72 12 L84 0 L84 26 Z" fill="#FFC93C" stroke="#17363A" stroke-width="3" stroke-linejoin="round"/><circle cx="60" cy="16" r="4.5" fill="#FF7A61" stroke="#17363A" stroke-width="2"/><circle cx="46" cy="19" r="3.5" fill="#6CCBEF" stroke="#17363A" stroke-width="2"/><circle cx="74" cy="19" r="3.5" fill="#6CCBEF" stroke="#17363A" stroke-width="2"/>',
 };
-function nug(hat = P.hat, attrs = ''){
-  return `<svg viewBox="0 -44 120 154" ${attrs} aria-hidden="true">
+// Outfit art: `back` is drawn behind Nug's body, `front` over the lower body
+// (below the smile, so the face always shows).
+const torso = (y) => { const w = 48 * Math.sqrt(1 - ((y - 70) / 32) ** 2); return `M${(60 - w).toFixed(1)} ${y} A48 32 0 1 0 ${(60 + w).toFixed(1)} ${y} Z`; };
+const INK = 'stroke="#17363A" stroke-width="3" stroke-linejoin="round"';
+const OUTFIT_SVG = {
+  none: {},
+  sundress: {front: `<path d="M34 58 L40 80 M86 58 L80 80" stroke="#7FC8F8" stroke-width="5" stroke-linecap="round"/><path d="M13 78 Q10 96 6 106 Q60 122 114 106 Q110 96 107 78 Q60 90 13 78 Z" fill="#7FC8F8" ${INK}/><path d="M6 106 Q18 112 26 108 Q36 116 46 110 Q56 118 66 110 Q76 116 86 109 Q96 114 114 106" fill="none" stroke="#fff" stroke-width="3"/>${[[26,90],[44,96],[62,100],[80,96],[98,90],[36,106],[70,108],[92,104]].map(([x,y]) => `<circle cx="${x}" cy="${y}" r="3.2" fill="#fff"/>`).join('')}<circle cx="37" cy="62" r="4.5" fill="#FF8FB1" stroke="#17363A" stroke-width="1.5"/>`},
+  swimsuit: {front: `<path d="M36 58 L42 78 M84 58 L78 78" stroke="#FF6B6B" stroke-width="5" stroke-linecap="round"/><path d="${torso(76)}" fill="#FF6B6B" ${INK}/><path d="M15 86 Q60 100 105 86 M19 95 Q60 107 101 95" stroke="#fff" stroke-width="4" fill="none"/>`},
+  ski: {front: `<path d="${torso(72)}" fill="#3A86FF" ${INK}/><path d="M16 84 Q60 96 104 84 M20 94 Q60 104 100 94" stroke="#2B6BD6" stroke-width="3" fill="none"/><path d="M60 80 V101" stroke="#FFC93C" stroke-width="3"/><path d="M13 73 Q60 87 107 73 L106 81 Q60 95 14 81 Z" fill="#E5484D" ${INK}/><path d="M92 80 L98 96 L90 96 Z" fill="#E5484D" ${INK}/>`},
+  floatie: {front: `<path d="${torso(80)}" fill="#6CCBEF" ${INK}/><ellipse cx="60" cy="90" rx="58" ry="14" fill="#FF8FB1" ${INK}/><ellipse cx="60" cy="88" rx="40" ry="7" fill="#4FAF3A"/><path d="M14 84 L22 96 M50 76 L50 104 M88 78 L96 98" stroke="#fff" stroke-width="7"/><ellipse cx="60" cy="90" rx="58" ry="14" fill="none" ${INK}/>`},
+  tutu: {front: `<path d="${torso(76)}" fill="#FF8FC4" ${INK}/><ellipse cx="60" cy="92" rx="58" ry="12" fill="#FFC2DD" ${INK}/>${[10,24,38,52,66,80,94,108].map((x) => `<circle cx="${x}" cy="${98 + (x % 28 ? 2 : 0)}" r="7" fill="#FFC2DD"/>`).join('')}<path d="M52 82 l3 5 6 1 -4 4 1 6 -6 -3 -6 3 1 -6 -4 -4 6 -1z" fill="#FFC93C"/>`},
+  raincoat: {front: `<path d="${torso(72)}" fill="#FFD23F" ${INK}/><path d="M30 73 L46 84 L60 76 L74 84 L90 73" fill="#FFE68A" ${INK}/><path d="M60 78 V101" stroke="#17363A" stroke-width="2.5"/>${[84,92,99].map((y) => `<circle cx="66" cy="${y}" r="2.6" fill="#17363A"/>`).join('')}<rect x="24" y="88" width="16" height="10" rx="3" fill="#FFE68A" ${INK}/>`},
+  pajamas: {front: `<path d="${torso(74)}" fill="#9FC9FF" ${INK}/><path d="M34 80 a6 6 0 1 0 6 8 a5 5 0 1 1 -6 -8 z" fill="#FFE27A"/>${[[58,86],[80,82],[92,94],[48,98],[70,100],[24,92]].map(([x,y]) => `<circle cx="${x}" cy="${y}" r="2.4" fill="#fff"/>`).join('')}<path d="M40 76 Q60 84 80 76" stroke="#fff" stroke-width="3" fill="none"/>`},
+  cape: {back: `<path d="M24 50 Q-6 90 0 114 Q60 124 120 114 Q126 90 96 50 Z" fill="#E63946" ${INK}/><path d="M8 110 Q60 120 112 110" stroke="#B8232F" stroke-width="3" fill="none"/>`, front: `<path d="M24 72 Q60 84 96 72" stroke="#E63946" stroke-width="5" fill="none" stroke-linecap="round"/><circle cx="60" cy="88" r="11" fill="#FFC93C" ${INK}/><path d="M62 80 L55 89 L61 89 L57 97 L66 86 L60 86 Z" fill="#E63946"/>`},
+  tux: {front: `<path d="${torso(74)}" fill="#fff" ${INK}/><path d="M14 80 Q20 100 52 102 L48 80 Q30 78 14 80 Z" fill="#2B2B3A" ${INK}/><path d="M106 80 Q100 100 68 102 L72 80 Q90 78 106 80 Z" fill="#2B2B3A" ${INK}/><path d="M60 80 L48 74 L48 86 Z M60 80 L72 74 L72 86 Z" fill="#E5484D" ${INK}/><circle cx="60" cy="92" r="2.4" fill="#17363A"/><circle cx="60" cy="99" r="2.4" fill="#17363A"/>`},
+  sweater: {front: `<path d="${torso(72)}" fill="#E5484D" ${INK}/><path d="M18 96 Q60 108 102 96" stroke="#B8323A" stroke-width="5" fill="none"/><path d="M14 76 Q60 90 106 76" stroke="#B8323A" stroke-width="5" fill="none"/><path d="M60 98 C50 90 48 82 54 80 C58 79 60 83 60 84 C60 83 62 79 66 80 C72 82 70 90 60 98 Z" fill="#fff"/>`},
+  hula: {front: `<path d="${torso(82)}" fill="#8BD46A" ${INK}/>${Array.from({length: 17}, (_, i) => { const x = 12 + i * 6; return `<path d="M${x} 86 L${x + (i % 2 ? 2 : -2)} 110" stroke="${i % 2 ? '#4FAF3A' : '#3E9A2E'}" stroke-width="5" stroke-linecap="round"/>`; }).join('')}${[20,34,48,62,76,90,100].map((x, i) => `<circle cx="${x}" cy="${76 + Math.abs(i - 3) * -1.5 + 4}" r="6" fill="${['#FF8FB1','#FFD23F','#fff'][i % 3]}" stroke="#17363A" stroke-width="2"/>`).join('')}`},
+};
+function nug(hat = P.hat, attrs = '', outfit = P.outfit){
+  const o = OUTFIT_SVG[outfit] || {};
+  return `<svg viewBox="${hat === 'none' && attrs.includes('data-tight') ? '0 12 120 110' : '0 -44 120 166'}" ${attrs} aria-hidden="true">
     <ellipse cx="60" cy="104" rx="42" ry="6" fill="rgba(23,54,58,.16)"/>
+    ${o.back || ''}
     <ellipse cx="28" cy="98" rx="16" ry="7" fill="#3E9A2E" stroke="#17363A" stroke-width="3"/>
     <ellipse cx="92" cy="98" rx="16" ry="7" fill="#3E9A2E" stroke="#17363A" stroke-width="3"/>
     <circle cx="36" cy="36" r="17" fill="#4FAF3A" stroke="#17363A" stroke-width="3"/>
     <circle cx="84" cy="36" r="17" fill="#4FAF3A" stroke="#17363A" stroke-width="3"/>
     <ellipse cx="60" cy="70" rx="48" ry="32" fill="#4FAF3A" stroke="#17363A" stroke-width="3"/>
     <ellipse cx="60" cy="80" rx="30" ry="18" fill="#BFE58A"/>
+    ${o.front || ''}
     <circle cx="36" cy="35" r="11.5" fill="#fff" stroke="#17363A" stroke-width="2.5"/>
     <circle cx="84" cy="35" r="11.5" fill="#fff" stroke="#17363A" stroke-width="2.5"/>
     <circle cx="38" cy="37" r="6" fill="#17363A"/><circle cx="82" cy="37" r="6" fill="#17363A"/>
@@ -851,7 +923,7 @@ const RACERS = [
   {id:'pip',     name:'Nug'},
   {id:'bunny',   name:'Bun Bun', fur:'#FFFFFF', belly:'#FFE6EE', inner:'#FFB3C7', ears:'long'},
   {id:'kitty',   name:'Miso',    fur:'#FFB36B', belly:'#FFE3C2', inner:'#FF9AA8', ears:'pointy'},
-  {id:'puppy',   name:'Biscuit', fur:'#D9A273', belly:'#F6E2CC', inner:'#8A5A36', ears:'floppy'},
+  {id:'puppy',   name:'Waffles', fur:'#D9A273', belly:'#F6E2CC', inner:'#8A5A36', ears:'floppy'},
   {id:'panda',   name:'Bao',     fur:'#FFFFFF', belly:'#FFFFFF', inner:'#2B2B3A', ears:'round', patches:true},
   {id:'penguin', name:'Waddles', fur:'#3A4B63', belly:'#FFFFFF', inner:'#3A4B63', ears:'none', beak:true},
   {id:'fox',     name:'Maple',   fur:'#FF8A3D', belly:'#FFFFFF', inner:'#FFFFFF', ears:'pointy', snout:true},
@@ -886,7 +958,8 @@ function critter(r){
     ${r.beak ? `<path d="M53 60 L67 60 L60 69 Z" fill="#FFA53D" ${S} ${J}/>` : `<ellipse cx="60" cy="60" rx="4" ry="3" fill="#17363A"/><path d="M54 65 Q57 69 60 65 Q63 69 66 65" stroke="#17363A" stroke-width="2.5" fill="none" stroke-linecap="round"/>`}
   </svg>`;
 }
-function racerArt(id){ const r = RACERS.find(x => x.id === id) || RACERS[0]; return r.id === 'pip' ? nug() : critter(r); }
+// Nug's drawing leaves room above his head for hats; crop it when he isn't wearing one so he fills his tile
+function racerArt(id){ const r = RACERS.find(x => x.id === id) || RACERS[0]; return r.id === 'pip' ? nug(P.hat, 'data-tight') : critter(r); }
 const FISH_COLORS = [['#FF9E6B','#E86F3A'],['#FFD54A','#E0A800'],['#8FD3F4','#4AA3D0'],['#C6A4F5','#8E6BD8'],['#FF8FB1','#E0457B'],['#9BE08A','#4FAF3A']];
 function fish(n, [c, d]){
   return `<svg viewBox="0 0 110 70" aria-hidden="true">
@@ -1022,8 +1095,18 @@ function finish(id, {stars, headline, detail}){
   for (let i = stickerCount(before); i < stickerCount(P.stars); i++) {
     unlocks.push(`<button type="button" class="unlock tap" data-s="${i}"><div class="u-art">${STICKERS[i]}</div><div><b>New sticker: ${STICKER_NAMES[i]}!</b><br>Tap to spin it, hear it, or put it on a page.</div><span class="u-go" aria-hidden="true">▶</span></button>`);
   }
-  HATS.filter(h => h.at > before && h.at <= P.stars).forEach(h => {
-    unlocks.push(`<div class="unlock"><div class="u-art">${nug(h.id)}</div><div><b>New hat: ${h.name}!</b><br>Tap Stickers &amp; hats to put it on Nug.</div></div>`);
+  const newly = list => list.filter(x => x.at > before && x.at <= P.stars);
+  newly(HATS).forEach(h => {
+    unlocks.push(`<button type="button" class="unlock tap" data-hat="${h.id}"><div class="u-art">${nug(h.id)}</div><div><b>New hat: ${h.name}!</b><br>Tap to see it with Nug's hats.</div><span class="u-go" aria-hidden="true">▶</span></button>`);
+  });
+  if (before < OUTFITS_FROM && P.stars >= OUTFITS_FROM) {
+    unlocks.push(`<div class="unlock"><div class="u-art">👗</div><div><b>Dress-up time!</b><br>100 stars! Nug can wear outfits now.</div></div>`);
+  }
+  newly(OUTFITS).forEach(o => {
+    unlocks.push(`<button type="button" class="unlock tap" data-outfit="${o.id}"><div class="u-art">${nug(P.hat, '', o.id)}</div><div><b>New outfit: ${o.name}!</b><br>Tap to dress Nug up.</div><span class="u-go" aria-hidden="true">▶</span></button>`);
+  });
+  newly(BGS).forEach(b => {
+    unlocks.push(`<button type="button" class="unlock tap" data-bgun="${b.id}"><div class="u-art"><span class="swatch u-swatch bg-${b.id}"></span></div><div><b>New sticker page: ${b.name}!</b><br>Tap to decorate a page with it.</div><span class="u-go" aria-hidden="true">▶</span></button>`);
   });
   $('#resUnlock').innerHTML = unlocks.join('');
   show('results');
@@ -1327,7 +1410,7 @@ const GAMES = {
         hud.innerHTML = '';
         stage.innerHTML = `<div class="pick-wrap">
           <h3>Who's racing Duck today?</h3>
-          <div class="racer-grid" id="racerGrid">${RACERS.map(r => `<button type="button" class="racer-opt" data-r="${r.id}" aria-pressed="${r.id === P.racer}">${racerArt(r.id)}<b>${r.name}</b></button>`).join('')}</div>
+          <div class="racer-grid" id="racerGrid">${RACERS.map(r => `<button type="button" class="racer-opt" data-r="${r.id}" aria-pressed="${r.id === P.racer}"><span class="racer-art">${racerArt(r.id)}</span><b>${r.name}</b></button>`).join('')}</div>
           <button type="button" class="btn big" id="goRace">Race!</button>
         </div>`;
         $('#racerGrid').addEventListener('click', e => {
@@ -1577,18 +1660,30 @@ function renderCloset(){
     const open = P.stars >= h.at;
     return `<button type="button" class="hat-btn ${open ? '' : 'locked'}" data-h="${h.id}" aria-pressed="${P.hat === h.id}" ${open ? '' : 'aria-disabled="true"'}>${nug(h.id)}<b>${h.name}</b><small>${open ? (P.hat === h.id ? 'Wearing' : 'Tap to wear') : `Unlocks at ★ ${h.at}`}</small></button>`;
   }).join('');
+  const dressUp = P.stars >= OUTFITS_FROM;
+  $('#outfitNote').textContent = dressUp ? 'Tap an outfit to dress Nug' : `Dress-up unlocks at ★ ${OUTFITS_FROM}: dresses, swimsuits, a ski suit and more!`;
+  $('#outfitGrid').innerHTML = OUTFITS.map(o => {
+    const open = P.stars >= o.at;
+    return `<button type="button" class="hat-btn ${open ? '' : 'locked'}" data-o="${o.id}" aria-pressed="${P.outfit === o.id}" ${open ? '' : 'aria-disabled="true"'}>${nug(P.hat, '', o.id)}<b>${o.name}</b><small>${open ? (P.outfit === o.id ? 'Wearing' : 'Tap to wear') : `Unlocks at ★ ${o.at}`}</small></button>`;
+  }).join('');
   const have = stickerCount(P.stars);
   $('#stickerCount').textContent = `${have} of ${STICKERS.length} collected`;
   $('#stickerGrid').innerHTML = STICKERS.map((s, i) => i < have
     ? `<button type="button" class="sticker" data-s="${i}" aria-label="${STICKER_NAMES[i]} sticker. Tap to look closer." style="transform:rotate(${((i * 37) % 9) - 4}deg)">${s}</button>`
     : `<div class="sticker locked"><span><b>?</b>★ ${(i + 1) * STICKER_STEP}</span></div>`).join('');
 }
-$('#openCloset').addEventListener('click', () => { renderCloset(); show('closet'); });
-$('#closetBack').addEventListener('click', () => { renderHome(); show('home'); });
+let closetReturn = 'home';
+// Open the collection, optionally jumping to one item and making it glow.
+function openCloset(from, focusSel){
+  closetReturn = from || 'home';
+  renderCloset(); show('closet');
+  const el = focusSel && $('#closet').querySelector(focusSel);
+  if (el) requestAnimationFrame(() => { el.scrollIntoView({block: 'center', behavior: reduced ? 'auto' : 'smooth'}); el.classList.add('spot'); });
+}
+$('#openCloset').addEventListener('click', () => openCloset('home'));
+$('#closetBack').addEventListener('click', () => { if (closetReturn === 'home') renderHome(); show(closetReturn); });
 
 /* ---------- sticker pages ---------- */
-const BGS = ['pond', 'sky', 'meadow', 'night', 'sunset', 'paper'];
-const BG_NAMES = {pond:'Pond', sky:'Sky', meadow:'Meadow', night:'Night', sunset:'Sunset', paper:'Paper'};
 const pageEl = $('#page'), pageArea = $('#pageArea'), tray = $('#tray');
 let pageIdx = 0, selIdx = -1, delArmed = 0, act = null, savedTimer = 0;
 const pointers = new Map();
@@ -1630,7 +1725,9 @@ function renderBook(){
   $('#pgPrev').disabled = pageIdx === 0;
   $('#pgNext').disabled = pageIdx >= P.pages.length - 1;
   $('#pgDel').textContent = 'Delete page'; delArmed = 0;
-  $('#bgPicks').innerHTML = BGS.map(b => `<button type="button" class="swatch bg-${b}" data-bg="${b}" aria-label="${BG_NAMES[b]} background" aria-pressed="${pg.bg === b}"></button>`).join('');
+  $('#bgPicks').innerHTML = BGS.map(b => P.stars >= b.at
+    ? `<button type="button" class="swatch bg-${b.id}" data-bg="${b.id}" aria-label="${b.name} background" title="${b.name}" aria-pressed="${pg.bg === b.id}"></button>`
+    : `<button type="button" class="swatch locked bg-${b.id}" data-lock="${b.at}" aria-label="${b.name} background, unlocks at ${b.at} stars" title="${b.name}: unlocks at ★ ${b.at}">🔒</button>`).join('');
   const have = stickerCount(P.stars);
   tray.innerHTML = have
     ? STICKERS.slice(0, have).map((st, i) => `<button type="button" class="tray-st" data-s="${i}" aria-label="Add ${STICKER_NAMES[i]}">${st}</button>`).join('')
@@ -1764,7 +1861,8 @@ $('#pgNext').addEventListener('click', () => { pageIdx++; selIdx = -1; renderBoo
 $('#pgNew').addEventListener('click', () => {
   if (P.pages.length >= 30) { sfx.bad(); return; }
   curPage();
-  P.pages.push({bg: BGS[P.pages.length % BGS.length], items: []});
+  const open = BGS.filter(b => P.stars >= b.at);   // new pages cycle through the unlocked backgrounds
+  P.pages.push({bg: open[P.pages.length % open.length].id, items: []});
   pageIdx = P.pages.length - 1; selIdx = -1; persist(); renderBook(); sfx.good();
 });
 $('#pgDel').addEventListener('click', e => {
@@ -1775,6 +1873,14 @@ $('#pgDel').addEventListener('click', e => {
   delArmed = Date.now(); e.target.textContent = 'Tap again to delete';
 });
 $('#bgPicks').addEventListener('click', e => {
+  const lock = e.target.closest('[data-lock]');
+  if (lock) {
+    sfx.bad();
+    const pill = $('#savedPill');
+    pill.textContent = `🔒 Unlocks at ★ ${lock.dataset.lock}`; pill.classList.remove('flash');
+    clearTimeout(savedTimer); savedTimer = setTimeout(() => { pill.textContent = 'Saved'; }, 1800);
+    return;
+  }
   const b = e.target.closest('[data-bg]'); if (!b) return;
   curPage().bg = b.dataset.bg; persist(); sfx.tap();
   $('#bgPicks').querySelectorAll('[data-bg]').forEach(x => x.setAttribute('aria-pressed', x === b));
@@ -1864,7 +1970,18 @@ $('#vAdd').addEventListener('click', () => {
   requestAnimationFrame(() => { fitPage(); addItem(i, .5 + rnd(-10, 10) / 100, .5 + rnd(-10, 10) / 100); });
 });
 $('#resUnlock').addEventListener('click', e => {
-  const b = e.target.closest('[data-s]'); if (b) openSticker(+b.dataset.s, b.querySelector('.u-art'));
+  const b = e.target.closest('.unlock.tap'); if (!b) return;
+  sfx.tap();
+  if (b.dataset.s != null) openSticker(+b.dataset.s, b.querySelector('.u-art'));
+  else if (b.dataset.hat) openCloset('results', `#hatGrid [data-h="${b.dataset.hat}"]`);
+  else if (b.dataset.outfit) openCloset('results', `#outfitGrid [data-o="${b.dataset.outfit}"]`);
+  else if (b.dataset.bgun) {
+    // start a fresh page with the new background
+    openBook();
+    if (curPage().items.length) { P.pages.push({bg: b.dataset.bgun, items: []}); pageIdx = P.pages.length - 1; }
+    else curPage().bg = b.dataset.bgun;
+    persist(); renderBook();
+  }
 });
 viewer.addEventListener('click', e => { if (e.target === viewer) closeSticker(); });
 document.addEventListener('keydown', e => {
@@ -1879,6 +1996,12 @@ $('#stickerGrid').addEventListener('click', e => {
   const b = e.target.closest('[data-s]'); if (b) openSticker(+b.dataset.s, b);
 });
 
+$('#outfitGrid').addEventListener('click', e => {
+  const b = e.target.closest('[data-o]'); if (!b) return;
+  const o = OUTFITS.find(x => x.id === b.dataset.o);
+  if (P.stars < o.at) { sfx.bad(); return; }
+  P.outfit = o.id; save(); sfx.good(); renderCloset();
+});
 $('#hatGrid').addEventListener('click', e => {
   const b = e.target.closest('[data-h]'); if (!b) return;
   const h = HATS.find(x => x.id === b.dataset.h);
