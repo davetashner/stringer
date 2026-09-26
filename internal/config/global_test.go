@@ -22,13 +22,13 @@ func TestGlobalConfigDir_Default(t *testing.T) {
 func TestGlobalConfigDir_XDG(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
 	dir := GlobalConfigDir()
-	assert.Equal(t, "/custom/config/stringer", dir)
+	assert.Equal(t, filepath.FromSlash("/custom/config/stringer"), dir)
 }
 
 func TestGlobalConfigPath(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
 	path := GlobalConfigPath()
-	assert.Equal(t, "/custom/config/stringer/config.yaml", path)
+	assert.Equal(t, filepath.FromSlash("/custom/config/stringer/config.yaml"), path)
 }
 
 func TestLoadGlobal_Missing(t *testing.T) {

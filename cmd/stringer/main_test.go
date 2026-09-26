@@ -6,6 +6,8 @@ package main
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -18,7 +20,11 @@ func TestVersionDefault(t *testing.T) {
 
 func TestVersionSubcommand(t *testing.T) {
 	// Build the binary with a known version.
-	binary := t.TempDir() + "/stringer-test"
+	name := "stringer-test"
+	if runtime.GOOS == "windows" {
+		name += ".exe" // exec needs the extension to find the binary
+	}
+	binary := filepath.Join(t.TempDir(), name)
 	build := exec.Command("go", "build", //nolint:gosec // test helper with fixed args
 		"-ldflags", `-X main.Version=v0.1.0-test`,
 		"-o", binary,

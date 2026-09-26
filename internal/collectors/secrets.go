@@ -6,6 +6,7 @@ package collectors
 import (
 	"fmt"
 	"math"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -469,7 +470,7 @@ func newSecretScanContext(relPath string) *secretScanContext {
 	if isTestFile(relPath) || base == "conftest.py" {
 		sc.testFile = true
 	}
-	for _, part := range strings.Split(filepath.Dir(slash), "/") {
+	for _, part := range strings.Split(path.Dir(slash), "/") {
 		lp := strings.ToLower(part)
 		// docs_src, docs-site and similar are documentation source trees.
 		if secretDocDirs[lp] || strings.HasPrefix(lp, "docs_") || strings.HasPrefix(lp, "docs-") {

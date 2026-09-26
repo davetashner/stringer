@@ -73,6 +73,16 @@ func TestValidateSignal_AbsoluteFilePath(t *testing.T) {
 	assertHasFieldError(t, errs, "FilePath")
 }
 
+func TestValidateSignal_RootedFilePath(t *testing.T) {
+	// Rooted paths without a volume are not filepath.IsAbs on Windows but
+	// still point outside the repository, so they are rejected on every OS.
+	for _, p := range []string{"/etc/passwd", `\Windows\win.ini`} {
+		s := validSignal()
+		s.FilePath = p
+		assertHasFieldError(t, ValidateSignal(s), "FilePath")
+	}
+}
+
 func TestValidateSignal_RelativeFilePathOK(t *testing.T) {
 	s := validSignal()
 	s.FilePath = "src/main.go"

@@ -107,7 +107,10 @@ func TestPipeline_ProgressReportsCompletionAsItHappens(t *testing.T) {
 	third := waitFor(t, done, "third completion")
 	assert.Equal(t, "slow", third.Collector)
 	assert.Len(t, third.Signals, 2)
-	assert.Greater(t, third.Duration, time.Duration(0))
+	// The monotonic clock on Windows is coarse enough that a collector
+	// released immediately can measure 0s, so only require a non-negative
+	// duration here.
+	assert.GreaterOrEqual(t, third.Duration, time.Duration(0))
 
 	waitFor(t, runDone, "Run to return")
 	require.NoError(t, runErr)

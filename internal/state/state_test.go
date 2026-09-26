@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -572,6 +573,9 @@ func TestBuild_EmptyGitRepo(t *testing.T) {
 }
 
 func TestLoad_UnreadableFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits: chmod cannot make a file or directory unreadable/unwritable on Windows")
+	}
 	dir := t.TempDir()
 	stateDir := filepath.Join(dir, ".stringer")
 	require.NoError(t, os.MkdirAll(stateDir, 0o750))

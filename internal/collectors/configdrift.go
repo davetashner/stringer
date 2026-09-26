@@ -129,7 +129,7 @@ func (c *ConfigDriftCollector) Collect(ctx context.Context, repoPath string, opt
 			return err
 		}
 
-		relPath, relErr := filepath.Rel(repoPath, path)
+		relPath, relErr := relSlash(repoPath, path)
 		if relErr != nil {
 			return nil
 		}
@@ -329,7 +329,7 @@ func findDeadConfigKeys(ctx context.Context, repoPath string, templateKeys map[s
 			return ctx.Err()
 		}
 
-		relPath, relErr := filepath.Rel(repoPath, path)
+		relPath, relErr := relSlash(repoPath, path)
 		if relErr != nil {
 			return nil
 		}

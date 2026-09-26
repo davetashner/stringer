@@ -108,8 +108,10 @@ func buildDirectoryTree(repoPath string, maxDepth int) []DirEntry {
 		if rel == "." {
 			return nil
 		}
+		// Generated docs show slash-separated paths on every OS.
+		rel = filepath.ToSlash(rel)
 
-		depth := len(strings.Split(rel, string(filepath.Separator)))
+		depth := len(strings.Split(rel, "/"))
 		if depth > maxDepth {
 			if d.IsDir() {
 				return filepath.SkipDir

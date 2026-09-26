@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -178,7 +179,7 @@ func (c *TodoCollector) Collect(ctx context.Context, repoPath string, opts signa
 			return err
 		}
 
-		relPath, relErr := filepath.Rel(repoPath, path)
+		relPath, relErr := relSlash(repoPath, path)
 		if relErr != nil {
 			return nil
 		}
@@ -413,6 +414,7 @@ func computeConfidence(sig signal.RawSignal) float64 {
 
 // shouldExclude returns true if relPath matches any of the exclude patterns.
 func shouldExclude(relPath string, patterns []string) bool {
+	relPath = filepath.ToSlash(relPath)
 	for _, pattern := range patterns {
 		if matchesExcludePattern(relPath, pattern) {
 			return true
@@ -432,8 +434,12 @@ func shouldExclude(relPath string, patterns []string) bool {
 //	/api/**          anchored: the api directory at the root only, never
 //	                 an interior internal/api (used for nested workspaces)
 //	/docs/*.md       anchored: a glob matched against the whole path only
+//
+// Patterns are slash-separated, so relPath is matched in slash form on every
+// OS (callers may pass filepath.Rel output, which uses `\` on Windows).
 func matchesExcludePattern(relPath, pattern string) bool {
-	sep := string(filepath.Separator)
+	relPath = filepath.ToSlash(relPath)
+	const sep = "/"
 	if anchored, ok := strings.CutPrefix(pattern, "/"); ok {
 		return matchesAnchoredExclude(relPath, anchored)
 	}
@@ -445,21 +451,21 @@ func matchesExcludePattern(relPath, pattern string) bool {
 		if strings.Contains(rest, "/") && !strings.HasSuffix(rest, "/**") {
 			segs := strings.Split(relPath, sep)
 			for i := 1; i < len(segs); i++ {
-				if matched, err := filepath.Match(rest, strings.Join(segs[i:], sep)); err == nil && matched {
+				if matched, err := path.Match(rest, strings.Join(segs[i:], sep)); err == nil && matched {
 					return true
 				}
 			}
 		}
 		return false
 	}
-	matched, err := filepath.Match(pattern, relPath)
+	matched, err := path.Match(pattern, relPath)
 	if err == nil && matched {
 		return true
 	}
 	// Match the pattern against just the filename for non-path patterns
 	// like "*.min.js" that should apply to files in any directory.
 	if !strings.Contains(pattern, "/") && !strings.Contains(pattern, "**") {
-		matched, err = filepath.Match(pattern, filepath.Base(relPath))
+		matched, err = path.Match(pattern, path.Base(relPath))
 		if err == nil && matched {
 			return true
 		}
@@ -486,23 +492,23 @@ func matchesExcludePattern(relPath, pattern string) bool {
 // against the whole path, never against interior segments or the basename.
 func matchesAnchoredExclude(relPath, pattern string) bool {
 	if dir, ok := strings.CutSuffix(pattern, "/**"); ok {
-		dir = filepath.FromSlash(dir)
-		return relPath == dir || strings.HasPrefix(relPath, dir+string(filepath.Separator))
+		return relPath == dir || strings.HasPrefix(relPath, dir+"/")
 	}
-	matched, err := filepath.Match(filepath.FromSlash(pattern), relPath)
+	matched, err := path.Match(pattern, relPath)
 	return err == nil && matched
 }
 
 // matchesAny returns true if relPath matches any of the given glob patterns.
 func matchesAny(relPath string, patterns []string) bool {
+	relPath = filepath.ToSlash(relPath)
 	for _, pattern := range patterns {
-		matched, err := filepath.Match(pattern, relPath)
+		matched, err := path.Match(pattern, relPath)
 		if err == nil && matched {
 			return true
 		}
 		// Match against just the filename for non-path patterns.
 		if !strings.Contains(pattern, "/") && !strings.Contains(pattern, "**") {
-			matched, err = filepath.Match(pattern, filepath.Base(relPath))
+			matched, err = path.Match(pattern, path.Base(relPath))
 			if err == nil && matched {
 				return true
 			}
@@ -517,7 +523,7 @@ func matchesAny(relPath string, patterns []string) bool {
 					return true
 				}
 				rest := strings.TrimPrefix(relPath, prefix)
-				matched, err = filepath.Match(suffix, filepath.Base(rest))
+				matched, err = path.Match(suffix, path.Base(rest))
 				if err == nil && matched {
 					return true
 				}

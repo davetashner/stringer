@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -87,6 +88,9 @@ func TestInitCmd_SecurityChainedSymlinks(t *testing.T) {
 }
 
 func TestInitCmd_SecurityOutputFilesAre0644(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits: Windows reports every writable file as 0666")
+	}
 	resetInitFlags()
 	dir := t.TempDir()
 

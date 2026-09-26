@@ -132,8 +132,9 @@ func isUnderMavenTestRoot(relPath string) bool {
 // root directories (e.g., "tests/", "test/"). Files in test roots should not
 // be flagged as missing tests.
 func isUnderTestRoot(relPath string, testRoots []string) bool {
+	relPath = filepath.ToSlash(relPath)
 	for _, root := range testRoots {
-		if strings.HasPrefix(relPath, root+string(filepath.Separator)) {
+		if strings.HasPrefix(relPath, root+"/") {
 			return true
 		}
 	}

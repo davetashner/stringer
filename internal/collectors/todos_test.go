@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -1082,6 +1083,9 @@ func TestCollect_GeneratedContentSkipped(t *testing.T) {
 // --- Collect edge case: unreadable source file ---
 
 func TestCollect_UnreadableFileSkipped(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits: chmod cannot make a file or directory unreadable/unwritable on Windows")
+	}
 	repoPath := initTestGitRepo(t, map[string]string{
 		"good.go": "// TODO: readable\n",
 	})

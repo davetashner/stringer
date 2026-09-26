@@ -330,7 +330,7 @@ func (c *ComplexityCollector) Collect(ctx context.Context, repoPath string, opts
 			return err
 		}
 
-		relPath, relErr := filepath.Rel(repoPath, path)
+		relPath, relErr := relSlash(repoPath, path)
 		if relErr != nil {
 			return nil
 		}

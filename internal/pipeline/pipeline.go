@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -312,6 +313,7 @@ func (p *Pipeline) runCollector(ctx context.Context, c collector.Collector) sign
 	start := time.Now()
 
 	signals, err := c.Collect(ctx, p.config.RepoPath, opts)
+	normalizeFilePaths(signals)
 
 	result := signal.CollectorResult{
 		Collector: c.Name(),
@@ -352,4 +354,14 @@ func resolveCollectors(names []string) ([]collector.Collector, error) {
 		collectors[i] = c
 	}
 	return collectors, nil
+}
+
+// normalizeFilePaths rewrites each signal's FilePath to use forward slashes.
+// Collectors build paths with filepath.Rel/Join, which use the OS separator;
+// output formats, dedup hashes and delta state all expect repo-relative,
+// slash-separated paths regardless of the OS stringer runs on.
+func normalizeFilePaths(signals []signal.RawSignal) {
+	for i := range signals {
+		signals[i].FilePath = filepath.ToSlash(signals[i].FilePath)
+	}
 }
