@@ -47,7 +47,7 @@ func ValidateSignal(s signal.RawSignal) []ValidationError {
 		})
 	}
 
-	if filepath.IsAbs(s.FilePath) {
+	if isAbsOrRooted(s.FilePath) {
 		errs = append(errs, ValidationError{
 			Field:   "FilePath",
 			Message: "must be a relative path, got absolute path",
@@ -72,4 +72,12 @@ func ValidateSignal(s signal.RawSignal) []ValidationError {
 	}
 
 	return errs
+}
+
+// isAbsOrRooted reports whether p is absolute on the current OS or rooted
+// ("/x" or `\x`). On Windows filepath.IsAbs("/etc/passwd") is false because
+// the path has no volume, yet it still escapes the repository.
+func isAbsOrRooted(p string) bool {
+	return filepath.IsAbs(p) || filepath.VolumeName(p) != "" ||
+		strings.HasPrefix(p, "/") || strings.HasPrefix(p, `\`)
 }

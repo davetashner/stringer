@@ -34,6 +34,58 @@ jobs:
       - run: go build ./...
       - run: go test -race -count=1 ./...
 
+  # Release binaries ship for darwin and windows too, and the collectors lean
+  # on filepath handling, line endings and git subprocesses. This is a separate
+  # job (not a matrix leg of `test`) so the required "Test (Go 1.26)" check name
+  # stays stable; it is not a required check until it has been green for a while.
+  test-cross-platform:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Before checkout so the working tree keeps the LF endings fixtures and
+      # golden files are committed with (Git for Windows defaults to
+      # core.autocrlf=true). CRLF input is covered by dedicated unit tests
+      # instead. Tests that create commits need an identity.
+      - name: Configure git
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          git config --global user.name "stringer-ci"
+          git config --global user.email "stringer-ci@users.noreply.github.com"
+          git config --global init.defaultBranch main
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history so the end-to-end scan's git collectors have data.
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.6"
+      - name: Select race detector
+        # -race needs cgo, and on Windows cgo needs a gcc on PATH. Use it
+        # wherever the toolchain can build with it, and say so when not.
+        run: |
+          if [ "$(go env CGO_ENABLED)" = "1" ] && command -v "$(go env CC)" >/dev/null 2>&1; then
+            echo "race detector: enabled (CC=$(go env CC): $("$(go env CC)" --version | head -1))"
+            echo "RACE_FLAG=-race" >> "$GITHUB_ENV"
+          else
+            echo "::notice::race detector disabled on ${{ matrix.os }}: no cgo C compiler"
+            echo "RACE_FLAG=" >> "$GITHUB_ENV"
+          fi
+      - run: go build ./...
+      - run: go test $RACE_FLAG -count=1 ./...
+      - name: Build stringer
+        run: go build -o "stringer$(go env GOEXE)" ./cmd/stringer
+      - name: End-to-end scan and report
+        run: scripts/smoke-e2e.sh "./stringer$(go env GOEXE)" .
+
   vet:
     name: Vet
     runs-on: ubuntu-latest

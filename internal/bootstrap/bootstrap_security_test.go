@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -20,6 +21,9 @@ import (
 // Security tests for the bootstrap/init subsystem (DX1.7).
 
 func TestGenerateConfig_SecurityFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits: Windows reports every writable file as 0666")
+	}
 	dir := t.TempDir()
 
 	_, err := GenerateConfig(dir, true, false, nil)
@@ -34,6 +38,9 @@ func TestGenerateConfig_SecurityFilePermissions(t *testing.T) {
 }
 
 func TestAppendAgentSnippet_SecurityFilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits: Windows reports every writable file as 0666")
+	}
 	dir := t.TempDir()
 
 	_, err := AppendAgentSnippet(dir)

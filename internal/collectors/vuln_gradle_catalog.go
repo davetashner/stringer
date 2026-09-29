@@ -6,6 +6,7 @@ package collectors
 import (
 	"io/fs"
 	"log/slog"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -360,7 +361,7 @@ func findGradleBuildFiles(repoPath string) []string {
 	var files []string
 	find := func(dir string) {
 		for _, name := range []string{"build.gradle", "build.gradle.kts"} {
-			rel := filepath.Join(dir, name)
+			rel := path.Join(filepath.ToSlash(dir), name) // repo-relative, slash-separated
 			if _, err := FS.Stat(filepath.Join(repoPath, rel)); err == nil {
 				files = append(files, rel)
 				return

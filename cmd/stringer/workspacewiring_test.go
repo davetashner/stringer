@@ -108,10 +108,10 @@ func TestStampWorkspace_Named(t *testing.T) {
 	stampWorkspace(ws, signals)
 
 	assert.Equal(t, "svc-a", signals[0].Workspace)
-	assert.Equal(t, filepath.Join("svc-a", "main.go"), signals[0].FilePath)
+	assert.Equal(t, "svc-a/main.go", signals[0].FilePath)
 
 	assert.Equal(t, "svc-a", signals[1].Workspace)
-	assert.Equal(t, filepath.Join("svc-a", "lib/util.go"), signals[1].FilePath)
+	assert.Equal(t, "svc-a/lib/util.go", signals[1].FilePath)
 }
 
 func TestStampWorkspace_NestedRel(t *testing.T) {
@@ -122,7 +122,9 @@ func TestStampWorkspace_NestedRel(t *testing.T) {
 	stampWorkspace(ws, signals)
 
 	assert.Equal(t, "api", signals[0].Workspace)
-	assert.Equal(t, filepath.Join("packages", "api", "handler.go"), signals[0].FilePath)
+	// Output paths are slash-separated on every OS, even though ws.Rel uses
+	// the OS separator.
+	assert.Equal(t, "packages/api/handler.go", signals[0].FilePath)
 }
 
 func TestRunScan_NoWorkspacesFlag(t *testing.T) {

@@ -5,6 +5,7 @@ package main
 
 import (
 	"log/slog"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -163,16 +164,19 @@ func filterWorkspaceEntries(entries []workspaceEntry, filter string) []workspace
 }
 
 // stampWorkspace annotates signals with the workspace name and adjusts
-// FilePath to be relative to the monorepo root. When ws.Name is empty
-// (non-monorepo), signals are returned unchanged.
+// FilePath to be relative to the monorepo root. FilePath stays
+// slash-separated on every OS (ws.Rel comes from filepath.Rel and uses the
+// OS separator). When ws.Name is empty (non-monorepo), signals are returned
+// unchanged.
 func stampWorkspace(ws workspaceEntry, signals []signal.RawSignal) {
 	if ws.Name == "" {
 		return
 	}
+	rel := filepath.ToSlash(ws.Rel)
 	for i := range signals {
 		signals[i].Workspace = ws.Name
-		if ws.Rel != "." {
-			signals[i].FilePath = filepath.Join(ws.Rel, signals[i].FilePath)
+		if rel != "." {
+			signals[i].FilePath = path.Join(rel, filepath.ToSlash(signals[i].FilePath))
 		}
 	}
 }

@@ -6,6 +6,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sort"
 	"sync/atomic"
 	"testing"
@@ -1168,4 +1169,27 @@ func TestPipeline_MetricsEmptyWhenNoProviders(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Empty(t, result.Metrics)
+}
+
+func TestPipeline_FilePathsAreSlashSeparated(t *testing.T) {
+	// Collectors build paths with filepath.Join/Rel, which use `\` on
+	// Windows; the pipeline must hand formatters slash-separated paths.
+	stub := &stubCollector{
+		name: "test",
+		signals: []signal.RawSignal{
+			{Source: "test", Title: "Nested", FilePath: filepath.Join("internal", "pkg", "file.go"), Confidence: 0.5},
+			{Source: "test", Title: "Repo-wide", Confidence: 0.5},
+		},
+	}
+
+	p := NewWithCollectors(signal.ScanConfig{RepoPath: t.TempDir()}, []collector.Collector{stub})
+	result, err := p.Run(context.Background())
+	require.NoError(t, err)
+	require.Len(t, result.Signals, 2)
+
+	paths := []string{result.Signals[0].FilePath, result.Signals[1].FilePath}
+	assert.ElementsMatch(t, []string{"internal/pkg/file.go", ""}, paths)
+	// Per-collector results feed the report sections and must match.
+	require.Len(t, result.Results, 1)
+	assert.Equal(t, "internal/pkg/file.go", result.Results[0].Signals[0].FilePath)
 }

@@ -6,6 +6,7 @@ package beads
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -104,6 +105,9 @@ func TestLoadBeads_BlankLinesSkipped(t *testing.T) {
 }
 
 func TestLoadBeads_PermissionError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits: chmod cannot make a file or directory unreadable/unwritable on Windows")
+	}
 	dir := t.TempDir()
 	beadsDir := filepath.Join(dir, BeadsDir)
 	require.NoError(t, os.MkdirAll(beadsDir, 0o750))

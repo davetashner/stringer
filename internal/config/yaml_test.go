@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -64,6 +65,9 @@ func TestLoad_EmptyFile(t *testing.T) {
 }
 
 func TestLoad_PermissionError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits: chmod cannot make a file or directory unreadable/unwritable on Windows")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, FileName)
 	require.NoError(t, os.WriteFile(path, []byte("output_format: json"), 0o600))
