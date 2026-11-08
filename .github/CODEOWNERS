@@ -7,9 +7,8 @@
 # Dependabot and GitHub config
 /.github/dependabot.yml  @davetashner
 
-# Dependency manifests
-/go.mod  @davetashner
-/go.sum  @davetashner
+# go.mod, go.sum and .go-version are deliberately not listed: vulnerability
+# fixes to them merge automatically once required checks pass (DR-028).
 
 # Release configuration
 /.goreleaser.yml  @davetashner
