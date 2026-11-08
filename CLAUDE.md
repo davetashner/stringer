@@ -38,8 +38,8 @@ golangci-lint run ./...
 ```
 
 ## Current Focus
-1. **v1.11.0 released (2026-09-19)** — benchmark-driven accuracy and performance release. All benchmark follow-ups (epics `stringer-nxx`, `stringer-jfh`, plus `ds4`, `wmg`) are closed through PR #461; the run of record is in `docs/research/benchmark-2026-09.md` and the README table.
-2. **CI hardening (in progress)**: nightly benchmark regression against pinned repos (`stringer-umb`), self-scan gate on new high-confidence findings (`stringer-xb2`), Windows/macOS test legs (`stringer-ouz`). Coverage artifact upload (`stringer-td6`) follows once the ci.yml change lands.
+1. **v1.11.2 (security patch)** moves builds to Go 1.26.10 and `x/net` 0.62. The last feature release is v1.11.0 (2026-09-19); its benchmark run of record is in `docs/research/benchmark-2026-09.md` and the README table.
+2. **CI hardening**: nightly benchmark regression (`stringer-umb`), the self-scan gate (`stringer-xb2`) and Windows/macOS test legs (`stringer-ouz`) are done. Next is the coverage artifact upload (`stringer-td6`). `Vulncheck` still runs only on pushes and PRs, so new advisories stay hidden until the next one. When one lands, bump the exact Go patch pinned in `ci.yml` and `release.yml`.
 3. **Decisions awaiting the owner**: DR-019 (dephealth refactor; partly addressed by the registry worker pool in #451), DR-020 (AST interface-drift check; the current awk block comparison already covers most of it, see `stringer-td7`), DR-022 (opportunity axis; `stringer-w1d` not started).
 4. **Quick wins**: P3/P4 unblocked tasks — run `bd ready`
 
