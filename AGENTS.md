@@ -495,6 +495,8 @@ A separate [OpenSSF Scorecard](https://securityscorecards.dev/viewer/?uri=github
 
 The `Benchmark Regression` workflow (`.github/workflows/bench-regression.yml`, not a required check) scans gin, flask and express at pinned commits nightly and on PRs touching collectors, the pipeline, `cmd/stringer` or `eval/`, and fails when per-collector signal counts drift from `eval/baseline/*.json` or a collector exceeds its duration ceiling. Intentional count changes update the baseline in the same PR; see `eval/README.md`.
 
+The `Scheduled Vulncheck` workflow (`.github/workflows/vulncheck-scheduled.yml`, not a required check) runs the `Vulncheck` job daily so new advisories surface on a quiet main. A failure opens or updates the "Vulnerabilities reported on main" issue, and the next pass closes it. It pins the same Go patch as `ci.yml` and `release.yml`; bump all three together. Auto-merging fixes is proposed in [DR-028](docs/decisions/028-auto-merge-vulnerability-fixes.md).
+
 **No exceptions.** Branch protection enforces these checks for all users including admins. If CI is broken, fix the checks — do not bypass them.
 
 ## Releasing
