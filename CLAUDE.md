@@ -39,8 +39,8 @@ golangci-lint run ./...
 
 ## Current Focus
 1. **v1.11.2 (security patch)** moves builds to Go 1.26.10 and `x/net` 0.62. The last feature release is v1.11.0 (2026-09-19); its benchmark run of record is in `docs/research/benchmark-2026-09.md` and the README table.
-2. **CI hardening**: nightly benchmark regression (`stringer-umb`), the self-scan gate (`stringer-xb2`) and Windows/macOS test legs (`stringer-ouz`) are done. Next is the coverage artifact upload (`stringer-td6`). `Vulncheck` still runs only on pushes and PRs, so new advisories stay hidden until the next one. When one lands, bump the exact Go patch pinned in `ci.yml` and `release.yml`.
-3. **Decisions awaiting the owner**: DR-019 (dephealth refactor; partly addressed by the registry worker pool in #451), DR-020 (AST interface-drift check; the current awk block comparison already covers most of it, see `stringer-td7`), DR-022 (opportunity axis; `stringer-w1d` not started).
+2. **CI hardening**: nightly benchmark regression (`stringer-umb`), the self-scan gate (`stringer-xb2`) and Windows/macOS test legs (`stringer-ouz`) are done. Next is the coverage artifact upload (`stringer-td6`). `Scheduled Vulncheck` runs daily and tracks failures in an issue. For a standard library advisory, bump the exact Go patch pinned in `ci.yml`, `release.yml` and `vulncheck-scheduled.yml`.
+3. **Decisions awaiting the owner**: DR-028 (auto-merging vulnerability fixes), DR-019 (dephealth refactor; partly addressed by the registry worker pool in #451), DR-020 (AST interface-drift check; the current awk block comparison already covers most of it, see `stringer-td7`), DR-022 (opportunity axis; `stringer-w1d` not started).
 4. **Quick wins**: P3/P4 unblocked tasks — run `bd ready`
 
 ## Post-Release Checklist

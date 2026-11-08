@@ -1,0 +1,61 @@
+name: Scheduled Vulncheck
+
+# The Vulncheck job in ci.yml only runs on pushes and PRs, so a new advisory
+# stays hidden on a quiet main. Run the same check daily and track failures in
+# an issue, closing it again once the check passes. See DR-028.
+
+on:
+  schedule:
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vulncheck:
+    name: Vulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # Keep in step with the patch pinned in ci.yml and release.yml, so this
+          # reports on the toolchain that builds and ships stringer.
+          go-version: "1.26.10"
+      - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
+        with:
+          go-version-input: "1.26.10"
+          repo-checkout: false
+
+  report:
+    name: Update tracking issue
+    needs: vulncheck
+    if: always() && (needs.vulncheck.result == 'success' || needs.vulncheck.result == 'failure')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open, update or close the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.vulncheck.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Vulnerabilities reported on main"
+          num=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$title\"" \
+            --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -1)
+          if [ "$RESULT" = "success" ]; then
+            if [ -n "$num" ]; then
+              gh issue close "$num" --repo "$GITHUB_REPOSITORY" --comment "Vulncheck passes again on \`$GITHUB_SHA\`: $RUN_URL"
+            fi
+            exit 0
+          fi
+          body="Vulncheck failed on \`$GITHUB_SHA\`: $RUN_URL
+
+          If the fix is in the Go standard library, bump the exact patch pinned in ci.yml, release.yml and vulncheck-scheduled.yml. Released binaries keep the vulnerability until the next tag."
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          fi
