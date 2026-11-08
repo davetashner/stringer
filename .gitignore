@@ -11,6 +11,7 @@
 
 # Test
 coverage.out
+coverage_*.out
 coverage.html
 *.test
 
@@ -57,8 +58,17 @@ Thumbs.db
 
 # Beads local runtime (embedded Dolt, backups, export scratch — not for git)
 .beads/backup/
+.beads/backup.lock
 .beads/embeddeddolt/
+.beads/embeddeddolt.gate.lock
 .beads/export-state.json
+.beads/.auto-import-issues.jsonl
+.beads/.migration-hint-ts
+.beads/dolt-server*
+.beads.gate.lock
+
+# Beads credential key (a local secret; must never be committed)
+.beads/.beads-credential-key
 
 # Local agent / IDE scratch (per-machine; never upstream)
 .claude/
