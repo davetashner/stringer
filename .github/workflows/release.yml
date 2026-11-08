@@ -24,12 +24,14 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26"
+          # Keep in step with the patch pinned in ci.yml so released binaries
+          # are built with the stdlib advisory fixes CI verifies against.
+          go-version: "1.26.10"
       - name: Run tests
         run: go test -race -count=1 ./...
       - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
         with:
-          go-version-input: "1.26"
+          go-version-input: "1.26.10"
           repo-checkout: false
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v3.10.1
       - uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
