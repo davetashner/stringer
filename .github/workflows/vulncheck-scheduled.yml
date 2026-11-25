@@ -1,16 +1,26 @@
 name: Scheduled Vulncheck
 
 # The Vulncheck job in ci.yml only runs on pushes and PRs, so a new advisory
-# stays hidden on a quiet main. Run the same check daily and track failures in
-# an issue, closing it again once the check passes. See DR-028.
+# stays hidden on a quiet main. Run the same check every six hours. A failure is
+# tracked in an issue, and the autofix job opens a PR with the fixes, set to
+# merge once required checks pass. Releases stay manual. See DR-028.
 
 on:
   schedule:
-    - cron: "41 5 * * *"
+    - cron: "41 */6 * * *"
   workflow_dispatch:
+    inputs:
+      check_app:
+        description: "Also confirm the security bot's App credentials work"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+
+concurrency:
+  group: scheduled-vulncheck
+  cancel-in-progress: false
 
 jobs:
   vulncheck:
@@ -18,14 +28,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - id: setup-go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # Keep in step with the patch pinned in ci.yml and release.yml, so this
-          # reports on the toolchain that builds and ships stringer.
-          go-version: "1.26.10"
+          go-version-file: .go-version
       - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
         with:
-          go-version-input: "1.26.10"
+          go-version-input: ${{ steps.setup-go.outputs.go-version }}
           repo-checkout: false
 
   report:
@@ -47,15 +56,86 @@ jobs:
             --json number,title --jq ".[] | select(.title == \"$title\") | .number" | head -1)
           if [ "$RESULT" = "success" ]; then
             if [ -n "$num" ]; then
-              gh issue close "$num" --repo "$GITHUB_REPOSITORY" --comment "Vulncheck passes again on \`$GITHUB_SHA\`: $RUN_URL"
+              gh issue close "$num" --repo "$GITHUB_REPOSITORY" --comment "Vulncheck passes again on \`$GITHUB_SHA\`: $RUN_URL
+
+          Released binaries stay affected until the next tag, so cut a patch release."
             fi
             exit 0
           fi
           body="Vulncheck failed on \`$GITHUB_SHA\`: $RUN_URL
 
-          If the fix is in the Go standard library, bump the exact patch pinned in ci.yml, release.yml and vulncheck-scheduled.yml. Released binaries keep the vulnerability until the next tag."
+          The autofix job in that run tries to open a PR with the fixes. If it failed, a person needs to step in; its log says why."
           if [ -n "$num" ]; then
             gh issue comment "$num" --repo "$GITHUB_REPOSITORY" --body "$body"
           else
             gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
           fi
+
+  autofix:
+    name: Open vulnerability fix PR
+    needs: vulncheck
+    if: failure() && needs.vulncheck.result == 'failure'
+    runs-on: ubuntu-latest
+    env:
+      BRANCH: security/vuln-autofix
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: .go-version
+      - name: Apply and verify fixes
+        run: scripts/vuln-autofix.sh > "$RUNNER_TEMP/summary.md"
+      # Minted after the script, so downloaded tools never see the credential.
+      # An App token, unlike GITHUB_TOKEN, triggers CI on the PR and on main.
+      - name: Mint security bot token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.SECURITY_BOT_APP_ID }}
+          private-key: ${{ secrets.SECURITY_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Push the fixes and enable auto-merge
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          BOT: ${{ steps.app-token.outputs.app-slug }}[bot]
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "Nothing to fix: Vulncheck failed but no reachable fix applied." >&2
+            exit 1
+          fi
+          bot_id=$(gh api "/users/$BOT" --jq .id)
+          git config user.name "$BOT"
+          git config user.email "$bot_id+$BOT@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add .go-version go.mod go.sum
+          git commit -s -m "fix(deps): apply reachable vulnerability fixes"
+          git push --force "https://x-access-token:$GH_TOKEN@github.com/$GITHUB_REPOSITORY.git" "HEAD:refs/heads/$BRANCH"
+          if [ -z "$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --json number --jq '.[].number')" ]; then
+            gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" \
+              --title "fix(deps): apply reachable vulnerability fixes" \
+              --body-file "$RUNNER_TEMP/summary.md"
+          else
+            gh pr edit "$BRANCH" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/summary.md"
+          fi
+          gh pr merge "$BRANCH" --repo "$GITHUB_REPOSITORY" --auto --squash
+
+  check-app:
+    name: Check security bot credentials
+    if: github.event_name == 'workflow_dispatch' && inputs.check_app
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint security bot token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.SECURITY_BOT_APP_ID }}
+          private-key: ${{ secrets.SECURITY_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Read this repository with the token
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: gh pr list --repo "$GITHUB_REPOSITORY" --limit 1 --json number --jq length
