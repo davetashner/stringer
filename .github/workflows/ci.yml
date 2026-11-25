@@ -18,19 +18,17 @@ jobs:
       matrix:
         # Display label (go-line) stays at major.minor so branch protection's
         # required-check names don't break when we bump the security floor.
-        # Installed version (go-version) is pinned to the exact patch carrying
-        # the latest stdlib advisory fix. Go 1.25 support was dropped when
-        # dependencies started requiring 1.26+ features; 1.26.10 is the latest
-        # 1.26 patch and clears the stdlib advisories govulncheck reports,
-        # including the net/http, crypto/tls and html/template fixes in 1.26.9.
+        # The installed version is the exact patch in .go-version, which
+        # scripts/vuln-autofix.sh bumps when a stdlib advisory lands (DR-028).
+        # Go 1.25 support was dropped when dependencies started requiring
+        # 1.26+ features.
         include:
           - go-line: "1.26"
-            go-version: "1.26.10"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version-file: .go-version
       - run: go build ./...
       - run: go test -race -count=1 ./...
 
@@ -67,7 +65,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.26.10"
+          go-version-file: .go-version
       - name: Select race detector
         # -race needs cgo, and on Windows cgo needs a gcc on PATH. Use it
         # wherever the toolchain can build with it, and say so when not.
@@ -195,16 +193,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - id: setup-go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # Pin to the exact patch carrying the latest stdlib advisory fixes
-          # (-> 1.26.10). The unpinned "1.26" resolves to whatever's in the
-          # runner's tool cache, which can lag, causing govulncheck to flag
-          # stdlib vulns that go.mod's directive already gates against.
-          go-version: "1.26.10"
+          # Use the exact patch in .go-version. The unpinned "1.26" resolves to
+          # whatever's in the runner's tool cache, which can lag, causing
+          # govulncheck to flag stdlib vulns that are already fixed upstream.
+          go-version-file: .go-version
       - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
         with:
-          go-version-input: "1.26.10"
+          go-version-input: ${{ steps.setup-go.outputs.go-version }}
           repo-checkout: false
 
   binary-size:
